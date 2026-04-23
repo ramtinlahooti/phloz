@@ -11,7 +11,7 @@ let _stripe: Stripe | null = null;
 export function getStripe(): Stripe {
   if (!_stripe) {
     _stripe = new Stripe(requireEnv('STRIPE_SECRET_KEY'), {
-      apiVersion: '2024-10-28.acacia',
+      apiVersion: '2026-03-25.dahlia',
       appInfo: { name: 'phloz', version: '0.0.0' },
     });
   }

@@ -19,9 +19,15 @@ export async function createServerSupabase() {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(
+          cookiesToSet: {
+            name: string;
+            value: string;
+            options?: CookieOptions;
+          }[],
+        ) {
           try {
-            cookiesToSet.forEach(({ name, value, options }: { name: string; value: string; options?: CookieOptions }) => {
+            cookiesToSet.forEach(({ name, value, options }) => {
               cookieStore.set(name, value, options);
             });
           } catch {
@@ -39,9 +45,12 @@ export async function createServerSupabase() {
  * Supabase client with the service role key. Bypasses RLS. Use only in
  * webhook handlers, Inngest jobs, and onboarding server actions that have
  * already performed their own authorisation check.
+ *
+ * Lazily imports `@supabase/supabase-js` so it isn't pulled into bundles
+ * that only use the SSR client.
  */
-export function createServiceRoleSupabase() {
-  const { createClient } = require('@supabase/supabase-js') as typeof import('@supabase/supabase-js');
+export async function createServiceRoleSupabase() {
+  const { createClient } = await import('@supabase/supabase-js');
   return createClient(
     requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
     requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
