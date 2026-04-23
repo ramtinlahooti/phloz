@@ -4,6 +4,90 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Phase 1 Steps 5–7 (email, analytics, ui)
+
+### Step 5 — `packages/email`
+
+- Resend client with graceful `isResendConfigured()` gate for dev.
+- React Email templates: `InvitationEmail`, `PortalMagicLinkEmail`,
+  `PasswordResetEmail` — shared `EmailLayout` with Geist + Tailwind,
+  consistent footer.
+- `sendInvitation` / `sendPortalMagicLink` / `sendPasswordReset` helpers;
+  each no-ops when `RESEND_API_KEY` is absent.
+- `verifyResendSignature` — Standard Webhooks (svix) HMAC-SHA256 verifier
+  with timestamp-tolerance window + timing-safe compare.
+- `parseResendInbound` — Zod-validated envelope parser; drops attachments
+  per ARCHITECTURE §10.3, HTML-to-text fallback, 5MB attachment limit.
+- `generateInboundAddress` / `extractInboundId` — opaque 12-char nanoid
+  addresses (`client-<id>@inbound.phloz.com`) per §10.1.
+- 13 unit tests passing.
+- `docs/DNS-SETUP.md` — SPF/DKIM/DMARC for `phloz.com`, MX for
+  `inbound.phloz.com`, Resend webhook + routing config, verification
+  checklist.
+
+### Step 6 — `packages/analytics`
+
+- `EventMap` — typed catalog mirroring ARCHITECTURE §11.2 (every event
+  from marketing, auth, workspace, team, clients, tracking map, tasks,
+  messages, billing, feature gates).
+- `track(event, params, context?)` — dispatcher. Browser path: GTM
+  dataLayer + PostHog. Server path: PostHog-node + GA4 Measurement
+  Protocol when the event is in `SERVER_GA4_EVENTS` (sign_up,
+  upgrade_tier).
+- GTM bootstrap helpers (`gtmBootstrapScript`, `gtmNoscriptIframeSrc`)
+  with container id GTM-W3MGZ8V7 as the single source of truth.
+- PostHog init/identify/reset (client) + captureServer (server); both
+  no-op gracefully without keys.
+- `sendGa4ServerEvent` — server fetch-based emitter; strips undefined
+  params; throws on non-2xx.
+- `hashAuthUid{Server,Client}` — SHA-256 hex with cross-runtime parity.
+- 8 unit tests passing.
+
+### Step 7 — `packages/ui`
+
+- `cn()` helper (clsx + tailwind-merge).
+- `packages/ui/styles/globals.css` — Tailwind v4 CSS-first config via
+  `@theme`. Dark-first palette + deep-blue accent (per DECISIONS
+  2026-04-23) + tracking-map health colour vars (ARCHITECTURE §8.2).
+  Light-mode opt-in via `.light` on `<html>`.
+- Primitives (shadcn-style, no Radix deps yet): `Button` (6 variants, 4
+  sizes), `Input`, `Label`, `Card` (+ Header/Title/Desc/Content/Footer),
+  `Badge` (6 variants), `Skeleton`, `Separator`.
+- Shared components: `PageHeader`, `EmptyState`, `LoadingSpinner`,
+  `TierBadge`.
+- `loadGeistFonts()` — lazy `next/font` Geist Sans + Mono loader returning
+  CSS-variable class names; matches `--font-geist-sans` /
+  `--font-geist-mono` in the shared stylesheet.
+
+### Other
+
+- Stripe SDK bumped to `^22.0.2` to support the `2026-03-25.dahlia` API
+  version selected for the Phloz sandbox.
+- `packages/auth/src/server.ts` — replaced `require('@supabase/supabase-js')`
+  with dynamic `await import()`; `createServiceRoleSupabase()` is now
+  async. Closes the long-standing KNOWN-ISSUES entry.
+- `packages/auth/src/{server,middleware}.ts` — typed `setAll` params.
+- Added `@types/node` to `@phloz/config` and `next` + `@types/node` to
+  `@phloz/auth` peers/devDeps.
+- `@phloz/types` — added `@phloz/config` workspace link so its
+  `tsconfig.base.json` resolves.
+- `db` + `auth` `test` scripts: `vitest run --passWithNoTests` (neither
+  has vitest files yet).
+- Next 16 removed `next lint`; swapped `apps/web` + `apps/app` lint to
+  `eslint . --no-error-on-unmatched-pattern`.
+- Root `package.json` — `"type": "module"` to silence ESM parse warning.
+- `.env.example` — comprehensive rewrite with per-service sections,
+  `[web]/[app]/[both]` tags, new `sb_publishable_*` / `sb_secret_*`
+  key-format notes, DATABASE_URL pooler-vs-direct guidance.
+
+### Verified
+
+- `pnpm check` — 29/29 green across 11 packages.
+- 21 unit tests across `@phloz/config` (4), `@phloz/billing` (24),
+  `@phloz/email` (13), `@phloz/analytics` (8) — all passing.
+
+---
+
 ## 2026-04-23 — Supabase wiring (post-session-1)
 
 ### Added
