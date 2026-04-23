@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm turbo run build --filter=@phloz/app...",
+  "outputDirectory": ".next",
+  "github": {
+    "silent": true
+  },
+  "regions": ["iad1"],
+  "functions": {
+    "app/api/webhooks/**/*.ts": {
+      "maxDuration": 30
+    },
+    "app/api/inngest/route.ts": {
+      "maxDuration": 300
+    }
+  }
+}
