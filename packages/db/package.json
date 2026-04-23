@@ -21,7 +21,7 @@
   "dependencies": {
     "@phloz/config": "workspace:*",
     "@phloz/types": "workspace:*",
-    "drizzle-orm": "^0.36.3",
+    "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.5",
     "zod": "^3.23.8"
   },
