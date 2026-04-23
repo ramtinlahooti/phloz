@@ -14,6 +14,7 @@ CREATE OR REPLACE FUNCTION public.phloz_custom_access_token_hook(event jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
 STABLE
+SET search_path = public, auth
 AS $$
 DECLARE
   claims jsonb;

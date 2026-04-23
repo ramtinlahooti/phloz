@@ -4,6 +4,54 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Supabase wiring (post-session-1)
+
+### Added
+
+- `pnpm.onlyBuiltDependencies` in root `package.json` approving postinstalls
+  for `core-js`, `esbuild`, `protobufjs`, `sharp`, `unrs-resolver`.
+- `pnpm-lock.yaml` — lockfile committed after clean install (10.5s).
+- `packages/db/migrations/0000_melted_supreme_intelligence.sql` — Drizzle-
+  generated schema SQL for all 25 tables (17 V1 + 8 V2 stubs) with FKs +
+  indexes.
+- `packages/db/src/supabase-types.ts` — generated Supabase `Database` type
+  for use with `@supabase/supabase-js` (the Drizzle types remain the
+  default; these are for direct Supabase SDK calls).
+- Two applied Supabase migrations (via MCP):
+  - `initial_schema` — 25 tables, 41 foreign keys, 45 indexes, all idempotent.
+  - `rls_policies` — `phloz_is_member_of` / `phloz_has_role_in` /
+    `phloz_is_assigned_to` / `touch_updated_at` helpers + full V1 policies
+    + V2 default-deny.
+  - `custom_access_token_hook` — the JWT claim hook (requires dashboard
+    activation).
+  - `function_search_path_hardening` — fixed advisor WARN for two
+    plpgsql functions missing `SET search_path`.
+
+### Verified
+
+- All 25 tables have `rowsecurity = true` (checked via `pg_tables` query).
+- `get_advisors` → security: only INFO-level `rls_enabled_no_policy`
+  warnings remain, all for V2 stubs and `portal_magic_links` (by design:
+  no policy = default deny, service role bypasses).
+
+### Changed
+
+- `packages/db/src/rls/_functions.sql` — `touch_updated_at` now declares
+  `SET search_path = public` (matches advisor fix).
+- `packages/auth/src/hooks/custom-access-token-hook.sql` — function now
+  declares `SET search_path = public, auth`.
+
+### Deferred
+
+- Stripe MCP is connected to `acct_1QFi6lBVrlan59Tv` (Exchange Rate
+  Management), not the Phloz account `acct_1RXbVfLUfWiw9Veu`. Reconnect
+  the MCP before creating products.
+- Custom Access Token hook SQL function exists, but enabling it is a
+  Supabase Dashboard step (Authentication → Hooks → Custom Access Token).
+- Service role key + direct `DATABASE_URL` not yet in `.env.local`.
+
+---
+
 ## 2026-04-23 — Phase 1 Steps 0–4
 
 ### Added
