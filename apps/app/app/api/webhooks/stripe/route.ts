@@ -12,6 +12,8 @@ import { getDb, schema } from '@phloz/db/client';
 import type { TierName } from '@phloz/config';
 import type Stripe from 'stripe';
 
+import { inngest } from '@/inngest';
+
 // Must use the raw body for signature verification — disable Next's parsing.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -130,6 +132,18 @@ async function reconcile(event: Stripe.Event, workspaceId: string | null) {
           updatedAt: new Date(),
         })
         .where(eq(schema.workspaces.id, workspaceId));
+      try {
+        await inngest.send({
+          name: 'stripe/subscription-updated',
+          data: {
+            workspaceId,
+            subscriptionId: sub.id,
+            status: sub.status,
+          },
+        });
+      } catch (err) {
+        console.error('[stripe.webhook] inngest fanout failed', err);
+      }
       break;
     }
     case 'customer.subscription.deleted': {

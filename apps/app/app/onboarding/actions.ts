@@ -7,6 +7,8 @@ import { createServerSupabase, createServiceRoleSupabase } from '@phloz/auth/ser
 import { requireUser } from '@phloz/auth/session';
 import { getDb, schema } from '@phloz/db/client';
 
+import { inngest } from '@/inngest';
+
 /**
  * Create the user's first workspace.
  *
@@ -95,6 +97,18 @@ export async function createWorkspaceAction(
       active_workspace_id: workspace.id,
     },
   });
+
+  // Fan out to Inngest for async post-creation work (seed defaults,
+  // etc.). Swallow failures — Inngest retries on its side and the
+  // onboarding flow shouldn't block on it.
+  try {
+    await inngest.send({
+      name: 'workspace/created',
+      data: { workspaceId: workspace.id, ownerUserId: user.id },
+    });
+  } catch (err) {
+    console.error('[onboarding] failed to send workspace/created', err);
+  }
 
   redirect(`/${workspace.id}`);
 }

@@ -22,6 +22,7 @@
     "@phloz/types": "workspace:*",
     "@phloz/ui": "workspace:*",
     "drizzle-orm": "^0.36.3",
+    "inngest": "^3.28.0",
     "lucide-react": "^0.462.0",
     "nanoid": "^5.0.8",
     "next": "^16.0.0",
