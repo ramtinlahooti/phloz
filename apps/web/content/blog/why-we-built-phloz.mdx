@@ -1,0 +1,55 @@
+---
+title: "Why we built Phloz"
+description: "Every digital marketing agency runs on a fragile stack of 6-8 tools. We got tired of the duct tape, so we built the platform we actually wanted."
+publishedAt: "2026-04-23"
+author: "Ramtin Lahooti"
+category: "company"
+tags: ["announcement", "agency-ops"]
+---
+
+Run a digital marketing agency for more than a year and you'll recognize this stack:
+
+- A CRM for deals (HubSpot, Pipedrive, Airtable, a spreadsheet)
+- A PM tool for work (Asana, Monday, ClickUp, Trello)
+- A shared drive for deliverables (Google Drive, Dropbox)
+- A reporting tool for clients (Databox, Looker Studio, bespoke dashboards)
+- A messaging tool for the team (Slack, Teams)
+- A messaging tool for clients (email forwards, WhatsApp, Loom)
+- An email marketing tool (Mailchimp, Klaviyo — usually the client's)
+- And a collection of spreadsheets documenting "where things are": GA4 property IDs, GTM container IDs, pixel IDs, ad account IDs, audience definitions, UTM conventions, and the six different logins for the six different integrations per client.
+
+Nothing here is *wrong*. Each tool is individually fine. But the agency pays the tax on every handoff: lead-to-client, client-to-project, project-to-task, task-to-deliverable, deliverable-to-report. Every boundary costs time, context, and trust.
+
+## The tracking problem nobody talks about
+
+The worst tax isn't on the CRM side. It's on the tracking side.
+
+Ask any agency ops lead: *"If I call you right now and say the conversion tracking is broken for client X, how fast can you tell me which GA4 property, which GTM container, which tag is firing, and who owns it?"*
+
+The honest answer is "give me 20 minutes." Maybe an hour. It lives in someone's head, or in a spreadsheet that's 4 months stale, or in a Loom from onboarding that got archived. Agencies manage hundreds of pixels, tags, conversions, and audiences across dozens of clients — and they do it with inherited knowledge and hope.
+
+That's the thing Phloz fixes first.
+
+## What Phloz is
+
+A CRM + project management + tracking-infrastructure platform, in one workspace, priced per active client (not per seat).
+
+- **Clients and contacts** live in Phloz. So do projects, tasks, approvals, files, and messages.
+- **Every client has a tracking map** — a typed graph of every GA4 property, every GTM container, every pixel, every conversion, every audience. You can see them. You can verify them. You can flag a broken one.
+- **Role-based views** for PPC, SEO, social, CRO, web design — so the PPC manager sees PPC-shaped work and the SEO lead sees SEO-shaped work, without building five separate tools.
+- **Client portals** with magic-link access, no passwords, no "what's my login again" emails.
+- **Cross-client reporting** — filter every active campaign by tier, status, department, across every client, in one view.
+
+## What Phloz isn't (yet)
+
+- We don't replace Klaviyo. We don't do email blasts.
+- We're not a generic CRM. If you sell used cars, go use Pipedrive.
+- We don't do billing/invoicing (V2 — if there's demand).
+
+## Where we're going
+
+V1 ships in 2026. V2 adds: the approvals engine, the ad audit rule engine, agency-to-client billing, the tracking-integration APIs (GA4 / GTM / Google Ads live sync), advanced reporting, and a handful of other things we've been writing in `docs/DECISIONS.md` for months.
+
+If you run an agency and you recognize the pain, [sign up for early access](https://phloz.com) or [get in touch](https://phloz.com/contact). We'd love to hear which part of the stack you'd most want to delete.
+
+— Ramtin

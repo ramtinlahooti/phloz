@@ -1,0 +1,118 @@
+/**
+ * Marketing site global stylesheet.
+ *
+ * All tokens + base styles live in `packages/ui/styles/globals.css`
+ * (Tailwind v4 `@theme` CSS-first config). This file just imports that
+ * stylesheet and adds web-only tweaks.
+ */
+@import '@phloz/ui/styles/globals.css';
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Deep-blue accent matches tokens. Link underlines show only on hover
+     to keep marketing pages feeling calm. */
+  a {
+    text-decoration: none;
+  }
+}
+
+@layer utilities {
+  /* Marketing-specific utility: a subtle top-to-transparent fade
+     beneath the sticky header. */
+  .header-fade {
+    background: linear-gradient(
+      to bottom,
+      var(--color-background) 0%,
+      color-mix(in oklab, var(--color-background) 80%, transparent) 100%
+    );
+  }
+}
+
+/**
+ * Lean prose styles for blog posts. Avoids @tailwindcss/typography so
+ * we don't pull another dep. Covers headings, paragraphs, lists, links,
+ * blockquotes, code, and spacing — enough for MDX blog content.
+ */
+.phloz-prose {
+  color: var(--color-foreground);
+  font-size: 1rem;
+  line-height: 1.75;
+}
+.phloz-prose p,
+.phloz-prose ul,
+.phloz-prose ol,
+.phloz-prose blockquote {
+  margin-block: 1.25em;
+}
+.phloz-prose h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-block: 2em 0.75em;
+  color: var(--color-foreground);
+  scroll-margin-top: 5rem;
+}
+.phloz-prose h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-block: 1.75em 0.5em;
+  color: var(--color-foreground);
+  scroll-margin-top: 5rem;
+}
+.phloz-prose a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.phloz-prose a:hover {
+  opacity: 0.85;
+}
+.phloz-prose strong {
+  color: var(--color-foreground);
+  font-weight: 600;
+}
+.phloz-prose ul {
+  list-style: disc;
+  padding-left: 1.5em;
+}
+.phloz-prose ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+}
+.phloz-prose li {
+  margin-block: 0.3em;
+}
+.phloz-prose li::marker {
+  color: var(--color-muted-foreground);
+}
+.phloz-prose blockquote {
+  border-left: 3px solid var(--color-primary);
+  padding-left: 1em;
+  color: var(--color-muted-foreground);
+  font-style: italic;
+}
+.phloz-prose code {
+  background: var(--color-muted);
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+.phloz-prose pre {
+  background: var(--color-muted);
+  padding: 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  margin-block: 1.5em;
+}
+.phloz-prose pre code {
+  background: transparent;
+  padding: 0;
+}
+.phloz-prose hr {
+  margin-block: 2.5em;
+  border-color: var(--color-border);
+}

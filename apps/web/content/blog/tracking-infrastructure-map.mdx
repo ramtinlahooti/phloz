@@ -1,0 +1,73 @@
+---
+title: "The tracking infrastructure map: a typed graph of everything you manage"
+description: "Most agencies document their clients' tracking setup in a spreadsheet — and most of those spreadsheets are four months out of date. Here's a better mental model."
+publishedAt: "2026-04-23"
+author: "Phloz team"
+category: "product"
+tags: ["tracking", "ga4", "gtm", "product"]
+---
+
+The single question that exposes how healthy a digital marketing agency's operations are:
+
+> *Show me, right now, every pixel firing on client X's checkout page — which ad platform owns it, whether the conversion value is in USD or CAD, when it was last verified, and which tracking engineer deployed it.*
+
+If the answer takes more than 30 seconds, the agency is carrying silent risk. Broken pixels don't announce themselves. They just quietly tank ROAS for 6 weeks until someone notices the GA4 audience sizes dropped.
+
+## The problem with spreadsheets
+
+The common approach is a shared Google Sheet per client listing:
+
+- GA4 property IDs + measurement IDs
+- GTM container IDs
+- Active ad pixels (Meta, Google, TikTok, LinkedIn…)
+- Conversion events + values
+- UTM conventions
+- Audience definitions
+
+Three problems:
+
+1. **No relationships.** A pixel is *on* a page, *owned by* an ad account, *used in* a campaign, *hashed against* a customer list. A spreadsheet flattens this into columns. You can't answer "what depends on this?" from a spreadsheet.
+2. **No health state.** Sheets don't know if a pixel fired yesterday. They're a static snapshot of what you thought was true at onboarding.
+3. **No types.** A "conversion" in GA4 is a different shape from a "conversion" in Google Ads is a different shape from a "conversion event" in Meta. One spreadsheet column doesn't express that.
+
+## The tracking map: a typed graph
+
+Phloz models tracking as a graph:
+
+- **Nodes** are tracking objects: a GA4 property, a GTM container, a Meta pixel, a Google Ads conversion action, a UTM convention, a customer-list audience.
+- **Edges** are typed relationships: *fires-on*, *owned-by*, *depends-on*, *replaces*.
+- **Every node type has a Zod schema** — a GA4 property has a `propertyId`, a list of `measurementIds`, an optional owner, a `healthStatus` enum. A Meta pixel has a `pixelId`, `datasetQualityScore`, `eventsEnabled`.
+
+That's it. Three primitives: nodes, edges, schemas.
+
+What this buys you:
+
+- **"Show me every pixel on the checkout page"** = graph traversal from the checkout-page node outward through `fires-on` edges.
+- **"What breaks if we migrate this GA4 property?"** = dependency walk.
+- **"Which integrations haven't been verified in 30+ days?"** = filter nodes by `healthStatus` + `lastVerifiedAt`.
+- **"Who owns this pixel?"** = read the node metadata.
+
+## Why typed matters
+
+Without types, the map is just a pretty drawing. With types:
+
+- Every node can be rendered with the right fields, icons, health indicators.
+- Import/export maps to JSON the ad platform APIs already understand.
+- Validation rules catch "this GA4 property has no measurement IDs" at create time, not 8 weeks later.
+- New node types (Klaviyo list, Shopify pixel, whatever comes next) drop in as *one new Zod schema*. No schema migrations. No flattening into a spreadsheet column.
+
+## What it looks like in V1
+
+V1 ships with:
+
+- 9 node types (GA4 property, GTM container, Meta pixel, Google Ads conversion, TikTok pixel, Microsoft pixel, audience, UTM convention, generic page).
+- Manual verification (click "verified today").
+- Broken / missing / working / unverified states.
+
+V2 adds live sync with the ad platform APIs so the health state updates automatically, and an audit-rule engine that flags inconsistencies (e.g. "this pixel is on the page but the GA4 property has no corresponding conversion event").
+
+## The takeaway
+
+Your agency's tracking setup isn't a spreadsheet. It's a graph. Model it as one, type the nodes, and the questions that used to take 20 minutes take 20 seconds.
+
+And when a client asks *"are we tracking everything we should be?"* — you can answer.
