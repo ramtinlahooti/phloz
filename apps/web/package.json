@@ -18,7 +18,7 @@
     "@sentry/nextjs": "^10.50.0",
     "gray-matter": "^4.0.3",
     "next": "^16.0.0",
-    "next-mdx-remote": "^5.0.0",
+    "next-mdx-remote": "^6.0.0",
     "react": "^19.0.0-rc-69d4b800-20241021",
     "react-dom": "^19.0.0-rc-69d4b800-20241021",
     "reading-time": "^1.5.0",
