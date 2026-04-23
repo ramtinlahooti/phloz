@@ -4,6 +4,75 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Phase 1 Steps 10–13 (Inngest, observability, CI, deploy)
+
+### Step 10 — Inngest
+
+- `apps/app/inngest/client.ts` — typed EventSchemas catalog (5 events).
+- 4 functions: `recomputeActiveClientCount` (cron nightly +
+  event trigger), `sendTrialEndingReminder` (cron daily, reads
+  Stripe `trial_end`), `onWorkspaceCreated` (V2 seed hook),
+  `onClientAdded` (mints opaque inbound email address).
+- `/api/inngest/route.ts` via `inngest/next` `serve()`.
+- Event emission wired at 3 sites (onboarding action, client-create
+  API route, Stripe webhook reconcile).
+- `docs/INNGEST-SETUP.md`.
+
+### Step 11 — Observability
+
+- `@sentry/nextjs` in both apps (client/server/edge configs +
+  `instrumentation.ts`). Product app enables session replay with
+  masked text/inputs/media. Graceful no-op without DSN.
+- PostHog provider in `apps/app` — captures `$pageview` on every
+  client-side route change (Suspense-wrapped in root layout).
+- `@phloz/config/logger` — pino singleton with redaction for
+  password/token/cookie/apiKey/stripeSecretKey/serviceRoleKey.
+  `requestLogger(ctx)` child for per-request context.
+- `docs/OBSERVABILITY.md` consolidates all four pillars.
+
+### Step 12 — CI
+
+- `.github/workflows/ci.yml` with 4 jobs: `check` (pnpm check),
+  `build` (matrix web + app), `rls-invariants` (postgres:16 +
+  `check-rls-invariants.ts` asserting `rowsecurity=true` on every
+  `TENANT_TABLES` entry), `pgtap` (pg_prove against
+  `packages/db/tests/rls/*.test.sql`).
+- `.github/dependabot.yml` — monthly updates grouped into
+  next/react, ui/radix, infra.
+- `packages/db/scripts/check-rls-invariants.ts` + script exposed as
+  `pnpm --filter @phloz/db check:rls-invariants`.
+
+### Step 13 — Deployment
+
+- `apps/web/vercel.json` + `apps/app/vercel.json` — Next preset,
+  pnpm frozen-lockfile install, turbo-scoped builds, iad1 region.
+  App webhook routes get `maxDuration: 30`, Inngest route gets `300`.
+- `docs/DEPLOYMENT.md` — end-to-end Vercel setup: project creation,
+  env var matrix, domains, Stripe + Resend + Inngest webhooks,
+  sanity-check URLs, rollback, quarterly secret-rotation schedule.
+
+### Changed
+
+- Root `package.json` — approved `@sentry/cli` postinstall.
+- `packages/db/tsconfig.json` — include `scripts/` and `tests/`.
+- `packages/config` — added `pino` dep + `./logger` subpath export.
+- `apps/app` — added `@sentry/nextjs`, `posthog-js`, `inngest`.
+- `apps/web` — added `@sentry/nextjs`.
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- Both apps build cleanly.
+
+### Next
+
+Phase 1 scaffold is complete. Per PROMPT_1 final line: return to the
+planning chat for **Prompt 2 — the tracking map editor** (canvas UI
+built on `packages/tracking-map` + the node/edge schema already in
+place).
+
+---
+
 ## 2026-04-23 — Phase 1 Step 9 (apps/app product scaffold)
 
 ### Added — `@phloz/ui` primitives

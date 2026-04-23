@@ -1,95 +1,107 @@
-# Next Steps (as of 2026-04-23, post-Step-9)
+# Next Steps (as of 2026-04-23, post-Phase-1)
 
-Ordered by priority. Each bullet is a concrete action for the next session.
+Phase 1 scaffold is **complete**. Steps 0–13 of PROMPT_1 have shipped.
+The monorepo builds, the marketing site renders, the product app has
+auth + onboarding + dashboard + portal + API routes + webhooks +
+Inngest jobs + observability + CI + Vercel config.
 
-## Ramtin's optional actions (non-blocking)
+Per PROMPT_1's final line, the next move is to return to the planning
+chat for **Prompt 2 — the tracking map editor**.
 
-1. **QA the product app locally.** Run `pnpm --filter @phloz/app dev`
-   and browse `http://localhost:3001`. Flow:
-   - / → redirects to /login
-   - /signup → create an account with a real email (confirmation flow
-     needs Resend DNS or you can grab the confirmation link from
-     Supabase dashboard)
-   - /onboarding → name the workspace
-   - /[workspace] → you should land on the dashboard
-   - Try: add a client, invite a teammate, visit /billing
-   Flag anything that feels wrong.
+---
 
-2. **Verify Resend domains** when you're ready to send real emails. See
-   `docs/DNS-SETUP.md`. Until then, invitations + password resets
-   log-only in dev.
+## Ramtin's immediate actions (blocking Prompt 2)
 
-3. **Provision PostHog + Sentry + GA4** if you want production analytics
-   live. Without keys, `track()` calls no-op gracefully.
+None. Everything ships-to-Vercel-whenever.
 
-## Claude's next sessions
+## Ramtin's actions to go live (whenever)
 
-### Step 10 — Inngest (2-3h)
+1. **Deploy to Vercel.** Follow `docs/DEPLOYMENT.md`:
+   - Two projects (`phloz-web`, `phloz-app`) linked to the repo.
+   - Env vars from `.env.example` (already in Vercel per earlier
+     setup; double-check `INNGEST_*`, `NEXT_PUBLIC_POSTHOG_KEY`, and
+     the Sentry vars).
+   - Domains: phloz.com, app.phloz.com.
+2. **Stripe webhook** in production (copy secret → Vercel env).
+3. **Resend domain verification** (`docs/DNS-SETUP.md`) + webhook
+   endpoint.
+4. **Inngest app** registered at `app.phloz.com/api/inngest`.
+5. **Sentry** project + DSN (optional; graceful no-op without).
+6. **PostHog** project + key (optional).
 
-- `apps/app/inngest/` client + function registry.
-- `recomputeActiveClientCount` nightly job (ARCHITECTURE §7.2).
-- `sendTrialEndingReminder` (3-day-before trigger).
-- Inngest webhook route at `/api/inngest` (serve + introspection).
-- Local dev instructions in `docs/INNGEST-SETUP.md`.
+## What Prompt 2 covers
 
-### Step 11 — Observability (2h)
+Per ARCHITECTURE §8 — the tracking-infrastructure-map canvas editor:
 
-- `@sentry/nextjs` wired into both apps with source-map upload.
-- PostHog client init in `apps/app` root layout.
-- Verify GTM fires on home page (already wired in `apps/web`).
-- Pino for structured server logs (`packages/config/logger.ts`).
+- **React Flow (`@xyflow/react`) canvas** at
+  `/[workspace]/clients/[clientId]/map` (route slot already exists on
+  the client detail page).
+- **Node-type registry** — 9 typed Zod schemas live in
+  `packages/tracking-map/node-types/*`. The editor will render each
+  node type with its own fields, icons, and health status.
+- **Create / edit / delete** nodes + edges (with optimistic UI).
+- **Health state** mark-as-verified / broken / missing flows.
+- **Graph traversal** queries (who depends on this node, what does
+  this node depend on).
+- **Import / export** JSON so agencies can seed from CSV or pipe to
+  BigQuery.
 
-### Step 12 — CI (1-2h)
+Start Prompt 2 by re-reading `ARCHITECTURE.md §8` and the existing
+types in `packages/tracking-map/`, then come back with the plan.
 
-- `.github/workflows/ci.yml`:
-  - `pnpm install --frozen-lockfile`
-  - `pnpm check` (typecheck + lint + unit tests across 11 packages)
-  - RLS invariant job: `pg_tables.rowsecurity = true` for every
-    `TENANT_TABLES` entry against an ephemeral Supabase container.
-  - pgTAP run.
-- Dependabot config for monthly security updates.
-
-### Step 13 — Deployment (1-2h)
-
-- Vercel projects for `@phloz/web` (phloz.com) and `@phloz/app`
-  (app.phloz.com) linked to this repo.
-- Env vars populated from `.env.example`.
-- Custom domain + TLS.
-- Preview deployments per PR.
-
-### After Step 13 — come back to the planning chat
-
-Per PROMPT_1 final line: "After Step 9, come back to the planning chat
-for Prompt 2: the tracking map editor." That's the canvas UI on top of
-the map primitives already in `packages/tracking-map` + the schema
-already in place.
-
-### Features intentionally stubbed (feature sessions, pick up later)
+## Features intentionally stubbed (pick up after Prompt 2)
 
 - Workspace-wide tasks board (boards + timelines + department filters).
-- Unified messages inbox + email thread UI.
-- Client split-pane tabs: tasks, files, messages, approvals.
+- Unified messages inbox + email thread UI in-app.
+- Client split-pane sub-tabs (per-client tasks, file uploads with
+  Supabase Storage, message thread UI).
 - Portal pages past the landing (tasks, approvals, deliverables).
+- Dedicated "trial-ending" email template (placeholder currently uses
+  `sendPasswordReset`).
 
-## Already provisioned / done
+---
 
-- ✅ Supabase — 25 tables + RLS + JWT hook enabled + ECC P-256 signing.
-- ✅ GitHub — `ramtinlahooti/phloz`, main tracking origin.
-- ✅ GTM container — `GTM-W3MGZ8V7` wired into `@phloz/analytics` and
-  `apps/web` layout.
-- ✅ Stripe — SDK `^22.0.2` for API `2026-03-25.dahlia`, 4 sandbox
-  products + 12 prices, IDs in `TIERS`, webhook route with reconcile
-  handlers in `apps/app`.
-- ✅ All 11 packages (config, types, db, auth, billing, email,
-  analytics, ui, tracking-map, web, app) — shipped and green.
-- ✅ `apps/web` — 49-page marketing site (static).
-- ✅ `apps/app` — 28-route product app scaffold (foundation spine).
+## Phase 1 status recap
 
-## Still to provision (non-blocking for Steps 10-13)
+### Shipped
 
-- Resend — domain verification for `phloz.com` + `inbound.phloz.com`.
-- PostHog project + key.
-- Sentry project + DSN.
-- GA4 Measurement ID + API secret.
-- Stripe live-mode products + prices (swap before launch).
-- Inngest account + signing keys (Step 10).
+- ✅ Turborepo + pnpm workspace (11 packages).
+- ✅ Supabase: 25 tables + RLS + JWT hook enabled + ECC P-256 signing.
+- ✅ `@phloz/config` — Zod env, tsconfig base, constants, pino logger.
+- ✅ `@phloz/types` — Result<T, E>.
+- ✅ `@phloz/db` — Drizzle schema, migrations applied, RLS SQL, pgTAP
+  test, seed script, RLS invariants script.
+- ✅ `@phloz/auth` — SSR helpers, roles, portal magic links, workspace
+  switch, custom access token hook SQL.
+- ✅ `@phloz/billing` — tier config, gates, Stripe client, webhooks,
+  24 unit tests. Sandbox products + prices with IDs wired.
+- ✅ `@phloz/email` — Resend client, 3 templates, inbound webhook
+  parser, signature verifier, address generator. 13 unit tests.
+- ✅ `@phloz/analytics` — typed EventMap, GTM + PostHog + GA4 MP
+  dispatcher. 8 unit tests.
+- ✅ `@phloz/ui` — Tailwind v4 stylesheet, ~20 primitives (7 core +
+  10 Radix-backed), Phloz components, Geist font loader.
+- ✅ `@phloz/tracking-map` — base package exists, ready for Prompt 2.
+- ✅ `apps/web` — 49-page marketing site.
+- ✅ `apps/app` — 29-route product app (auth, dashboard, portal, API,
+  webhooks, Inngest).
+- ✅ CI — `.github/workflows/ci.yml` with lint/typecheck/test, build
+  matrix, RLS invariants, pgTAP.
+- ✅ Deployment — `vercel.json` per app, `DEPLOYMENT.md` walkthrough.
+- ✅ Docs — ARCHITECTURE, DECISIONS, CHANGELOG, ROADMAP, NEXT-STEPS,
+  KNOWN-ISSUES, DNS-SETUP, INNGEST-SETUP, OBSERVABILITY, DEPLOYMENT.
+
+### Live accounts / provisioning
+
+- ✅ GitHub — `ramtinlahooti/phloz`, main branch.
+- ✅ Supabase project — `tdvzhwhzxuskrsobdyrm.supabase.co`.
+- ✅ GTM — container `GTM-W3MGZ8V7`.
+- ✅ Stripe sandbox — `acct_1RXbVlPomvpsIeGO`, 4 products + 12 prices.
+- ⏳ Vercel — projects not yet created (doc-ready).
+- ⏳ Resend — domains not verified.
+- ⏳ Inngest — account not created.
+- ⏳ PostHog — project not created (optional).
+- ⏳ Sentry — project not created (optional).
+- ⏳ GA4 — IDs not provisioned (optional).
+
+All provisioning is optional for local dev. Nothing blocks Prompt 2.
