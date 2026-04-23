@@ -4,6 +4,53 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Messages module + portal dashboard
+
+### Messages module
+
+**`@phloz/email`:**
+- New `sendPlainEmail({ to, subject, text, html, replyTo, inReplyTo,
+  references })` — non-template outbound send. Agency replies default
+  `replyTo` to the client's inbound address so responses thread back.
+
+**`apps/app` — `/[workspace]/messages/` + per-client tab:**
+- Server actions: `sendEmailReplyAction` (role-gated, resolves inbound
+  address, calls Resend, inserts outbound `messages` row),
+  `postInternalNoteAction` (internal_note channel, no Resend).
+- `MessageThread` client component — groups by `threadId`, colour-
+  coded bubbles per direction + channel, compose pane with Email /
+  Internal note tabs, auto-prefilled `Re: …` subject.
+- Client-detail **Messages** tab swaps the stub for `MessageThread`.
+- `/[workspace]/messages` — unified inbox with direction + channel
+  filter pills, compact list, click jumps to client page.
+
+### Portal fleshout
+
+`/portal/[token]` — swapped the "Recent updates" stub for a read-only
+dashboard:
+- Open **client-visible tasks** (visibility=client_visible + status
+  in todo/in_progress/blocked).
+- **Recent messages** on the email channel only (internal notes
+  hidden), conversation-style timeline.
+- Footer explains reply-by-email path (no compose button yet).
+
+V1 stays read-only; reply/self-update await a portal-session-aware
+action layer.
+
+### Local-dev helpers
+
+- `apps/app/.env.local` + `apps/web/.env.local` (gitignored) created
+  with public values pre-filled. Only two secrets are TODO for the
+  product app: `SUPABASE_SERVICE_ROLE_KEY` and `DATABASE_URL`
+  (transaction pooler, port 6543).
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `next build` (apps/app) — 31 routes compile.
+
+---
+
 ## 2026-04-23 — Post-Prompt-2 (deps, map polish, tasks module)
 
 ### Dependency upgrade — local === Vercel
