@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/config" },
+    { "path": "./packages/types" },
+    { "path": "./packages/db" },
+    { "path": "./packages/auth" },
+    { "path": "./packages/billing" },
+    { "path": "./packages/email" },
+    { "path": "./packages/analytics" },
+    { "path": "./packages/ui" },
+    { "path": "./packages/tracking-map" }
+  ]
+}

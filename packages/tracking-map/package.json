@@ -1,0 +1,25 @@
+{
+  "name": "@phloz/tracking-map",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node-types": "./src/node-types/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@phloz/config": "workspace:*",
+    "@phloz/types": "workspace:*",
+    "@xyflow/react": "^12.3.5",
+    "react": "^19.0.0-rc-69d4b800-20241021",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "typescript": "^5.6.3"
+  }
+}
