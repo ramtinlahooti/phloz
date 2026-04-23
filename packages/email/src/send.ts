@@ -112,3 +112,50 @@ export async function sendPasswordReset(
     tags: [{ name: 'category', value: 'password_reset' }],
   });
 }
+
+/**
+ * Send a plain email (no React template). Used by the messaging module
+ * for agency → client replies where the body is whatever the team typed
+ * in the compose box. Pass `inReplyTo` + `references` to thread the
+ * reply on the recipient's client. `replyTo` defaults to the per-client
+ * inbound address so the client's response comes back into Phloz.
+ */
+export async function sendPlainEmail(input: {
+  to: string;
+  from?: string;
+  replyTo?: string;
+  subject: string;
+  text: string;
+  html?: string;
+  inReplyTo?: string;
+  references?: string[];
+  tags?: { name: string; value: string }[];
+}): Promise<SendResult> {
+  if (!isResendConfigured()) {
+    // eslint-disable-next-line no-console
+    console.info('[email] RESEND_API_KEY not set — skipping plain send', {
+      to: input.to,
+      subject: input.subject,
+    });
+    return { id: null, sent: false };
+  }
+
+  const headers: Record<string, string> = {};
+  if (input.inReplyTo) headers['In-Reply-To'] = input.inReplyTo;
+  if (input.references?.length)
+    headers['References'] = input.references.join(' ');
+
+  const { data, error } = await getResend().emails.send({
+    from: input.from ?? defaultFromAddress(),
+    to: input.to,
+    subject: input.subject,
+    text: input.text,
+    html: input.html,
+    replyTo: input.replyTo,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
+    tags: input.tags ?? [{ name: 'category', value: 'client_message' }],
+  });
+
+  if (error) throw new EmailError('send_failed', error.message);
+  return { id: data?.id ?? null, sent: true };
+}

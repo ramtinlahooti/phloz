@@ -4,6 +4,8 @@ import { notFound } from 'next/navigation';
 
 import type {
   Department,
+  MessageChannel,
+  MessageDirection,
   TaskPriority,
   TaskStatus,
   TaskVisibility,
@@ -23,6 +25,10 @@ import {
 
 import { buildAppMetadata } from '@/lib/metadata';
 
+import {
+  MessageThread,
+  type MessageItem,
+} from '../../messages/message-thread';
 import { NewTaskDialog } from '../../tasks/new-task-dialog';
 import { TaskRow, type TaskRowModel } from '../../tasks/task-row';
 
@@ -38,29 +44,52 @@ export default async function ClientDetailPage({
   const { workspace: workspaceId, clientId } = await params;
   const db = getDb();
 
-  const [client, clientTasks] = await Promise.all([
-    db
-      .select()
-      .from(schema.clients)
-      .where(
-        and(
-          eq(schema.clients.id, clientId),
-          eq(schema.clients.workspaceId, workspaceId),
-        ),
-      )
-      .limit(1)
-      .then((rows) => rows[0]),
-    db
-      .select()
-      .from(schema.tasks)
-      .where(
-        and(
-          eq(schema.tasks.workspaceId, workspaceId),
-          eq(schema.tasks.clientId, clientId),
-        ),
-      )
-      .orderBy(desc(schema.tasks.priority), asc(schema.tasks.dueDate)),
-  ]);
+  const [client, clientTasks, clientMessages, inboundAddressRow] =
+    await Promise.all([
+      db
+        .select()
+        .from(schema.clients)
+        .where(
+          and(
+            eq(schema.clients.id, clientId),
+            eq(schema.clients.workspaceId, workspaceId),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0]),
+      db
+        .select()
+        .from(schema.tasks)
+        .where(
+          and(
+            eq(schema.tasks.workspaceId, workspaceId),
+            eq(schema.tasks.clientId, clientId),
+          ),
+        )
+        .orderBy(desc(schema.tasks.priority), asc(schema.tasks.dueDate)),
+      db
+        .select()
+        .from(schema.messages)
+        .where(
+          and(
+            eq(schema.messages.workspaceId, workspaceId),
+            eq(schema.messages.clientId, clientId),
+          ),
+        )
+        .orderBy(desc(schema.messages.createdAt))
+        .limit(200),
+      db
+        .select({ address: schema.inboundEmailAddresses.address })
+        .from(schema.inboundEmailAddresses)
+        .where(
+          and(
+            eq(schema.inboundEmailAddresses.clientId, clientId),
+            eq(schema.inboundEmailAddresses.active, true),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0]),
+    ]);
 
   if (!client) notFound();
 
@@ -78,6 +107,22 @@ export default async function ClientDetailPage({
   const openTasks = tasksAsRows.filter(
     (t) => t.status !== 'done' && t.status !== 'archived',
   );
+
+  const messages: MessageItem[] = clientMessages.map((m) => ({
+    id: m.id,
+    threadId: m.threadId,
+    direction: m.direction as MessageDirection,
+    channel: m.channel as MessageChannel,
+    subject: m.subject,
+    body: m.body,
+    fromLabel:
+      m.fromType === 'member'
+        ? 'Team'
+        : m.fromType === 'contact'
+          ? client.name
+          : 'System',
+    createdAt: m.createdAt,
+  }));
 
   return (
     <div className="flex h-full flex-col">
@@ -168,13 +213,13 @@ export default async function ClientDetailPage({
             </TabsContent>
 
             <TabsContent value="messages" className="mt-6">
-              <Card>
-                <CardContent className="p-6 text-sm text-muted-foreground">
-                  Email threads and internal comments for this client will
-                  appear here. Forward client email to the client&apos;s
-                  inbound address to auto-thread.
-                </CardContent>
-              </Card>
+              <MessageThread
+                workspaceId={workspaceId}
+                clientId={clientId}
+                clientEmail={client.businessEmail ?? null}
+                inboundAddress={inboundAddressRow?.address ?? null}
+                messages={messages}
+              />
             </TabsContent>
 
             <TabsContent value="map" className="mt-6">
