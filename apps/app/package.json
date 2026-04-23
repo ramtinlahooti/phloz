@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hookform/resolvers": "^3.9.1",
     "@phloz/analytics": "workspace:*",
     "@phloz/auth": "workspace:*",
     "@phloz/billing": "workspace:*",
@@ -20,12 +21,19 @@
     "@phloz/tracking-map": "workspace:*",
     "@phloz/types": "workspace:*",
     "@phloz/ui": "workspace:*",
+    "drizzle-orm": "^0.36.3",
+    "lucide-react": "^0.462.0",
+    "nanoid": "^5.0.8",
     "next": "^16.0.0",
     "react": "^19.0.0-rc-69d4b800-20241021",
     "react-dom": "^19.0.0-rc-69d4b800-20241021",
+    "react-hook-form": "^7.54.1",
+    "sonner": "^1.7.1",
+    "stripe": "^22.0.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0-beta.3",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

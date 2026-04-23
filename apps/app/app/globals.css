@@ -1,0 +1,22 @@
+/**
+ * Product app global stylesheet.
+ * Shared tokens live in `@phloz/ui/styles/globals.css`.
+ */
+@import '@phloz/ui/styles/globals.css';
+
+/* The product app is always dark (no light-mode opt-in, unlike web). */
+html {
+  color-scheme: dark;
+}
+
+/* Animate Radix primitives via CSS (we don't pull in tailwindcss-animate). */
+@keyframes phloz-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes phloz-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-4px); }
+}
+.animate-in { animation: phloz-in 0.15s ease-out; }
+.animate-out { animation: phloz-out 0.15s ease-in; }
