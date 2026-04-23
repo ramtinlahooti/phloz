@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./env": "./src/env.ts",
     "./constants": "./src/constants.ts",
+    "./logger": "./src/logger.ts",
     "./tsconfig.base.json": "./tsconfig.base.json"
   },
   "scripts": {
@@ -15,6 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "pino": "^9.5.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

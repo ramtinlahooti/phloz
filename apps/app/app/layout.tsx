@@ -1,6 +1,9 @@
+import { Suspense } from 'react';
+
 import { Toaster, TooltipProvider } from '@phloz/ui';
 import { loadGeistFonts } from '@phloz/ui/fonts';
 
+import { PostHogProvider } from '@/components/posthog-provider';
 import { buildAppMetadata } from '@/lib/metadata';
 
 import './globals.css';
@@ -18,7 +21,9 @@ export default async function RootLayout({
     <html lang="en" className={fonts.className} suppressHydrationWarning>
       <body className="min-h-screen bg-background font-sans text-foreground antialiased">
         <TooltipProvider delayDuration={100}>
-          {children}
+          <Suspense fallback={null}>
+            <PostHogProvider>{children}</PostHogProvider>
+          </Suspense>
           <Toaster />
         </TooltipProvider>
       </body>
