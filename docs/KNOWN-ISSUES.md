@@ -93,38 +93,29 @@ part of Step 13.
 
 ---
 
-## 2026-04-23: @supabase/supabase-js imported via require() in server.ts
+## 2026-04-23: @supabase/supabase-js require() in server.ts — RESOLVED
 
-**Description:** `packages/auth/src/server.ts` lazy-loads
-`@supabase/supabase-js` via `require()` because the service-role client is
-optional and we don't want to pull it into bundles that only use the
-SSR client. ESM + `require()` works in Node 22 but ESLint will flag it.
+**Description:** `packages/auth/src/server.ts` lazy-loaded
+`@supabase/supabase-js` via `require()`.
 
-**Impact:** Lint warning. No runtime issue.
-
-**Workaround:** The line is annotated; revisit if lint gets stricter.
-
-**Planned fix:** Refactor to a top-level dynamic `await import()` once
-the app's module graph is finalised and we know the service-role client
-is always worth including.
+**Resolution (2026-04-23):** Refactored to `await import()` in Step 5
+session; `createServiceRoleSupabase()` is now async. No callers
+existed yet so the API change was free. ESLint + typecheck clean.
 
 ---
 
-## 2026-04-23: Stripe MCP connected to wrong account
+## 2026-04-23: Stripe MCP connected to wrong account — RESOLVED
 
-**Description:** The Stripe MCP reports account
-`acct_1QFi6lBVrlan59Tv` ("Exchange Rate Management"). The Phloz Stripe
-dashboard URL is `acct_1RXbVfLUfWiw9Veu`. Different accounts.
+**Description:** The Stripe MCP was pointing at
+`acct_1QFi6lBVrlan59Tv` ("Exchange Rate Management") instead of Phloz.
 
-**Impact:** Any product/price/customer created via the MCP would land in
-the wrong Stripe account. Blocks wiring `TIERS` Stripe IDs.
+**Resolution (2026-04-23):** User reconnected the MCP to the Phloz
+sandbox account (`acct_1RXbVlPomvpsIeGO`). Product/price creation
+still pending — deferred until the user confirms they want to proceed.
 
-**Workaround:** None — paused until reconnected.
-
-**Planned fix:** Reconnect the Stripe MCP to the Phloz account via
-Claude Code settings. Then re-run the tier-product provisioning flow
-(create Products + monthly/annual/extra-seat Prices for Pro/Growth/
-Business/Scale → paste IDs into `packages/billing/src/tiers.ts`).
+**Related:** Stripe API version bumped to `2026-03-25.dahlia` (the
+version the user selected in the Stripe dashboard) + Stripe SDK
+upgraded to `^22.0.2` to match.
 
 ---
 
@@ -147,20 +138,33 @@ policy file and the INFO finding will clear naturally.
 
 ---
 
-## 2026-04-23: Supabase service role key + DATABASE_URL not in `.env.local`
+## 2026-04-23: Supabase service role key + DATABASE_URL — RESOLVED
 
-**Description:** Public keys are captured (anon JWT + `sb_publishable_*`
-from MCP), but the service role key and the direct Postgres connection
-string still need to be pasted by the user from the Supabase dashboard.
+**Description:** Service role key + DATABASE_URL needed to be pasted
+into `.env.local` from the Supabase dashboard.
 
-**Impact:** Can't run server-side code that needs RLS bypass (seed
-script, webhook handlers, Inngest jobs) until the values are present.
+**Resolution (2026-04-23):** User confirmed both are now in
+`apps/app/.env.local` + Vercel env vars. They're using the new
+`sb_secret_*` prefixed format (which supabase-js auto-detects) in
+`SUPABASE_SERVICE_ROLE_KEY`. JWT signing migrated from legacy HS256
+to ECC P-256 per the Supabase 2026 recommendation.
 
-**Workaround:** All code uses `requireEnv()` at call time, so the app
-boots without them. Anything requiring RLS bypass will throw
-`Required env var SUPABASE_SERVICE_ROLE_KEY is not set` when invoked.
+---
 
-**Planned fix:** User pastes into `.env.local`:
-- `SUPABASE_SERVICE_ROLE_KEY` — from Project Settings → API
-- `DATABASE_URL` — from Project Settings → Database → Connection string
-  → URI (prefer the transaction pooler port 6543 for serverless)
+## 2026-04-23: shadcn primitives — partial library shipped
+
+**Description:** Step 7 shipped a lean set of primitives (Button,
+Input, Label, Card, Badge, Skeleton, Separator) without pulling in
+Radix. The NEXT-STEPS list also mentioned dialog, dropdown-menu,
+form, select, sheet, sonner, tabs, tooltip, avatar.
+
+**Impact:** Routes that need a dialog / dropdown / etc. will hit a
+missing primitive when Steps 8/9 build them.
+
+**Workaround:** N/A — add per-route. Classic shadcn workflow: install
+the Radix dep (`@radix-ui/react-dialog` etc.) + copy the primitive
+source into `packages/ui/src/primitives/` + export from the barrel.
+
+**Planned fix:** Add primitives on demand during Step 8 (marketing
+site) and Step 9 (product app). Each one is ~50 LOC + 1 Radix dep and
+takes 5 minutes.
