@@ -21,7 +21,7 @@
     "@phloz/tracking-map": "workspace:*",
     "@phloz/types": "workspace:*",
     "@phloz/ui": "workspace:*",
-    "drizzle-orm": "^0.36.3",
+    "drizzle-orm": "^0.45.2",
     "lucide-react": "^0.462.0",
     "nanoid": "^5.0.8",
     "next": "^16.0.0",
