@@ -17,7 +17,7 @@ import {
   type NodeChange,
   useReactFlow,
 } from '@xyflow/react';
-import { LayoutGrid } from 'lucide-react';
+import { Download, LayoutGrid, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { EdgeType, HealthStatus, NodeType } from '@phloz/config';
@@ -31,6 +31,10 @@ import { AddNodeMenu } from './add-node-menu';
 import { PhlozMapNode, type PhlozNode, type PhlozNodeData } from './custom-node';
 import { autoLayout } from './layout';
 import { NodeDrawer } from './node-drawer';
+import { NodeSearchDialog } from './search';
+
+export { NodeSearchDialog } from './search';
+export type { PhlozNode, PhlozNodeData } from './custom-node';
 
 type CanvasAction =
   | {
@@ -89,6 +93,8 @@ export function TrackingMapCanvas(props: TrackingMapCanvasProps) {
   );
 }
 
+const SOFT_NODE_CAP = 200;
+
 function CanvasInner({
   clientId,
   workspaceId,
@@ -96,7 +102,7 @@ function CanvasInner({
   onAction,
   readOnly,
 }: TrackingMapCanvasProps) {
-  const { fitView, screenToFlowPosition } = useReactFlow();
+  const { fitView, screenToFlowPosition, setCenter, getNode } = useReactFlow();
   const [nodes, setNodes] = useState<PhlozNode[]>(() =>
     initial.nodes.map((n) => toRfNode(n)),
   );
@@ -106,6 +112,8 @@ function CanvasInner({
   const [drawer, setDrawer] = useState<{ open: true; node: PhlozNodeData } | { open: false }>({
     open: false,
   });
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
 
   // Keep a ref to throttle position autosaves per-node.
   const positionSaveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -335,6 +343,83 @@ function CanvasInner({
     [],
   );
 
+  // Global keyboard shortcuts. Ignore if focus is inside a form input so
+  // typing "n" in a metadata field doesn't open the add-node menu.
+  useEffect(() => {
+    if (readOnly) return;
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        setAddMenuOpen(true);
+      } else if (e.key === '/' || (e.key === 'k' && (e.metaKey || e.ctrlKey))) {
+        e.preventDefault();
+        setSearchOpen(true);
+      } else if (e.key === 'Escape') {
+        setDrawer({ open: false });
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [readOnly]);
+
+  function handleExportJson() {
+    const payload = {
+      workspaceId,
+      clientId,
+      exportedAt: new Date().toISOString(),
+      nodes: nodes.map((n) => ({
+        id: n.data.dbId,
+        nodeType: n.data.nodeType,
+        label: n.data.label,
+        healthStatus: n.data.healthStatus,
+        lastVerifiedAt: n.data.lastVerifiedAt,
+        position: n.position,
+        metadata: n.data.metadata,
+      })),
+      edges: edges.map((e) => ({
+        id: e.id,
+        sourceNodeId: e.source,
+        targetNodeId: e.target,
+        label: typeof e.label === 'string' ? e.label : null,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tracking-map-${clientId}-${new Date()
+      .toISOString()
+      .slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function handleSearchPick(nodeId: string) {
+    const n = getNode(nodeId);
+    if (!n) return;
+    setCenter(n.position.x + 120, n.position.y + 40, {
+      zoom: 1.2,
+      duration: 350,
+    });
+    setDrawer({ open: true, node: n.data as PhlozNodeData });
+  }
+
   const nodeTypes = useMemo(() => NODE_TYPES, []);
 
   return (
@@ -373,13 +458,53 @@ function CanvasInner({
         />
         {!readOnly && (
           <Panel position="top-left">
-            <div className="flex items-center gap-2 rounded-md border border-border bg-card/80 p-1 backdrop-blur-sm">
-              <AddNodeMenu onPick={handleAddNode} />
-              <Button size="sm" variant="ghost" onClick={handleArrange} className="gap-1.5">
+            <div className="flex items-center gap-1 rounded-md border border-border bg-card/80 p-1 backdrop-blur-sm">
+              <AddNodeMenu
+                onPick={handleAddNode}
+                open={addMenuOpen}
+                onOpenChange={setAddMenuOpen}
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleArrange}
+                className="gap-1.5"
+                title="Auto-layout (dagre)"
+              >
                 <LayoutGrid className="size-3.5" /> Arrange
               </Button>
-              <div className="pl-2 pr-1 text-xs text-muted-foreground">
-                {nodes.length} node{nodes.length === 1 ? '' : 's'} · {edges.length} edge{edges.length === 1 ? '' : 's'}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSearchOpen(true)}
+                className="gap-1.5"
+                title="Search nodes ( / )"
+              >
+                <Search className="size-3.5" /> Search
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleExportJson}
+                className="gap-1.5"
+                title="Export map JSON"
+              >
+                <Download className="size-3.5" /> Export
+              </Button>
+              <div
+                className={`pl-2 pr-1 text-xs ${
+                  nodes.length >= SOFT_NODE_CAP
+                    ? 'text-[var(--color-warning)]'
+                    : 'text-muted-foreground'
+                }`}
+                title={
+                  nodes.length >= SOFT_NODE_CAP
+                    ? `Soft cap of ${SOFT_NODE_CAP} reached — contact support if you need to raise it`
+                    : undefined
+                }
+              >
+                {nodes.length} node{nodes.length === 1 ? '' : 's'} ·{' '}
+                {edges.length} edge{edges.length === 1 ? '' : 's'}
               </div>
             </div>
           </Panel>
@@ -391,6 +516,13 @@ function CanvasInner({
         onClose={() => setDrawer({ open: false })}
         onSave={handleDrawerSave}
         onDelete={handleDrawerDelete}
+      />
+
+      <NodeSearchDialog
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        nodes={nodes}
+        onSelect={handleSearchPick}
       />
 
       {/* Hidden context so the component doesn't warn about unused

@@ -98,9 +98,25 @@ export default async function ClientMapPage({
             Tracking map
           </h1>
         </div>
-        <div className="text-xs text-muted-foreground">
-          Drag to position · click a node to edit · draw from the right
-          handle to connect
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>Drag to position · click to edit · handle drag = connect</span>
+          <span className="hidden md:inline" aria-hidden>
+            ·
+          </span>
+          <span className="hidden md:inline">
+            <kbd className="rounded border border-border bg-card px-1 text-[10px]">
+              n
+            </kbd>{' '}
+            add ·{' '}
+            <kbd className="rounded border border-border bg-card px-1 text-[10px]">
+              /
+            </kbd>{' '}
+            search ·{' '}
+            <kbd className="rounded border border-border bg-card px-1 text-[10px]">
+              del
+            </kbd>{' '}
+            remove
+          </span>
         </div>
       </header>
 

@@ -23,10 +23,19 @@ import { listNodeTypeDescriptors } from '../node-types/registry';
  */
 export function AddNodeMenu({
   onPick,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   onPick: (type: NodeType) => void;
+  open?: boolean;
+  onOpenChange?: (o: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
 
   const grouped = useMemo(() => {
     const all = listNodeTypeDescriptors();
