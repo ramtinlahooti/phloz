@@ -1,4 +1,4 @@
-import { count, eq } from 'drizzle-orm';
+import { and, count, eq, inArray } from 'drizzle-orm';
 import Link from 'next/link';
 
 import { getActiveClientCount, getTier } from '@phloz/billing';
@@ -19,7 +19,7 @@ export default async function WorkspaceOverviewPage({
   const { workspace: workspaceId } = await params;
   const db = getDb();
 
-  const [workspace, activeClientCount, totalTasks, memberCount] = await Promise.all([
+  const [workspace, activeClientCount, openTaskCount, memberCount] = await Promise.all([
     db
       .select()
       .from(schema.workspaces)
@@ -30,7 +30,12 @@ export default async function WorkspaceOverviewPage({
     db
       .select({ c: count() })
       .from(schema.tasks)
-      .where(eq(schema.tasks.workspaceId, workspaceId))
+      .where(
+        and(
+          eq(schema.tasks.workspaceId, workspaceId),
+          inArray(schema.tasks.status, ['todo', 'in_progress', 'blocked']),
+        ),
+      )
       .then((rows) => rows[0]?.c ?? 0),
     db
       .select({ c: count() })
@@ -84,7 +89,7 @@ export default async function WorkspaceOverviewPage({
               Open tasks
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-3xl font-semibold">{totalTasks}</CardContent>
+          <CardContent className="text-3xl font-semibold">{openTaskCount}</CardContent>
         </Card>
         <Card>
           <CardHeader>

@@ -1,7 +1,13 @@
-import { and, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+import type {
+  Department,
+  TaskPriority,
+  TaskStatus,
+  TaskVisibility,
+} from '@phloz/config';
 import { getDb, schema } from '@phloz/db/client';
 import {
   Badge,
@@ -17,6 +23,9 @@ import {
 
 import { buildAppMetadata } from '@/lib/metadata';
 
+import { NewTaskDialog } from '../../tasks/new-task-dialog';
+import { TaskRow, type TaskRowModel } from '../../tasks/task-row';
+
 export const metadata = buildAppMetadata({ title: 'Client' });
 
 type RouteParams = { workspace: string; clientId: string };
@@ -29,19 +38,46 @@ export default async function ClientDetailPage({
   const { workspace: workspaceId, clientId } = await params;
   const db = getDb();
 
-  const client = await db
-    .select()
-    .from(schema.clients)
-    .where(
-      and(
-        eq(schema.clients.id, clientId),
-        eq(schema.clients.workspaceId, workspaceId),
-      ),
-    )
-    .limit(1)
-    .then((rows) => rows[0]);
+  const [client, clientTasks] = await Promise.all([
+    db
+      .select()
+      .from(schema.clients)
+      .where(
+        and(
+          eq(schema.clients.id, clientId),
+          eq(schema.clients.workspaceId, workspaceId),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0]),
+    db
+      .select()
+      .from(schema.tasks)
+      .where(
+        and(
+          eq(schema.tasks.workspaceId, workspaceId),
+          eq(schema.tasks.clientId, clientId),
+        ),
+      )
+      .orderBy(desc(schema.tasks.priority), asc(schema.tasks.dueDate)),
+  ]);
 
   if (!client) notFound();
+
+  const tasksAsRows: TaskRowModel[] = clientTasks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    status: t.status as TaskStatus,
+    priority: t.priority as TaskPriority,
+    department: t.department as Department,
+    visibility: t.visibility as TaskVisibility,
+    dueDate: t.dueDate,
+    clientId: t.clientId,
+    clientName: client.name,
+  }));
+  const openTasks = tasksAsRows.filter(
+    (t) => t.status !== 'done' && t.status !== 'archived',
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -100,13 +136,35 @@ export default async function ClientDetailPage({
               </Card>
             </TabsContent>
 
-            <TabsContent value="tasks" className="mt-6">
-              <Card>
-                <CardContent className="p-6 text-sm text-muted-foreground">
-                  Tasks for this client will appear here. (V1 MVP — full
-                  task board ships in a follow-up session.)
-                </CardContent>
-              </Card>
+            <TabsContent value="tasks" className="mt-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  {tasksAsRows.length} total · {openTasks.length} open
+                </p>
+                <NewTaskDialog workspaceId={workspaceId} clientId={clientId} />
+              </div>
+              {tasksAsRows.length === 0 ? (
+                <Card>
+                  <CardContent className="p-8 text-sm text-muted-foreground">
+                    No tasks yet. Add one to start tracking work for this
+                    client.
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardContent className="p-0">
+                    <ul className="divide-y divide-border/60">
+                      {tasksAsRows.map((task) => (
+                        <TaskRow
+                          key={task.id}
+                          workspaceId={workspaceId}
+                          task={task}
+                        />
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
 
             <TabsContent value="messages" className="mt-6">
