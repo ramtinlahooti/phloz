@@ -1,39 +1,29 @@
-import { EventSchemas, Inngest } from 'inngest';
+import { Inngest } from 'inngest';
 
 /**
- * Strongly-typed Inngest event catalog. Add new events here first —
- * the `functions/` directory reads these types for `event.data` shape.
+ * Event catalog. Names are `<domain>/<action>`; data shapes are
+ * enforced at the call site (server actions + route handlers) via Zod
+ * where it matters, rather than through Inngest's typed event catalog.
  *
- * Naming: `<domain>/<action>`. Keep verbs in past tense where it fits
- * ("workspace/client-added") and imperative when the event triggers work
- * ("billing/recompute-active-clients").
+ * Inngest v4 moved strict event typing to per-trigger schemas via
+ * `eventType()` — we opt out of that for now because our events are
+ * narrow and runtime validation already lives in `@phloz/config` /
+ * per-module Zod schemas.
  */
-type Events = {
-  'workspace/created': {
-    data: { workspaceId: string; ownerUserId: string };
-  };
-  'workspace/client-added': {
-    data: { workspaceId: string; clientId: string };
-  };
-  'billing/recompute-active-clients': {
-    data: { workspaceId?: string };
-  };
-  'billing/trial-ending': {
-    data: { workspaceId: string; daysLeft: number };
-  };
-  'stripe/subscription-updated': {
-    data: { workspaceId: string; subscriptionId: string; status: string };
-  };
-};
+export const INNGEST_EVENT_NAMES = [
+  'workspace/created',
+  'workspace/client-added',
+  'billing/recompute-active-clients',
+  'billing/trial-ending',
+  'stripe/subscription-updated',
+] as const;
+export type PhlozInngestEventName = (typeof INNGEST_EVENT_NAMES)[number];
 
 /**
- * Singleton Inngest client. `signingKey` only required in production —
- * local dev uses the `inngest dev` relay without a key.
+ * Singleton Inngest client. `INNGEST_SIGNING_KEY` and
+ * `INNGEST_EVENT_KEY` are read from the environment automatically in
+ * v4; no need to wire them through the constructor.
  */
 export const inngest = new Inngest({
   id: 'phloz',
-  schemas: new EventSchemas().fromRecord<Events>(),
-  eventKey: process.env.INNGEST_EVENT_KEY,
 });
-
-export type PhlozInngestEvents = Events;

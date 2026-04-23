@@ -23,8 +23,9 @@ export const sendTrialEndingReminder = inngest.createFunction(
     id: 'send-trial-ending-reminder',
     name: 'Send trial-ending reminder (daily)',
     retries: 2,
+    // 15:00 UTC = mid-morning Pacific
+    triggers: [{ cron: 'TZ=UTC 0 15 * * *' }],
   },
-  [{ cron: 'TZ=UTC 0 15 * * *' }], // 15:00 UTC = mid-morning Pacific
   async ({ step }) => {
     if (!isStripeConfigured()) {
       return { skipped: true, reason: 'stripe_not_configured' };

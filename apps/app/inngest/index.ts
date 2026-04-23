@@ -9,8 +9,8 @@ import { onClientAdded, onWorkspaceCreated } from './functions/on-workspace-crea
 import { recomputeActiveClientCount } from './functions/recompute-active-client-count';
 import { sendTrialEndingReminder } from './functions/send-trial-ending-reminder';
 
-export { inngest } from './client';
-export type { PhlozInngestEvents } from './client';
+export { inngest, INNGEST_EVENT_NAMES } from './client';
+export type { PhlozInngestEventName } from './client';
 
 export const inngestFunctions = [
   recomputeActiveClientCount,

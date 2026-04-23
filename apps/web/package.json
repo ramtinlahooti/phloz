@@ -15,7 +15,7 @@
     "@phloz/billing": "workspace:*",
     "@phloz/config": "workspace:*",
     "@phloz/ui": "workspace:*",
-    "@sentry/nextjs": "^8.42.0",
+    "@sentry/nextjs": "^10.50.0",
     "gray-matter": "^4.0.3",
     "next": "^16.0.0",
     "next-mdx-remote": "^5.0.0",

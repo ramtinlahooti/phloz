@@ -27,10 +27,10 @@ export const onWorkspaceCreated = inngest.createFunction(
     id: 'on-workspace-created',
     name: 'Workspace created — seed defaults',
     retries: 2,
+    triggers: [{ event: 'workspace/created' }],
   },
-  [{ event: 'workspace/created' }],
   async ({ event, step }) => {
-    const { workspaceId } = event.data;
+    const { workspaceId } = (event?.data ?? {}) as { workspaceId: string };
 
     // V2 hook: seed tracking-map template + demo client here.
     // For now the function is a no-op beyond echoing the workspace id,
@@ -50,10 +50,13 @@ export const onClientAdded = inngest.createFunction(
     id: 'on-client-added-provision-inbound',
     name: 'Provision inbound email address for new client',
     retries: 2,
+    triggers: [{ event: 'workspace/client-added' }],
   },
-  [{ event: 'workspace/client-added' }],
   async ({ event, step }) => {
-    const { workspaceId, clientId } = event.data;
+    const { workspaceId, clientId } = (event?.data ?? {}) as {
+      workspaceId: string;
+      clientId: string;
+    };
     const db = getDb();
 
     const address = `client-${inboundLocalPart()}@${INBOUND_DOMAIN}`;

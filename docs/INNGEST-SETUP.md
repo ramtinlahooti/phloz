@@ -91,6 +91,9 @@ Event emission points already wired:
 | `INNGEST_EVENT_KEY` | Inngest dashboard → Events → Event Key |
 | `INNGEST_SIGNING_KEY` | Inngest dashboard → Apps → the Phloz app → Signing Key |
 
+Inngest v4 reads both automatically from the environment — no
+explicit wiring in `client.ts` or `serve()`.
+
 ### Registering the app
 
 After the first deploy with `INNGEST_SIGNING_KEY` set, open the Inngest

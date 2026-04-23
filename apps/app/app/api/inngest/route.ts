@@ -12,8 +12,9 @@ import { inngest, inngestFunctions } from '@/inngest';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
+// v4: `INNGEST_SIGNING_KEY` is read from the environment automatically
+// — no need to pass it here.
 export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: [...inngestFunctions],
-  signingKey: process.env.INNGEST_SIGNING_KEY,
 });

@@ -22,19 +22,20 @@ export const recomputeActiveClientCount = inngest.createFunction(
     name: 'Recompute active-client counts (nightly)',
     concurrency: { limit: 4 },
     retries: 2,
+    triggers: [
+      { cron: 'TZ=UTC 0 9 * * *' },
+      { event: 'billing/recompute-active-clients' },
+    ],
   },
-  [
-    { cron: 'TZ=UTC 0 9 * * *' },
-    { event: 'billing/recompute-active-clients' },
-  ],
   async ({ event, step }) => {
     const db = getDb();
 
     // Either run for one workspace (manual trigger) or every workspace
     // (cron trigger with no event data).
+    const eventData = (event?.data ?? {}) as { workspaceId?: string };
     const targetedWorkspaceId =
-      event.name === 'billing/recompute-active-clients'
-        ? event.data.workspaceId
+      event?.name === 'billing/recompute-active-clients'
+        ? eventData.workspaceId
         : undefined;
 
     const workspaces = await step.run('load-workspaces', async () => {
