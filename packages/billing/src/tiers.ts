@@ -50,9 +50,10 @@ export const TIERS: Record<TierName, TierConfig> = {
     extraSeatPriceUsd: 9.99,
     monthlyPriceUsd: 29.99,
     annualPriceUsd: 299.99,
-    monthlyStripePriceId: null, // TODO: wire Stripe IDs on first provisioning
-    annualStripePriceId: null,
-    extraSeatStripePriceId: null,
+    // Stripe sandbox (acct_1RXbVlPomvpsIeGO) — product prod_UOFldR2CCkSDqS
+    monthlyStripePriceId: 'price_1TPTGNPomvpsIeGOPCm3bWjE',
+    annualStripePriceId: 'price_1TPTGQPomvpsIeGOS9CCvxgp',
+    extraSeatStripePriceId: 'price_1TPTGTPomvpsIeGOLEQ7YUHz',
     public: true,
   },
   growth: {
@@ -63,9 +64,10 @@ export const TIERS: Record<TierName, TierConfig> = {
     extraSeatPriceUsd: 9.99,
     monthlyPriceUsd: 59.99,
     annualPriceUsd: 599.99,
-    monthlyStripePriceId: null,
-    annualStripePriceId: null,
-    extraSeatStripePriceId: null,
+    // Stripe sandbox — product prod_UOFlJvP0zTegxV
+    monthlyStripePriceId: 'price_1TPTGWPomvpsIeGO51I6kbXN',
+    annualStripePriceId: 'price_1TPTGZPomvpsIeGOnUDvByqs',
+    extraSeatStripePriceId: 'price_1TPTGdPomvpsIeGObbDRlBd3',
     public: true,
   },
   business: {
@@ -76,9 +78,10 @@ export const TIERS: Record<TierName, TierConfig> = {
     extraSeatPriceUsd: 7.99,
     monthlyPriceUsd: 149.99,
     annualPriceUsd: 1499.99,
-    monthlyStripePriceId: null,
-    annualStripePriceId: null,
-    extraSeatStripePriceId: null,
+    // Stripe sandbox — product prod_UOFl7RRqfyEmce
+    monthlyStripePriceId: 'price_1TPTGgPomvpsIeGO4c372DGA',
+    annualStripePriceId: 'price_1TPTGjPomvpsIeGO2HDfoF6c',
+    extraSeatStripePriceId: 'price_1TPTGmPomvpsIeGOWUjOl91X',
     public: true,
   },
   scale: {
@@ -89,9 +92,10 @@ export const TIERS: Record<TierName, TierConfig> = {
     extraSeatPriceUsd: 5.99,
     monthlyPriceUsd: 299.99,
     annualPriceUsd: 2999.99,
-    monthlyStripePriceId: null,
-    annualStripePriceId: null,
-    extraSeatStripePriceId: null,
+    // Stripe sandbox — product prod_UOFlG1UTSfSyGe
+    monthlyStripePriceId: 'price_1TPTGpPomvpsIeGOHpKjuvM0',
+    annualStripePriceId: 'price_1TPTGsPomvpsIeGOuOxL39d0',
+    extraSeatStripePriceId: 'price_1TPTGvPomvpsIeGO4pp4ZDXI',
     public: true,
   },
   enterprise: {
