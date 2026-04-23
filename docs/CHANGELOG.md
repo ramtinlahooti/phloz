@@ -4,6 +4,50 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Prompt 2 — tracking-map editor
+
+### `@phloz/tracking-map` — fleshed out from scaffold
+
+- **21 node-type descriptors** across 8 categories (analytics,
+  tag-management, server, paid-media, commerce, email, crm, other).
+  Each pairs a Zod metadata schema with an icon + accent colour +
+  `defaults()` factory.
+- **React Flow canvas** (`"use client"`) — custom Phloz node with
+  icon, label, health dot, last-verified-ago, left/right handles.
+  MiniMap + Controls + dotted Background + Phloz dark theme.
+- **Add-node dropdown** grouped by category.
+- **"Arrange" button** runs dagre LR auto-layout.
+- **Right drawer** (shadcn `Sheet`) edits label + Zod-driven metadata
+  form (string / number / boolean / enum / string-array) + health
+  state + "Save + mark verified".
+- **Optimistic CRUD** with tempId → real-id swap on server confirm.
+  Position autosave debounced at 500ms.
+- `readOnly` mode gates all writes.
+
+### `apps/app`
+
+- Route `/[workspace]/clients/[clientId]/map/` loads nodes + edges
+  and renders the canvas.
+- `actions.ts` — five server actions (createNode / updateNode /
+  deleteNode / createEdge / deleteEdge) gated via `requireRole(['owner','admin','member'])`
+  and validated per-type against the registry's Zod schema.
+- `map-client.tsx` binds actions to the canvas so the page stays a
+  server component.
+- Client detail page's "Tracking map" tab now links to the editor.
+- `next.config.ts` adds `@xyflow/react` to `transpilePackages`.
+
+### Deps added
+
+- `@phloz/tracking-map` → `@dagrejs/dagre`, `@phloz/ui`, `clsx`,
+  `lucide-react`. Subpath exports: `./canvas`, `./layout`, `./styles`.
+
+### Verified
+
+- `pnpm check` — 29/29 green across 11 packages.
+- `next build` (`apps/app`) — 30 routes compile (29 + the new map).
+
+---
+
 ## 2026-04-23 — Phase 1 Steps 10–13 (Inngest, observability, CI, deploy)
 
 ### Step 10 — Inngest
