@@ -121,11 +121,18 @@ export default async function ClientDetailPage({
 
             <TabsContent value="map" className="mt-6">
               <Card>
-                <CardContent className="p-6 text-sm text-muted-foreground">
-                  The tracking infrastructure map ships in Prompt 2 (see
-                  docs/ROADMAP.md). For now you can add GA4 properties,
-                  pixels, and conversion actions manually once that session
-                  lands.
+                <CardContent className="p-6 text-sm">
+                  <p className="text-muted-foreground">
+                    The tracking infrastructure map is a typed graph of every
+                    GA4 property, GTM container, pixel, audience, and
+                    conversion owned by this client.
+                  </p>
+                  <Link
+                    href={`/${workspaceId}/clients/${clientId}/map`}
+                    className="mt-4 inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-accent"
+                  >
+                    Open tracking map →
+                  </Link>
                 </CardContent>
               </Card>
             </TabsContent>

@@ -1,0 +1,432 @@
+'use client';
+
+import {
+  addEdge,
+  applyEdgeChanges,
+  applyNodeChanges,
+  Background,
+  BackgroundVariant,
+  Controls,
+  MiniMap,
+  Panel,
+  ReactFlow,
+  ReactFlowProvider,
+  type Connection,
+  type Edge,
+  type EdgeChange,
+  type NodeChange,
+  useReactFlow,
+} from '@xyflow/react';
+import { LayoutGrid } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import type { EdgeType, HealthStatus, NodeType } from '@phloz/config';
+import { Button, toast } from '@phloz/ui';
+
+import '../node-types';
+import { getNodeTypeDescriptor } from '../node-types/registry';
+import type { TrackingEdgeDto, TrackingMapSnapshot, TrackingNodeDto } from '../types';
+
+import { AddNodeMenu } from './add-node-menu';
+import { PhlozMapNode, type PhlozNode, type PhlozNodeData } from './custom-node';
+import { autoLayout } from './layout';
+import { NodeDrawer } from './node-drawer';
+
+type CanvasAction =
+  | {
+      kind: 'create-node';
+      payload: {
+        tempId: string;
+        nodeType: NodeType;
+        label: string;
+        metadata: Record<string, unknown>;
+        position: { x: number; y: number };
+      };
+    }
+  | {
+      kind: 'update-node';
+      payload: {
+        id: string;
+        label?: string;
+        metadata?: Record<string, unknown>;
+        healthStatus?: HealthStatus;
+        position?: { x: number; y: number };
+        markVerified?: boolean;
+      };
+    }
+  | { kind: 'delete-node'; payload: { id: string } }
+  | {
+      kind: 'create-edge';
+      payload: {
+        tempId: string;
+        sourceNodeId: string;
+        targetNodeId: string;
+        edgeType: EdgeType;
+      };
+    }
+  | { kind: 'delete-edge'; payload: { id: string } };
+
+export type CanvasActionHandler = (
+  action: CanvasAction,
+) => Promise<{ ok: true; replacementId?: string } | { ok: false; error: string }>;
+
+export type TrackingMapCanvasProps = {
+  clientId: string;
+  workspaceId: string;
+  initial: TrackingMapSnapshot;
+  onAction: CanvasActionHandler;
+  /** Read-only mode — still interactive (pan/zoom) but no writes. */
+  readOnly?: boolean;
+};
+
+const NODE_TYPES = { phloz: PhlozMapNode };
+
+export function TrackingMapCanvas(props: TrackingMapCanvasProps) {
+  return (
+    <ReactFlowProvider>
+      <CanvasInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function CanvasInner({
+  clientId,
+  workspaceId,
+  initial,
+  onAction,
+  readOnly,
+}: TrackingMapCanvasProps) {
+  const { fitView, screenToFlowPosition } = useReactFlow();
+  const [nodes, setNodes] = useState<PhlozNode[]>(() =>
+    initial.nodes.map((n) => toRfNode(n)),
+  );
+  const [edges, setEdges] = useState<Edge[]>(() =>
+    initial.edges.map((e) => toRfEdge(e)),
+  );
+  const [drawer, setDrawer] = useState<{ open: true; node: PhlozNodeData } | { open: false }>({
+    open: false,
+  });
+
+  // Keep a ref to throttle position autosaves per-node.
+  const positionSaveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      setNodes((current) => {
+        const next = applyNodeChanges(changes, current) as PhlozNode[];
+
+        if (!readOnly) {
+          for (const change of changes) {
+            if (change.type === 'position' && change.dragging === false) {
+              const moved = next.find((n) => n.id === change.id);
+              if (moved) schedulePositionSave(moved);
+            }
+          }
+        }
+
+        return next;
+      });
+    },
+    [readOnly],
+  );
+
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      setEdges((current) => {
+        const next = applyEdgeChanges(changes, current);
+        if (!readOnly) {
+          for (const change of changes) {
+            if (change.type === 'remove') {
+              void persistEdgeDelete(change.id);
+            }
+          }
+        }
+        return next;
+      });
+    },
+    [readOnly],
+  );
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      if (readOnly) return;
+      const tempId = `tmp-edge-${Math.random().toString(36).slice(2, 10)}`;
+      const optimistic: Edge = {
+        id: tempId,
+        source: connection.source!,
+        target: connection.target!,
+        type: 'default',
+        data: { edgeType: 'custom' satisfies EdgeType },
+      };
+      setEdges((c) => addEdge(optimistic, c));
+      void (async () => {
+        const result = await onAction({
+          kind: 'create-edge',
+          payload: {
+            tempId,
+            sourceNodeId: connection.source!,
+            targetNodeId: connection.target!,
+            edgeType: 'custom',
+          },
+        });
+        if (!result.ok) {
+          toast.error(result.error);
+          setEdges((c) => c.filter((e) => e.id !== tempId));
+          return;
+        }
+        if (result.replacementId) {
+          setEdges((c) =>
+            c.map((e) =>
+              e.id === tempId ? { ...e, id: result.replacementId! } : e,
+            ),
+          );
+        }
+      })();
+    },
+    [onAction, readOnly],
+  );
+
+  function schedulePositionSave(node: PhlozNode) {
+    const existing = positionSaveTimers.current.get(node.id);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      void onAction({
+        kind: 'update-node',
+        payload: {
+          id: node.data.dbId,
+          position: { x: node.position.x, y: node.position.y },
+        },
+      });
+      positionSaveTimers.current.delete(node.id);
+    }, 500);
+    positionSaveTimers.current.set(node.id, timer);
+  }
+
+  async function persistEdgeDelete(id: string) {
+    if (id.startsWith('tmp-edge-')) return;
+    const result = await onAction({ kind: 'delete-edge', payload: { id } });
+    if (!result.ok) toast.error(result.error);
+  }
+
+  async function handleAddNode(type: NodeType) {
+    const descriptor = getNodeTypeDescriptor(type);
+    const tempId = `tmp-node-${Math.random().toString(36).slice(2, 10)}`;
+    // Drop somewhere visible — center of the current viewport.
+    const position = screenToFlowPosition({
+      x: window.innerWidth / 2 - 100,
+      y: window.innerHeight / 2 - 80,
+    });
+    const data: PhlozNodeData = {
+      label: descriptor.label,
+      nodeType: type,
+      healthStatus: 'unverified',
+      lastVerifiedAt: null,
+      metadata: descriptor.defaults(),
+      dbId: tempId,
+    };
+
+    const optimistic: PhlozNode = {
+      id: tempId,
+      type: 'phloz',
+      data,
+      position,
+    };
+    setNodes((c) => [...c, optimistic]);
+
+    const result = await onAction({
+      kind: 'create-node',
+      payload: {
+        tempId,
+        nodeType: type,
+        label: descriptor.label,
+        metadata: descriptor.defaults(),
+        position,
+      },
+    });
+    if (!result.ok) {
+      toast.error(result.error);
+      setNodes((c) => c.filter((n) => n.id !== tempId));
+      return;
+    }
+    if (result.replacementId) {
+      const realId = result.replacementId;
+      setNodes((c) =>
+        c.map((n) =>
+          n.id === tempId
+            ? { ...n, id: realId, data: { ...n.data, dbId: realId } }
+            : n,
+        ),
+      );
+      // Open the drawer on the newly-created node so the user can fill
+      // in fields right away.
+      setDrawer({ open: true, node: { ...data, dbId: realId } });
+    } else {
+      setDrawer({ open: true, node: data });
+    }
+  }
+
+  async function handleDrawerSave(update: {
+    id: string;
+    label: string;
+    metadata: Record<string, unknown>;
+    healthStatus: HealthStatus;
+    markVerified: boolean;
+  }) {
+    const result = await onAction({
+      kind: 'update-node',
+      payload: update,
+    });
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    const verifiedAt = update.markVerified ? new Date() : undefined;
+    setNodes((c) =>
+      c.map((n) =>
+        n.data.dbId === update.id
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                label: update.label,
+                metadata: update.metadata,
+                healthStatus: update.healthStatus,
+                ...(verifiedAt ? { lastVerifiedAt: verifiedAt } : {}),
+              },
+            }
+          : n,
+      ),
+    );
+    toast.success('Saved');
+  }
+
+  async function handleDrawerDelete(id: string) {
+    const result = await onAction({ kind: 'delete-node', payload: { id } });
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    setNodes((c) => c.filter((n) => n.data.dbId !== id));
+    setEdges((c) => c.filter((e) => {
+      const src = nodes.find((n) => n.id === e.source);
+      const tgt = nodes.find((n) => n.id === e.target);
+      return src?.data.dbId !== id && tgt?.data.dbId !== id;
+    }));
+    toast.success('Deleted');
+  }
+
+  function handleArrange() {
+    const laidOut = autoLayout(nodes, edges);
+    const typed = laidOut.nodes as PhlozNode[];
+    setNodes(typed);
+    setEdges(laidOut.edges);
+    // Autosave each new position.
+    for (const n of typed) {
+      schedulePositionSave(n);
+    }
+    setTimeout(() => fitView({ duration: 400, padding: 0.2 }), 50);
+  }
+
+  // Clean up pending debounces on unmount.
+  useEffect(
+    () => () => {
+      for (const t of positionSaveTimers.current.values()) clearTimeout(t);
+    },
+    [],
+  );
+
+  const nodeTypes = useMemo(() => NODE_TYPES, []);
+
+  return (
+    <div className="relative size-full min-h-[520px]">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onNodeClick={(_, node) => {
+          setDrawer({ open: true, node: node.data as PhlozNodeData });
+        }}
+        fitView
+        fitViewOptions={{ padding: 0.2 }}
+        minZoom={0.2}
+        maxZoom={1.5}
+        proOptions={{ hideAttribution: true }}
+        nodesDraggable={!readOnly}
+        nodesConnectable={!readOnly}
+        edgesFocusable={!readOnly}
+      >
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={24}
+          size={1}
+          color="var(--color-border)"
+        />
+        <Controls className="!shadow-md" />
+        <MiniMap
+          pannable
+          zoomable
+          nodeColor={() => 'var(--color-primary)'}
+          maskColor="rgba(0,0,0,0.6)"
+        />
+        {!readOnly && (
+          <Panel position="top-left">
+            <div className="flex items-center gap-2 rounded-md border border-border bg-card/80 p-1 backdrop-blur-sm">
+              <AddNodeMenu onPick={handleAddNode} />
+              <Button size="sm" variant="ghost" onClick={handleArrange} className="gap-1.5">
+                <LayoutGrid className="size-3.5" /> Arrange
+              </Button>
+              <div className="pl-2 pr-1 text-xs text-muted-foreground">
+                {nodes.length} node{nodes.length === 1 ? '' : 's'} · {edges.length} edge{edges.length === 1 ? '' : 's'}
+              </div>
+            </div>
+          </Panel>
+        )}
+      </ReactFlow>
+
+      <NodeDrawer
+        state={drawer}
+        onClose={() => setDrawer({ open: false })}
+        onSave={handleDrawerSave}
+        onDelete={handleDrawerDelete}
+      />
+
+      {/* Hidden context so the component doesn't warn about unused
+          workspaceId/clientId — they're passed as data attributes so
+          server-action callers can read them if needed. */}
+      <div
+        className="hidden"
+        data-workspace-id={workspaceId}
+        data-client-id={clientId}
+      />
+    </div>
+  );
+}
+
+function toRfNode(dto: TrackingNodeDto): PhlozNode {
+  return {
+    id: dto.id,
+    type: 'phloz',
+    position: dto.position ?? { x: 0, y: 0 },
+    data: {
+      label: dto.label,
+      nodeType: dto.nodeType,
+      healthStatus: dto.healthStatus,
+      lastVerifiedAt: dto.lastVerifiedAt,
+      metadata: dto.metadata,
+      dbId: dto.id,
+    },
+  };
+}
+
+function toRfEdge(dto: TrackingEdgeDto): Edge {
+  return {
+    id: dto.id,
+    source: dto.sourceNodeId,
+    target: dto.targetNodeId,
+    label: dto.label ?? undefined,
+    data: { edgeType: dto.edgeType },
+  };
+}

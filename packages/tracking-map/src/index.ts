@@ -1,4 +1,13 @@
-// Scaffold: real content lands in Prompt 2 / Phase 2 (Tracking Map phase).
-// Public API will include React Flow node/edge components, a Zod-validated
-// node-type registry, and canvas helpers (layout, search, keyboard).
-export const PACKAGE_NAME = '@phloz/tracking-map';
+/**
+ * `@phloz/tracking-map` public API.
+ *
+ * - `./` (this barrel) — types, health helpers, node-type descriptors
+ *   (registering them on import). Pure — safe from server contexts.
+ * - `./canvas` — React Flow canvas component (client-only, dynamic-import
+ *   it from Next pages to keep the server bundle small).
+ * - `./layout` — dagre auto-layout helper (pure, usable from tests).
+ * - `./styles` — React Flow base CSS + Phloz overrides.
+ */
+export * from './types';
+export * from './health';
+export * from './node-types';

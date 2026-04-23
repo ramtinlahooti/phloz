@@ -5,20 +5,28 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./node-types": "./src/node-types/index.ts"
+    "./node-types": "./src/node-types/index.ts",
+    "./canvas": "./src/canvas/index.tsx",
+    "./layout": "./src/canvas/layout.ts",
+    "./styles": "./src/canvas/styles.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint src"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^1.1.4",
     "@phloz/config": "workspace:*",
     "@phloz/types": "workspace:*",
+    "@phloz/ui": "workspace:*",
     "@xyflow/react": "^12.3.5",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.462.0",
     "react": "^19.0.0-rc-69d4b800-20241021",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "typescript": "^5.6.3"
   }

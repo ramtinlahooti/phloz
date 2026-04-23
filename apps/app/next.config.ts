@@ -13,6 +13,7 @@ const nextConfig: NextConfig = {
     '@phloz/tracking-map',
     '@phloz/types',
     '@phloz/ui',
+    '@xyflow/react',
   ],
 
   compiler: {
