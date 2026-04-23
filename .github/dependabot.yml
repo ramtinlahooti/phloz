@@ -1,0 +1,46 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+      day: monday
+      time: '09:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      # Keep Next + React on the same upgrade cadence.
+      next:
+        patterns:
+          - 'next'
+          - 'next-*'
+          - '@next/*'
+          - 'react'
+          - 'react-*'
+          - '@types/react*'
+      # Radix, sonner, lucide move in lockstep as ui-layer bumps.
+      ui:
+        patterns:
+          - '@radix-ui/*'
+          - 'sonner'
+          - 'lucide-react'
+          - 'class-variance-authority'
+          - 'clsx'
+          - 'tailwind-merge'
+          - 'tailwindcss*'
+      # One group for every infra dep so we see them together.
+      infra:
+        patterns:
+          - 'drizzle-*'
+          - '@supabase/*'
+          - 'stripe'
+          - '@sentry/*'
+          - 'inngest*'
+          - 'resend'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

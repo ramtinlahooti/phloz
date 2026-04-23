@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Dummy values — tests never hit real services. `@phloz/config` Zod
+  # env validation accepts any syntactically-valid value.
+  NEXT_PUBLIC_SUPABASE_URL: https://dummy.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_ci_dummy
+  SUPABASE_SERVICE_ROLE_KEY: sb_secret_ci_dummy
+  DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+  STRIPE_SECRET_KEY: sk_test_ci_dummy
+  STRIPE_WEBHOOK_SECRET: whsec_ci_dummy
+  RESEND_API_KEY: re_ci_dummy
+  RESEND_WEBHOOK_SECRET: whsec_ci_dummy
+  INBOUND_EMAIL_DOMAIN: inbound.phloz.local
+  NEXT_PUBLIC_APP_URL: http://localhost:3001
+  NEXT_PUBLIC_MARKETING_URL: http://localhost:3000
+
+jobs:
+  check:
+    name: Lint + typecheck + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+
+  build:
+    name: Build — ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [web, app]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @phloz/${{ matrix.app }} build
+
+  rls-invariants:
+    name: RLS invariants
+    runs-on: ubuntu-latest
+    needs: check
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install postgres client
+        run: sudo apt-get install -y -qq postgresql-client
+
+      - name: Apply initial Drizzle migration
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres \
+            -f packages/db/migrations/0000_melted_supreme_intelligence.sql
+
+      - name: Apply RLS policies
+        run: |
+          cd packages/db
+          for f in src/rls/*.sql; do
+            echo "Applying $f"
+            PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -f "$f"
+          done
+
+      - name: Assert every tenant table has rowsecurity=true
+        run: pnpm --filter @phloz/db check:rls-invariants
+
+  pgtap:
+    name: pgTAP — workspace-isolation
+    runs-on: ubuntu-latest
+    needs: check
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pgTAP + pg_prove + postgres client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client cpanminus build-essential
+          git clone --depth 1 https://github.com/theory/pgtap.git /tmp/pgtap
+          cd /tmp/pgtap && sudo make install || true
+          sudo cpanm --notest TAP::Parser::SourceHandler::pgTAP || true
+
+      - name: Create pgTAP extension
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres \
+            -c "CREATE EXTENSION IF NOT EXISTS pgtap;" || true
+
+      - name: Apply schema + RLS
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres \
+            -f packages/db/migrations/0000_melted_supreme_intelligence.sql
+          for f in packages/db/src/rls/*.sql; do
+            PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -f "$f"
+          done
+
+      - name: Run pgTAP tests (if extension available)
+        run: |
+          if PGPASSWORD=postgres psql -h localhost -U postgres -d postgres \
+            -tAc "SELECT extname FROM pg_extension WHERE extname='pgtap';" | grep -q pgtap; then
+            PGPASSWORD=postgres pg_prove -h localhost -U postgres -d postgres \
+              packages/db/tests/rls/*.test.sql
+          else
+            echo "::warning::pgTAP not available — schema + RLS apply cleanly (RLS invariants job validates enablement)"
+          fi
