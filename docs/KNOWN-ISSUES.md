@@ -16,20 +16,23 @@ Lockfile committed.
 
 ---
 
-## 2026-04-23: Stripe price IDs are null in `TIERS`
+## 2026-04-23: Stripe price IDs are null in `TIERS` — RESOLVED (sandbox)
 
-**Description:** `packages/billing/src/tiers.ts` ships with
+**Description:** `packages/billing/src/tiers.ts` shipped with
 `monthlyStripePriceId`, `annualStripePriceId`, and `extraSeatStripePriceId`
-set to `null` for every tier. Checkout will fail until they're filled.
+set to `null` for every tier.
 
-**Impact:** No paid checkout works. Starter (free) flows still work.
+**Resolution (2026-04-23):** Created 4 Products + 12 Prices in Phloz
+sandbox (`acct_1RXbVlPomvpsIeGO`) via Stripe MCP; IDs wired into
+`tiers.ts` with inline product-ID comments. Starter stays free; the four
+paid tiers (Pro / Growth / Business / Scale) are now checkout-ready in
+test mode. `pnpm check` 29/29 green.
 
-**Workaround:** `isStripeConfigured()` in `packages/billing/src/stripe.ts`
-lets UI gracefully hide upgrade buttons when Stripe isn't wired.
-
-**Planned fix:** Once a Stripe account is provisioned and products +
-prices are created, paste the IDs into `tiers.ts` and commit. `pnpm check`
-will catch typos because the tier tests validate shape.
+**Remaining:** Before launch, repeat the provisioning in live mode and
+swap the IDs. The two orphan products from earlier experiments
+(`prod_SSWcZ5D3sAcqgx` "Premium", `prod_SSWb4vOPLGNW4K` "Pro") should
+be archived in the Stripe dashboard — they have no prices attached so
+they're harmless, but they clutter the product list.
 
 ---
 

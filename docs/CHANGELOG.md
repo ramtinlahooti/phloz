@@ -4,6 +4,35 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Stripe sandbox products + prices wired
+
+### Added
+
+- 4 Stripe Products in Phloz sandbox (`acct_1RXbVlPomvpsIeGO`):
+  - `prod_UOFldR2CCkSDqS` — Phloz Pro (10 clients, 5 seats)
+  - `prod_UOFlJvP0zTegxV` — Phloz Growth (30 clients, 8 seats)
+  - `prod_UOFl7RRqfyEmce` — Phloz Business (100 clients, 15 seats)
+  - `prod_UOFlG1UTSfSyGe` — Phloz Scale (250 clients, 30 seats)
+- 12 recurring Prices (monthly + annual + extra-seat-monthly per tier,
+  USD). Amounts match ARCHITECTURE.md §7.1.
+- Price IDs wired into `packages/billing/src/tiers.ts` with inline
+  product-ID comments for traceability.
+
+### Verified
+
+- `pnpm check` — 29/29 green. All 24 billing tests still pass against
+  the real IDs.
+
+### Notes
+
+- Two orphan products from earlier experiments (`prod_SSWcZ5D3sAcqgx`
+  "Premium", `prod_SSWb4vOPLGNW4K` "Pro", both with no prices) remain
+  in the sandbox and should be archived via the Stripe dashboard.
+- Live-mode prices will be created in Step 13 (deployment) and swapped
+  in before launch.
+
+---
+
 ## 2026-04-23 — Phase 1 Steps 5–7 (email, analytics, ui)
 
 ### Step 5 — `packages/email`
