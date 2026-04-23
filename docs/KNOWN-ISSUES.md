@@ -64,22 +64,18 @@ apply migrations + RLS, then `pg_prove` the tests.
 
 ---
 
-## 2026-04-23: Custom Access Token hook — PARTIAL
+## 2026-04-23: Custom Access Token hook — RESOLVED
 
 **Description:** The SQL function `public.phloz_custom_access_token_hook`
-is installed in Supabase (confirmed via MCP migration), but enabling it
-is still a Supabase dashboard action (Authentication → Hooks → Custom
-Access Token → select `public.phloz_custom_access_token_hook`).
+is installed in Supabase, and enabling it required a Supabase
+dashboard action (Authentication → Hooks → Custom Access Token).
 
-**Impact:** `active_workspace_id` won't appear in JWT claims until the
-dashboard toggle is flipped.
-
-**Workaround:** Server code reads `user_metadata.active_workspace_id`
-directly, which works without the hook.
-
-**Planned fix:** One-time dashboard click. `function_search_path_mutable`
-advisor warning has been resolved (`SET search_path = public, auth`
-applied 2026-04-23).
+**Resolution (2026-04-23):** User flipped the Enable toggle in the
+dashboard. Hook now wired — schema `public`, function
+`phloz_custom_access_token_hook`, with the canonical grant execute +
+revoke from authenticated/anon/public SQL applied automatically.
+Verification of the actual JWT claim injection deferred until Step 9
+ships a sign-up flow; tracked in Step 9's checklist.
 
 ---
 

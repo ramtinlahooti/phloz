@@ -4,6 +4,78 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Phase 1 Step 8 (apps/web marketing site)
+
+### Added — 49 static pages
+
+Core scaffold:
+- `apps/web/next.config.ts`, `tsconfig.json`, `postcss.config.mjs`,
+  `next-env.d.ts` — Next 16 + Tailwind v4 + MDX pipeline wired.
+- `app/layout.tsx` — root layout with Geist fonts (from
+  `@phloz/ui/fonts`), GTM script (container `GTM-W3MGZ8V7` default),
+  Organization JSON-LD, sticky header + footer.
+- `app/globals.css` — imports shared `@phloz/ui/styles/globals.css`
+  plus a lean `.phloz-prose` rule set for MDX blog content (avoids
+  `@tailwindcss/typography` dep).
+- `components/site-header.tsx`, `components/site-footer.tsx`,
+  `components/gtm.tsx`.
+- `lib/site-config.ts` — one source of truth for URLs, nav, footer,
+  and programmatic-SEO registries (competitors, use cases,
+  departments, integrations).
+- `lib/metadata.ts` — `buildMetadata()` helper enforcing canonical
+  URLs, OG, Twitter card, robots, and site-wide JSON-LD.
+
+Static pages:
+- `/` home (hero + 6 features grid + CTA, SoftwareApplication JSON-LD)
+- `/features`, `/pricing` (reads `TIERS` from `@phloz/billing`),
+  `/about`, `/contact`, `/help`
+- `/legal/terms`, `/legal/privacy` — draft placeholders (flagged
+  in-copy; counsel review scheduled before first customer).
+
+Blog — MDX via `next-mdx-remote/rsc` + `gray-matter` + `remark-gfm` +
+`rehype-slug` + `rehype-autolink-headings`:
+- `lib/blog.ts` — frontmatter Zod-validated.
+- `/blog` index + `/blog/[slug]` with Article JSON-LD + reading time.
+- 3 seed posts: `why-we-built-phloz`, `tracking-infrastructure-map`,
+  `per-active-client-pricing`.
+
+Programmatic SEO (all use `generateStaticParams` from
+`site-config.ts`):
+- `/compare/[competitor]` × 10 (HubSpot, Monday, ClickUp, Asana,
+  Notion, Teamwork, Productive, Rocketlane, Function Point, Accelo).
+- `/use-cases/[slug]` × 4.
+- `/crm-for/[slug]` × 8 departments (ppc, seo, social-media, cro,
+  web-design, performance-marketing, ecommerce, b2b).
+- `/integrations` index + `/integrations/[slug]` × 9 tools (with
+  V1/V2 blurbs per integration).
+
+SEO infrastructure:
+- `app/robots.ts` via `MetadataRoute.Robots`.
+- `app/sitemap.ts` — auto-includes every registry slug + every blog
+  post slug. Add a slug to `site-config.ts` → sitemap updates.
+- `app/llms.txt/route.ts` — categorized index per the llmstxt.org
+  spec, 1-hour revalidate.
+
+### Dependencies added (apps/web)
+
+- `@phloz/billing`, `gray-matter`, `next-mdx-remote`, `reading-time`,
+  `rehype-autolink-headings`, `rehype-slug`, `remark-gfm`.
+- `@tailwindcss/postcss` (dev).
+
+### Verified
+
+- `pnpm check` — 29/29 green across 11 packages.
+- `pnpm --filter @phloz/web build` — 49 static pages generated in
+  2.6s, 0 errors.
+
+### Next
+
+Step 9 — `apps/app` product (auth, dashboard, portal, API routes).
+This is the biggest session on the roadmap (6-8h). Can be paused
+after Step 8 for the user to QA the marketing site in dev / preview.
+
+---
+
 ## 2026-04-23 — Stripe sandbox products + prices wired
 
 ### Added
