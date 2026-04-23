@@ -22,7 +22,7 @@
     "@phloz/config": "workspace:*",
     "@phloz/db": "workspace:*",
     "@phloz/types": "workspace:*",
-    "@supabase/ssr": "^0.5.2",
+    "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.46.1",
     "nanoid": "^5.0.8",
     "zod": "^3.23.8"
