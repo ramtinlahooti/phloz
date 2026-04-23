@@ -1,89 +1,81 @@
-# Next Steps (as of 2026-04-23, post-Prompt-2)
+# Next Steps (as of 2026-04-23, post-tasks-module)
 
-Phase 1 scaffold is done and **Prompt 2 — the tracking-map editor — has
-shipped**. The canvas is wired end-to-end: 21 node types with Zod
-metadata schemas, React Flow canvas, drawer-based editor, dagre
-auto-layout, and five server actions with role gates.
+Recent shipped:
+- **Dep upgrade** — Sentry 10, Drizzle 0.45, Inngest 4 (breaking API
+  migrated in-session).
+- **Tracking-map polish** — keyboard shortcuts, node search, JSON
+  export, 200-node soft cap.
+- **Tasks module** — workspace-wide view with filter pills, per-client
+  tab, optimistic status toggles, new-task dialog with department /
+  priority / visibility / due date / client select.
 
-`pnpm check` → 29/29 green. `apps/app` `next build` → 30 routes.
+`pnpm check` → 29/29 green. `apps/app` → 30 routes. All committed.
 
 ---
 
 ## Ramtin's actions (optional)
 
+### Vercel re-deploy
+
+The dep-upgrade commit should unblock the Vercel build. If it
+re-surfaces the same drift, double-check that your project's install
+command is `pnpm install --frozen-lockfile` (it is, per each app's
+`vercel.json`).
+
 ### Kick the tires
 
-1. `pnpm --filter @phloz/app dev`
-2. Visit `http://localhost:3001`, sign up, onboard, add a client.
-3. Open the client detail page → Tracking map tab → "Open tracking map".
-4. Add a few nodes (GA4 property, GTM container, Meta pixel), fill the
-   metadata form, drag to position, connect with edges, click "Arrange".
-5. Flag anything that feels wrong.
-
-### Production wire-up (whenever you want to launch)
-
-Follow `docs/DEPLOYMENT.md`:
-
-1. Two Vercel projects (`phloz-web`, `phloz-app`).
-2. Stripe webhook endpoint in the sandbox.
-3. Resend domain verification (`docs/DNS-SETUP.md`).
-4. Inngest app at `app.phloz.com/api/inngest`.
-5. (Optional) Sentry, PostHog, GA4.
+1. `pnpm --filter @phloz/app dev`.
+2. Open a client → Tasks tab → **New task** → create.
+3. Toggle status via the row's status icon dropdown.
+4. Set a due date in the past to see the Overdue badge.
+5. On `/{workspace}/tasks`, try the filter pills (department + status).
+6. Open the tracking map → press `n` → pick a type → press `/` to
+   search → `Esc` to close the drawer → click Export.
 
 ---
 
-## Features worth building next (pick what matters)
+## Feature sessions worth queueing
 
-**A. Map polish (continues from Prompt 2)**
-- Edge-type picker (currently defaults to `custom`) in the connect
-  interaction.
-- Edge labels + inline delete.
-- Import / export map JSON.
-- Keyboard shortcuts (`n`, `c`, `del`, `/`) per ARCHITECTURE §8.1.
-- 200-node soft cap warning.
+**A. Messages module**
+- Unified inbox pulling from `messages` (inbound + outbound).
+- Per-client thread UI grouped by `thread_id`.
+- Compose + reply UI via Resend.
 
-**B. Tasks module**
-- Per-client task board + list + timeline.
-- Workspace-wide tasks page (currently a stub) with tier/department/
-  status filters.
-- Approvals (`task.visibility = client_visible`, client portal sees +
-  can comment).
+**B. Portal fleshout**
+- Portal dashboard with tasks (`visibility = client_visible`),
+  messages, assets — today `/portal/[token]` only shows a landing.
+- `portalAccess` toggle per client contact.
 
-**C. Messages module**
-- Unified inbox pulling from the `messages` table.
-- Per-client thread UI (grouped by `thread_id`).
-- Compose + reply UI (outbound via Resend).
-
-**D. Portal fleshout**
-- Portal dashboard (tasks, messages, assets) past the current
-  landing placeholder.
-- Per-contact `portalAccess` toggle in the CRM.
-
-**E. File uploads**
+**C. File uploads**
 - Supabase Storage bucket per workspace.
 - `client_assets` upload + list UI.
 
-**F. Tests and skills**
-- pgTAP tests for tracking-nodes/edges RLS invariants.
+**D. Edge polish for the tracking map**
+- Edge-type picker at connect time (currently defaults to `custom`).
+- Editable edge labels.
+- JSON import (pair with the export we just shipped).
+
+**E. Tests + skills**
+- pgTAP for tracking-nodes/edges RLS invariants.
 - Vitest for tracking-map pure helpers (`autoLayout`,
-  `formatLastVerified`, each Zod schema).
-- Playwright smoke for signup → onboarding → add client → add map node.
+  `formatLastVerified`, per-descriptor Zod).
+- Vitest for tasks actions (mocked DB).
+- Playwright smoke: signup → onboarding → add client → add task →
+  add map node.
 - `skills/phloz-tracking-map/SKILL.md` explaining the registry +
   adding a new node type.
 
----
-
-## Prompt 2 — what's intentionally deferred
-
-Covered by **A** above. The canvas MVP is opinionated enough that
-agencies can model their tracking stack today; the polish items make
-it feel as crisp as the rest of the product.
+**F. UX polish**
+- Breadcrumb nav on deep client pages.
+- Global ⌘K to switch workspaces / jump to client / find task.
+- Empty-state copy across the app.
 
 ---
 
 ## Accounts / provisioning
 
 - ✅ GitHub, Supabase, GTM, Stripe sandbox.
-- ⏳ Vercel, Resend, Inngest, PostHog, Sentry, GA4.
+- ⏳ Vercel (follow `docs/DEPLOYMENT.md`), Resend domain, Inngest
+  account, PostHog, Sentry, GA4.
 
 All ⏳ items are optional for local dev.

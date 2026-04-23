@@ -4,6 +4,63 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Post-Prompt-2 (deps, map polish, tasks module)
+
+### Dependency upgrade — local === Vercel
+
+Vercel's install was resolving to newer majors than our caret ranges
+allowed, so local tests ran against one version and prod got another.
+Upgraded locally to match:
+
+- `@sentry/nextjs` 8 → 10 — transparent.
+- `drizzle-orm` 0.36 → 0.45 — transparent.
+- `inngest` 3 → 4 — breaking. Ported: dropped `EventSchemas` /
+  `fromRecord()` for a flat `INNGEST_EVENT_NAMES` tuple; moved
+  triggers into `createFunction` options (v4 went 3-arg → 2-arg);
+  dropped `signingKey` from `serve()` (v4 reads env vars automatically).
+
+### Tracking-map polish
+
+- Keyboard shortcuts: `n` opens add-node menu, `/` (or `⌘K`) opens
+  node search, `Esc` closes the drawer. All ignored when focus is
+  inside an input.
+- `NodeSearchDialog` — shadcn Dialog that filters nodes by label or
+  type. Selecting a node centers it in the viewport and opens the
+  editor drawer.
+- `AddNodeMenu` — controlled `open` / `onOpenChange` so the keyboard
+  handler can drive it.
+- **Export JSON** toolbar button downloads a timestamped snapshot.
+- Soft 200-node cap indicator (warning colour + tooltip).
+- Map-page header now shows the three keyboard shortcuts inline.
+
+### Tasks module
+
+Server actions (`apps/app/app/[workspace]/tasks/actions.ts`):
+- `createTaskAction`, `updateTaskAction`, `deleteTaskAction` — each
+  Zod-validated, role-gated (owner/admin/member), revalidates the
+  affected paths.
+
+UI:
+- `NewTaskDialog` (reused from workspace + per-client) — shadcn Dialog
+  + react-hook-form + Zod. Fields: title, description, priority,
+  department, visibility, due date, optional client.
+- `TaskRow` — status toggle dropdown with optimistic update +
+  rollback, priority colour-coded, overdue + client-visible badges,
+  delete inside the same dropdown.
+- `/[workspace]/tasks` — grouped by status (todo / in_progress /
+  blocked / done) with filter pills for departments + statuses.
+- Per-client tasks tab (`/[workspace]/clients/[clientId]`) reuses
+  TaskRow + NewTaskDialog.
+- Workspace overview card shows **open** task count (todo +
+  in_progress + blocked) instead of total.
+
+### Verified
+
+- `pnpm check` — 29/29 green across 11 packages.
+- `next build` (`apps/app`) — 30 routes compile.
+
+---
+
 ## 2026-04-23 — Prompt 2 — tracking-map editor
 
 ### `@phloz/tracking-map` — fleshed out from scaffold
