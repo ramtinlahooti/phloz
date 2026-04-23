@@ -18,7 +18,7 @@
     "@sentry/nextjs": "^10.50.0",
     "gray-matter": "^4.0.3",
     "next": "^16.0.0",
-    "next-mdx-remote": "^5.0.0",
+    "next-mdx-remote": "^6.0.0",
     "react": "^19.0.0-rc-69d4b800-20241021",
     "react-dom": "^19.0.0-rc-69d4b800-20241021",
     "reading-time": "^1.5.0",
@@ -30,8 +30,8 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0-beta.3",
     "@types/node": "^22.9.0",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "eslint-config-next": "^16.0.0",
     "tailwindcss": "^4.0.0-beta.3",
     "typescript": "^5.6.3"
