@@ -1,95 +1,95 @@
-# Next Steps (as of 2026-04-23, post-Step-8)
+# Next Steps (as of 2026-04-23, post-Step-9)
 
 Ordered by priority. Each bullet is a concrete action for the next session.
 
-## Ramtin's optional actions (all non-blocking)
+## Ramtin's optional actions (non-blocking)
 
-1. **QA the marketing site locally.** Run `pnpm --filter @phloz/web dev`
-   and browse `http://localhost:3000`. Check: home, pricing, blog, one
-   `/compare/*`, one `/use-cases/*`, one `/crm-for/*`, sitemap.xml,
-   robots.txt, llms.txt. If anything feels wrong, flag it before Step 9
-   and I'll fix it there.
+1. **QA the product app locally.** Run `pnpm --filter @phloz/app dev`
+   and browse `http://localhost:3001`. Flow:
+   - / → redirects to /login
+   - /signup → create an account with a real email (confirmation flow
+     needs Resend DNS or you can grab the confirmation link from
+     Supabase dashboard)
+   - /onboarding → name the workspace
+   - /[workspace] → you should land on the dashboard
+   - Try: add a client, invite a teammate, visit /billing
+   Flag anything that feels wrong.
 
-2. **Archive the two orphan Stripe products** (`Phloz - Premium`,
-   old `Phloz - Pro`). You said you already deleted them — if so, skip.
+2. **Verify Resend domains** when you're ready to send real emails. See
+   `docs/DNS-SETUP.md`. Until then, invitations + password resets
+   log-only in dev.
 
-3. **Verify the phloz.com DNS + Resend domain** when you're ready for
-   emails to actually send. See `docs/DNS-SETUP.md` for the exact
-   records. Can wait until Step 9 ships the inbound webhook route.
+3. **Provision PostHog + Sentry + GA4** if you want production analytics
+   live. Without keys, `track()` calls no-op gracefully.
 
-4. **Provision PostHog + Sentry + GA4 accounts** when you want those
-   live. Until then, `track()` calls no-op gracefully and the product
-   works fine.
+## Claude's next sessions
 
-## Claude's next session
+### Step 10 — Inngest (2-3h)
 
-**Step 9 — `apps/app` product.** The biggest piece on the roadmap.
-6-8 hours of focused work. Includes:
+- `apps/app/inngest/` client + function registry.
+- `recomputeActiveClientCount` nightly job (ARCHITECTURE §7.2).
+- `sendTrialEndingReminder` (3-day-before trigger).
+- Inngest webhook route at `/api/inngest` (serve + introspection).
+- Local dev instructions in `docs/INNGEST-SETUP.md`.
 
-- **Auth routes:** `/login`, `/signup`, `/forgot-password`,
-  `/magic-link`, `/auth/callback`. Email + password + magic link.
-- **Onboarding:** create first workspace, invite teammates,
-  add first client.
-- **Dashboard shell:** `/[workspace]/...` with sidebar, header,
-  workspace switcher (calls `@phloz/auth` `switchWorkspace`).
-- **Clients list + split-pane detail:** `/[workspace]/clients`,
-  `/[workspace]/clients/[id]`. Notes, tasks, files, messages, map.
-- **Team + billing + settings:** standard workspace admin pages.
-- **Portal routes:** `/portal/[token]/...` (magic-link auth for
-  external client users).
-- **API routes:** Stripe webhook, Resend inbound webhook, workspace
-  switch endpoint, health check.
-- **Middleware:** `@phloz/auth` `updateSession` wired into
-  `apps/app/middleware.ts`.
-- **Shared shadcn primitives** added on-demand (dialog, dropdown,
-  sheet, sonner, tabs, tooltip, avatar, select, popover, form) —
-  install Radix deps per primitive as routes need them.
+### Step 11 — Observability (2h)
 
-Dependencies required for Step 9:
-- `apps/app` needs: `@phloz/analytics`, `@phloz/auth`, `@phloz/billing`,
-  `@phloz/config`, `@phloz/db`, `@phloz/email`, `@phloz/ui`, `zod`,
-  `react-hook-form`, `@hookform/resolvers`, `@tanstack/react-query`
-  (if we want client-side caching), `sonner`, `cmdk`, plus the Radix
-  primitives we use.
+- `@sentry/nextjs` wired into both apps with source-map upload.
+- PostHog client init in `apps/app` root layout.
+- Verify GTM fires on home page (already wired in `apps/web`).
+- Pino for structured server logs (`packages/config/logger.ts`).
 
-## Remaining roadmap after Step 9
+### Step 12 — CI (1-2h)
 
-- **Step 10 — Inngest setup.** `apps/app/inngest/` client + function
-  registry + `recomputeActiveClientCount` nightly function.
-- **Step 11 — Observability.** Sentry + PostHog init, verify GTM fires
-  on home page, pino structured logs in server contexts.
-- **Step 12 — CI.** `.github/workflows/ci.yml` running `pnpm check` on
-  push/PR plus a job that queries `pg_tables.rowsecurity` against
-  every `TENANT_TABLES` entry and runs pgTAP against an ephemeral
-  Supabase container.
-- **Step 13 — Deployment.** Vercel projects for web + app, env vars,
-  preview deployments wired, custom domains.
-- **Steps 14-17 — Final verification + docs polish.**
+- `.github/workflows/ci.yml`:
+  - `pnpm install --frozen-lockfile`
+  - `pnpm check` (typecheck + lint + unit tests across 11 packages)
+  - RLS invariant job: `pg_tables.rowsecurity = true` for every
+    `TENANT_TABLES` entry against an ephemeral Supabase container.
+  - pgTAP run.
+- Dependabot config for monthly security updates.
 
-> After Step 9, come back to the planning chat (per PROMPT_1 final line)
-> for Prompt 2: the tracking map editor.
+### Step 13 — Deployment (1-2h)
+
+- Vercel projects for `@phloz/web` (phloz.com) and `@phloz/app`
+  (app.phloz.com) linked to this repo.
+- Env vars populated from `.env.example`.
+- Custom domain + TLS.
+- Preview deployments per PR.
+
+### After Step 13 — come back to the planning chat
+
+Per PROMPT_1 final line: "After Step 9, come back to the planning chat
+for Prompt 2: the tracking map editor." That's the canvas UI on top of
+the map primitives already in `packages/tracking-map` + the schema
+already in place.
+
+### Features intentionally stubbed (feature sessions, pick up later)
+
+- Workspace-wide tasks board (boards + timelines + department filters).
+- Unified messages inbox + email thread UI.
+- Client split-pane tabs: tasks, files, messages, approvals.
+- Portal pages past the landing (tasks, approvals, deliverables).
 
 ## Already provisioned / done
 
-- ✅ Supabase — 25 tables + RLS + JWT hook (enabled in dashboard ✅),
-  ECC P-256 JWT signing.
+- ✅ Supabase — 25 tables + RLS + JWT hook enabled + ECC P-256 signing.
 - ✅ GitHub — `ramtinlahooti/phloz`, main tracking origin.
 - ✅ GTM container — `GTM-W3MGZ8V7` wired into `@phloz/analytics` and
   `apps/web` layout.
-- ✅ Stripe — SDK pinned to `^22.0.2` for API `2026-03-25.dahlia`,
-  sandbox products + prices created, IDs wired into `TIERS`.
-- ✅ `packages/config`, `packages/db`, `packages/auth`,
-  `packages/billing`, `packages/email`, `packages/analytics`,
-  `packages/ui` — all shipped and green.
-- ✅ `apps/web` — 49-page marketing site with blog, programmatic SEO,
-  sitemap, robots, llms.txt. Builds cleanly.
-- ✅ Vercel env vars uploaded.
+- ✅ Stripe — SDK `^22.0.2` for API `2026-03-25.dahlia`, 4 sandbox
+  products + 12 prices, IDs in `TIERS`, webhook route with reconcile
+  handlers in `apps/app`.
+- ✅ All 11 packages (config, types, db, auth, billing, email,
+  analytics, ui, tracking-map, web, app) — shipped and green.
+- ✅ `apps/web` — 49-page marketing site (static).
+- ✅ `apps/app` — 28-route product app scaffold (foundation spine).
 
-## Still to provision (non-blocking for Step 9)
+## Still to provision (non-blocking for Steps 10-13)
 
 - Resend — domain verification for `phloz.com` + `inbound.phloz.com`.
 - PostHog project + key.
 - Sentry project + DSN.
 - GA4 Measurement ID + API secret.
-- Stripe live-mode products + prices (before launch, not needed now).
-- shadcn Radix-backed primitives — install per-route during Step 9.
+- Stripe live-mode products + prices (swap before launch).
+- Inngest account + signing keys (Step 10).

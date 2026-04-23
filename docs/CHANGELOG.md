@@ -4,6 +4,85 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Phase 1 Step 9 (apps/app product scaffold)
+
+### Added — `@phloz/ui` primitives
+
+- `Button` gained `asChild` support via `@radix-ui/react-slot`.
+- Ten new Radix-backed primitives: `Dialog`, `DropdownMenu`, `Sheet`,
+  `Tabs`, `Avatar`, `Tooltip`, `Popover`, `Select`, `Toaster` (sonner),
+  `Form` (react-hook-form wrappers).
+- `lucide-react` wired for icons.
+
+### Added — `apps/app`
+
+- **Config:** `next.config.ts` (security headers + transpilePackages),
+  `tsconfig.json`, `postcss.config.mjs`, `globals.css`, Next-16 edge
+  proxy (`proxy.ts`, formerly `middleware.ts`) that refreshes Supabase
+  sessions.
+- **Auth routes** in the `(auth)` group: `/login`, `/signup`,
+  `/forgot-password`, `/reset-password`, plus `/auth/callback` PKCE
+  handler with an open-redirect guard. Password + magic-link in the
+  same login form; email-confirm supported in signup.
+- **Onboarding** (`/onboarding`) — server action creates the
+  workspace + workspace_members row, sets
+  `user_metadata.active_workspace_id`, and redirects to `/[workspace]`.
+- **Dashboard shell** (`/[workspace]/...`) with sidebar nav, workspace
+  switcher, user menu, billing-only-for-admins gating.
+- **Feature pages:** overview (live metrics via
+  `getActiveClientCount`), clients list, `/clients/new` (with
+  `canAddClient` tier gate), client split-pane detail (tabs:
+  overview, tasks, messages, tracking map, files — last four are
+  in-app stubs pointing at upcoming sessions / Prompt 2 for the map
+  editor), tasks, messages, team (with invite card), billing, settings.
+- **Portal** (`/portal/[token]`) — layout validates the magic link on
+  every request, 404s on any failure, so existence vs expiry isn't
+  leaked to guessing clients.
+- **Accept-invite** (`/accept-invite?token=`) flow — validates the
+  token, requires email match, creates membership, marks invitation
+  accepted, switches active workspace.
+- **API routes:**
+  - `POST /api/workspaces/switch`
+  - `PATCH /api/workspaces/[id]` (rename)
+  - `POST /api/workspaces/[id]/clients` (tier-gated via `canAddClient`)
+  - `POST /api/workspaces/[id]/invitations` (writes row + sends email)
+  - `POST /api/workspaces/[id]/billing/checkout` (Stripe Checkout)
+  - `POST /api/workspaces/[id]/billing/portal` (Stripe Billing Portal)
+  - `POST /api/webhooks/stripe` — signature verify + idempotent record
+    + reconcile tier/subscription on checkout/subscription/cancellation.
+    `PRICE_TO_TIER` map uses the 12 sandbox price IDs wired today.
+  - `POST /api/webhooks/resend/inbound` — svix signature verify +
+    `parseResendInbound` + route via `inbound_email_addresses` into a
+    `messages` row.
+  - `GET /api/health` — db round-trip.
+
+### Changed
+
+- `@phloz/auth` package.json exports expanded to surface `./middleware`,
+  `./session`, `./roles`, `./workspace-switch` subpaths.
+- `apps/app/package.json` gained `drizzle-orm`, `@hookform/resolvers`,
+  `lucide-react`, `nanoid`, `react-hook-form`, `sonner`, `stripe`,
+  `@tailwindcss/postcss`.
+
+### Stubbed for later sessions
+
+These exist as navigable pages with copy explaining what's coming:
+
+- Workspace-wide tasks board (boards + timelines).
+- Unified messages inbox.
+- Tracking infrastructure map (deferred to **Prompt 2**).
+- Client split-pane sub-tabs (tasks per client, file uploads, message
+  thread UI).
+- Client-portal pages past `/portal/[token]` (tasks, approvals,
+  deliverables).
+
+### Verified
+
+- `pnpm check` — 29/29 green across 11 packages.
+- `next build` (apps/app) — 28 routes compile cleanly.
+
+---
+
 ## 2026-04-23 — Phase 1 Step 8 (apps/web marketing site)
 
 ### Added — 49 static pages
