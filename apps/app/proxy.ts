@@ -12,7 +12,11 @@ import { updateSession } from '@phloz/auth/middleware';
  * if there's no session.
  */
 export default async function proxy(request: NextRequest) {
-  return updateSession(request);
+  // updateSession returns `{ response, user }` — the proxy only needs
+  // the response (a NextResponse with refreshed Supabase cookies).
+  // Page-level `requireUser()` handles actual auth enforcement.
+  const { response } = await updateSession(request);
+  return response;
 }
 
 export const config = {
