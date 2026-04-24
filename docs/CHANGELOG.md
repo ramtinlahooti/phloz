@@ -4,6 +4,54 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Env-var fix + approvals + breadcrumbs
+
+### `@phloz/config` env.ts fix
+
+Wrapped the Zod schema in a top-level `z.preprocess` that rewrites
+`''` to `undefined` for every key before validation. Fixes the
+runtime crash where placeholder lines like `NEXT_PUBLIC_SENTRY_DSN=`
+in `.env.local` tripped `.url().optional()` — empty string failed
+URL validation because `optional()` only tolerates `undefined`, not
+`''`. Two regression tests pin the behaviour.
+
+### Approvals on client-visible tasks
+
+- `APPROVAL_STATES` enum in `@phloz/config` (none / pending /
+  approved / rejected / needs_changes).
+- Supabase migration `tasks_approval_state` (applied via MCP) adds
+  `approvalState`, `approvalComment`, `approvalUpdatedAt` columns
+  with a check constraint + index.
+- **Agency** — `setTaskApprovalAction` toggles between `none` ↔
+  `pending` on client-visible tasks. Terminal states are reserved
+  for the client.
+- **Portal** — `setClientApprovalAction` in
+  `apps/app/app/portal/[token]/actions.ts` authenticates via
+  magic-link token (no Supabase user), scopes to the link's
+  workspace + client, accepts only approved / rejected /
+  needs_changes + optional comment.
+- **UI** — `TaskRow` shows a colour-coded approval badge (amber /
+  green / red / orange) and a dropdown toggle to Request / Reset.
+  New `PortalTaskCard` on the portal renders Approve / Request
+  changes / Reject buttons when state is `pending`. Reject and
+  needs-changes open an inline textarea for an optional comment;
+  comments render as an italic blockquote on both sides.
+
+### Breadcrumbs
+
+- New `Breadcrumbs` component in `@phloz/ui/components`. Terminal
+  item renders as text with `aria-current="page"`; intermediate
+  items are links with hover state.
+- Applied on three deep pages: client detail, map (3-level chain),
+  new-client. Replaces one-link "← back" navs.
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `next build` (`apps/app`) — compiles cleanly.
+
+---
+
 ## 2026-04-23 — Map edge polish + file uploads
 
 ### Tracking-map edge polish
