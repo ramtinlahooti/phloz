@@ -524,3 +524,194 @@ export async function importMapAction(
     };
   }).catch((err: Error): ImportResult => ({ ok: false, error: err.message }));
 }
+
+// --- seed starter nodes ------------------------------------------------
+
+/**
+ * Starter kit for an agency's first tracking map. Six common nodes +
+ * five canonical edges — the "this is how a basic funnel looks"
+ * starting point. Positions are fixed so the layout makes sense
+ * without running dagre.
+ *
+ * Deliberately includes Meta Pixel + Meta CAPI together so the audit
+ * engine doesn't immediately flag `meta-pixel-no-capi` on day one.
+ * Users who want to see the audit catch something can delete the
+ * CAPI node themselves.
+ *
+ * Each node's metadata comes from the node-type descriptor's
+ * `defaults()` — often empty-but-structurally-valid placeholders that
+ * the user fills in through the drawer.
+ */
+type StarterKey =
+  | 'website'
+  | 'gtm'
+  | 'ga4'
+  | 'pixel'
+  | 'capi'
+  | 'ads';
+
+const STARTER_NODES: Array<{
+  key: StarterKey;
+  nodeType: NodeType;
+  label: string;
+  position: { x: number; y: number };
+}> = [
+  {
+    key: 'website',
+    nodeType: 'website',
+    label: 'Main website',
+    position: { x: 0, y: 200 },
+  },
+  {
+    key: 'gtm',
+    nodeType: 'gtm_container',
+    label: 'GTM container',
+    position: { x: 320, y: 200 },
+  },
+  {
+    key: 'ga4',
+    nodeType: 'ga4_property',
+    label: 'GA4 property',
+    position: { x: 640, y: 40 },
+  },
+  {
+    key: 'pixel',
+    nodeType: 'meta_pixel',
+    label: 'Meta Pixel',
+    position: { x: 640, y: 200 },
+  },
+  {
+    key: 'capi',
+    nodeType: 'meta_capi',
+    label: 'Meta Conversions API',
+    position: { x: 960, y: 200 },
+  },
+  {
+    key: 'ads',
+    nodeType: 'google_ads_account',
+    label: 'Google Ads',
+    position: { x: 640, y: 360 },
+  },
+];
+
+const STARTER_EDGES: Array<{
+  sourceKey: StarterKey;
+  targetKey: StarterKey;
+  edgeType: EdgeType;
+}> = [
+  { sourceKey: 'website', targetKey: 'gtm', edgeType: 'uses_data_layer' },
+  { sourceKey: 'gtm', targetKey: 'ga4', edgeType: 'sends_events_to' },
+  { sourceKey: 'gtm', targetKey: 'pixel', edgeType: 'fires_pixel' },
+  {
+    sourceKey: 'pixel',
+    targetKey: 'capi',
+    edgeType: 'sends_server_events_to',
+  },
+  {
+    sourceKey: 'gtm',
+    targetKey: 'ads',
+    edgeType: 'reports_conversions_to',
+  },
+];
+
+const seedStarterSchema = z.object({
+  workspaceId: uuid,
+  clientId: uuid,
+});
+
+export async function seedStarterNodesAction(
+  input: z.infer<typeof seedStarterSchema>,
+): Promise<
+  | { ok: true; nodesInserted: number; edgesInserted: number }
+  | { ok: false; error: string }
+> {
+  const parsed = seedStarterSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.message };
+
+  try {
+    await requireRole(parsed.data.workspaceId, ['owner', 'admin', 'member']);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const user = await requireUser();
+  const db = getDb();
+
+  // Refuse to seed on top of an existing map — prevents accidental
+  // duplication when a user clicks the button twice or hits a stale
+  // empty state.
+  const existingCount = await db
+    .select({ id: schema.trackingNodes.id })
+    .from(schema.trackingNodes)
+    .where(
+      and(
+        eq(schema.trackingNodes.workspaceId, parsed.data.workspaceId),
+        eq(schema.trackingNodes.clientId, parsed.data.clientId),
+      ),
+    )
+    .limit(1);
+  if (existingCount.length > 0) {
+    return {
+      ok: false,
+      error: 'map_not_empty',
+    };
+  }
+
+  type SeedResult =
+    | { ok: true; nodesInserted: number; edgesInserted: number }
+    | { ok: false; error: string };
+
+  return db
+    .transaction<SeedResult>(async (tx) => {
+      const idByKey = new Map<StarterKey, string>();
+
+      for (const n of STARTER_NODES) {
+        const descriptor = getNodeTypeDescriptor(n.nodeType);
+        const [row] = await tx
+          .insert(schema.trackingNodes)
+          .values({
+            workspaceId: parsed.data.workspaceId,
+            clientId: parsed.data.clientId,
+            nodeType: n.nodeType,
+            label: n.label,
+            // Descriptor defaults are structurally valid but typically
+            // contain placeholder strings the user fills in later —
+            // exactly what we want for a starter kit.
+            metadata: descriptor.defaults(),
+            healthStatus: 'unverified',
+            position: n.position,
+            createdBy: user.id,
+          })
+          .returning({ id: schema.trackingNodes.id });
+        if (!row) throw new Error('starter node insert failed');
+        idByKey.set(n.key, row.id);
+      }
+
+      let edgesInserted = 0;
+      for (const e of STARTER_EDGES) {
+        const src = idByKey.get(e.sourceKey);
+        const tgt = idByKey.get(e.targetKey);
+        if (!src || !tgt) continue;
+        await tx.insert(schema.trackingEdges).values({
+          workspaceId: parsed.data.workspaceId,
+          clientId: parsed.data.clientId,
+          sourceNodeId: src,
+          targetNodeId: tgt,
+          edgeType: e.edgeType,
+          label: null,
+          createdBy: user.id,
+        });
+        edgesInserted++;
+      }
+
+      revalidatePath(
+        `/${parsed.data.workspaceId}/clients/${parsed.data.clientId}/map`,
+      );
+      return {
+        ok: true as const,
+        nodesInserted: idByKey.size,
+        edgesInserted,
+      };
+    })
+    .catch((err: Error): SeedResult => ({ ok: false, error: err.message }));
+}

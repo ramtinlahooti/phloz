@@ -47,6 +47,7 @@ import {
   type ContactRow,
 } from './contacts/contacts-panel';
 import { FilesPanel, type AssetRow } from './files/files-panel';
+import { SeedStarterNodesButton } from './map/seed-starter-button';
 import { ApplyTemplateButton } from '../../tasks/apply-template-button';
 import {
   MessageThread,
@@ -648,18 +649,34 @@ export default async function ClientDetailPage({
 
             <TabsContent value="map" className="mt-6">
               <Card>
-                <CardContent className="p-6 text-sm">
+                <CardContent className="space-y-4 p-6 text-sm">
                   <p className="text-muted-foreground">
                     The tracking infrastructure map is a typed graph of every
                     GA4 property, GTM container, pixel, audience, and
                     conversion owned by this client.
                   </p>
-                  <Link
-                    href={`/${workspaceId}/clients/${clientId}/map`}
-                    className="mt-4 inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-accent"
-                  >
-                    Open tracking map →
-                  </Link>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                      href={`/${workspaceId}/clients/${clientId}/map`}
+                      className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-accent"
+                    >
+                      Open tracking map →
+                    </Link>
+                    {trackingNodeRows.length === 0 && (
+                      <SeedStarterNodesButton
+                        workspaceId={workspaceId}
+                        clientId={clientId}
+                        variant="inline"
+                      />
+                    )}
+                  </div>
+                  {trackingNodeRows.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      New client? Seed a starter setup — Website, GTM,
+                      GA4, Meta Pixel + CAPI, Google Ads — in one click.
+                      You&apos;ll fill in the IDs as you go.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

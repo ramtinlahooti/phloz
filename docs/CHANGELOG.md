@@ -4,6 +4,37 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Seed starter tracking nodes (one-click kit)
+
+Turns a blank tracking map into a working demo in one click.
+Pairs with the audit engine: seed → see the map take shape → run
+audit → understand what Phloz does.
+
+Starter kit (6 nodes, 5 edges, pre-laid-out left-to-right):
+- Website → GTM container (uses_data_layer)
+- GTM container → GA4 property (sends_events_to)
+- GTM container → Meta Pixel (fires_pixel)
+- Meta Pixel → Meta CAPI (sends_server_events_to)
+- GTM container → Google Ads (reports_conversions_to)
+
+Deliberately includes Meta CAPI so the audit doesn't greet first-
+time users with `meta-pixel-no-capi` on second one. All health
+statuses = `unverified` — users bump timestamps as they verify.
+
+Implementation:
+- `seedStarterNodesAction` in `map/actions.ts`. Owner/admin/member
+  only. Refuses to seed on top of an existing map (server-
+  enforced via a LIMIT 1 existence check) so double-clicks don't
+  duplicate. All inserts inside a Drizzle transaction.
+- Each node's metadata comes from its descriptor's `defaults()`.
+- `SeedStarterNodesButton` client component — toast + refresh.
+- Mounted on the client-detail Tracking map tab only when
+  `trackingNodeRows.length === 0`.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Sidebar nav badges (Tasks + Messages)
 
 Count badges next to the Tasks and Messages nav items. Visible
