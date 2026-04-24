@@ -27,6 +27,13 @@ import {
 } from '@phloz/ui';
 
 import {
+  auditMap,
+  type Finding,
+  type TrackingEdgeDto,
+  type TrackingNodeDto,
+} from '@phloz/tracking-map';
+
+import {
   HEALTH_COLORS,
   computeClientHealth,
 } from '@/lib/client-health';
@@ -70,7 +77,8 @@ export default async function ClientDetailPage({
     clientContactRows,
     memberRows,
     subtaskRollupRows,
-    nodeHealthRows,
+    trackingNodeRows,
+    trackingEdgeRows,
   ] = await Promise.all([
       db
         .select()
@@ -173,15 +181,28 @@ export default async function ClientDetailPage({
             isNotNull(schema.tasks.parentTaskId),
           ),
         ),
-      // Tracking nodes for this client — feeds the health score + the
-      // "12 nodes (1 broken)" chip in the header.
+      // Tracking nodes for this client — feeds the header health
+      // chip, the right-rail details, AND the Audit tab. We fetch
+      // full rows so the audit engine has enough signal (metadata,
+      // lastVerifiedAt) to run its rules.
       db
-        .select({ healthStatus: schema.trackingNodes.healthStatus })
+        .select()
         .from(schema.trackingNodes)
         .where(
           and(
             eq(schema.trackingNodes.workspaceId, workspaceId),
             eq(schema.trackingNodes.clientId, clientId),
+          ),
+        ),
+      // Edges for this client — used by the audit engine's
+      // orphan-gtm + graph-shape rules.
+      db
+        .select()
+        .from(schema.trackingEdges)
+        .where(
+          and(
+            eq(schema.trackingEdges.workspaceId, workspaceId),
+            eq(schema.trackingEdges.clientId, clientId),
           ),
         ),
     ]);
@@ -324,10 +345,10 @@ export default async function ClientDetailPage({
       (lastOutboundAt === null || m.createdAt > lastOutboundAt),
   ).length;
 
-  const brokenNodeCount = nodeHealthRows.filter(
+  const brokenNodeCount = trackingNodeRows.filter(
     (n) => n.healthStatus === 'broken',
   ).length;
-  const missingNodeCount = nodeHealthRows.filter(
+  const missingNodeCount = trackingNodeRows.filter(
     (n) => n.healthStatus === 'missing',
   ).length;
 
@@ -342,6 +363,40 @@ export default async function ClientDetailPage({
   const healthColors = HEALTH_COLORS[health.tier];
 
   const portalContactsCount = contactRows.filter((c) => c.portalAccess).length;
+
+  // Run the audit engine against this client's map. Cheap — pure
+  // function over already-fetched rows, runs every page render.
+  const auditNodeDtos: TrackingNodeDto[] = trackingNodeRows.map((n) => ({
+    id: n.id,
+    clientId: n.clientId,
+    workspaceId: n.workspaceId,
+    nodeType: n.nodeType,
+    label: n.label,
+    metadata: (n.metadata as Record<string, unknown>) ?? {},
+    healthStatus: n.healthStatus,
+    lastVerifiedAt: n.lastVerifiedAt,
+    position: n.position ?? null,
+  }));
+  const auditEdgeDtos: TrackingEdgeDto[] = trackingEdgeRows.map((e) => ({
+    id: e.id,
+    clientId: e.clientId,
+    workspaceId: e.workspaceId,
+    sourceNodeId: e.sourceNodeId,
+    targetNodeId: e.targetNodeId,
+    edgeType: e.edgeType,
+    label: e.label,
+    metadata: (e.metadata as Record<string, unknown>) ?? {},
+  }));
+  const auditFindings: Finding[] = auditMap({
+    nodes: auditNodeDtos,
+    edges: auditEdgeDtos,
+  });
+  const criticalCount = auditFindings.filter(
+    (f) => f.severity === 'critical',
+  ).length;
+  const warningCount = auditFindings.filter(
+    (f) => f.severity === 'warning',
+  ).length;
 
   return (
     <div className="flex h-full flex-col">
@@ -416,9 +471,9 @@ export default async function ClientDetailPage({
             )}
             <StatChip
               label={
-                nodeHealthRows.length === 1
+                trackingNodeRows.length === 1
                   ? '1 tracking node'
-                  : `${nodeHealthRows.length} tracking nodes`
+                  : `${trackingNodeRows.length} tracking nodes`
               }
               sub={
                 brokenNodeCount + missingNodeCount > 0
@@ -461,6 +516,21 @@ export default async function ClientDetailPage({
               <TabsTrigger value="tasks">Tasks</TabsTrigger>
               <TabsTrigger value="messages">Messages</TabsTrigger>
               <TabsTrigger value="map">Tracking map</TabsTrigger>
+              <TabsTrigger value="audit" className="gap-1.5">
+                Audit
+                {criticalCount + warningCount > 0 && (
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] ${
+                      criticalCount > 0
+                        ? 'border-red-400/50 text-red-400'
+                        : 'border-amber-400/50 text-amber-400'
+                    }`}
+                  >
+                    {criticalCount + warningCount}
+                  </Badge>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="files">Files</TabsTrigger>
             </TabsList>
 
@@ -571,6 +641,14 @@ export default async function ClientDetailPage({
               </Card>
             </TabsContent>
 
+            <TabsContent value="audit" className="mt-6">
+              <AuditPanel
+                findings={auditFindings}
+                workspaceId={workspaceId}
+                clientId={clientId}
+              />
+            </TabsContent>
+
             <TabsContent value="files" className="mt-6">
               <FilesPanel
                 workspaceId={workspaceId}
@@ -626,6 +704,146 @@ export default async function ClientDetailPage({
         </aside>
       </div>
     </div>
+  );
+}
+
+/** Renders the audit-engine findings as a triaged list. Critical
+ *  first, then warning, then info. Empty state congratulates the
+ *  user rather than showing a blank card. */
+function AuditPanel({
+  findings,
+  workspaceId,
+  clientId,
+}: {
+  findings: Finding[];
+  workspaceId: string;
+  clientId: string;
+}) {
+  if (findings.length === 0) {
+    return (
+      <Card>
+        <CardContent className="space-y-2 p-8 text-center">
+          <p className="text-sm font-medium text-[var(--color-health-working)]">
+            All clear.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            The audit engine didn&apos;t find anything wrong with this
+            client&apos;s tracking setup. Re-run anytime — it&apos;s live
+            against the current map.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const criticals = findings.filter((f) => f.severity === 'critical');
+  const warnings = findings.filter((f) => f.severity === 'warning');
+  const infos = findings.filter((f) => f.severity === 'info');
+  const summary = [
+    criticals.length > 0 && `${criticals.length} critical`,
+    warnings.length > 0 && `${warnings.length} warning${warnings.length === 1 ? '' : 's'}`,
+    infos.length > 0 && `${infos.length} info`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  return (
+    <div className="space-y-6">
+      <p className="text-xs text-muted-foreground">
+        {findings.length} finding{findings.length === 1 ? '' : 's'} · {summary}
+      </p>
+      {criticals.length > 0 && (
+        <FindingGroup
+          title="Critical"
+          findings={criticals}
+          workspaceId={workspaceId}
+          clientId={clientId}
+        />
+      )}
+      {warnings.length > 0 && (
+        <FindingGroup
+          title="Warnings"
+          findings={warnings}
+          workspaceId={workspaceId}
+          clientId={clientId}
+        />
+      )}
+      {infos.length > 0 && (
+        <FindingGroup
+          title="Info"
+          findings={infos}
+          workspaceId={workspaceId}
+          clientId={clientId}
+        />
+      )}
+    </div>
+  );
+}
+
+function FindingGroup({
+  title,
+  findings,
+  workspaceId,
+  clientId,
+}: {
+  title: string;
+  findings: Finding[];
+  workspaceId: string;
+  clientId: string;
+}) {
+  return (
+    <section>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h3>
+      <ul className="space-y-2">
+        {findings.map((f) => {
+          // Inline tone shading. Subtle left border so critical
+          // findings are scannable without overwhelming.
+          const border =
+            f.severity === 'critical'
+              ? 'border-l-4 border-l-red-400 border border-red-400/20'
+              : f.severity === 'warning'
+                ? 'border-l-4 border-l-amber-400 border border-amber-400/20'
+                : 'border-l-4 border-l-muted-foreground/40 border border-border';
+          return (
+            <li
+              key={`${f.ruleId}-${f.nodeId ?? 'map'}`}
+              className={`rounded-md bg-card/30 p-3 ${border}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">
+                    {f.title}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {f.description}
+                  </p>
+                  {f.suggestion && (
+                    <p className="mt-2 text-xs">
+                      <span className="font-medium text-foreground/80">
+                        Suggested fix:
+                      </span>{' '}
+                      <span className="text-muted-foreground">
+                        {f.suggestion}
+                      </span>
+                    </p>
+                  )}
+                </div>
+                {f.nodeId && (
+                  <Link
+                    href={`/${workspaceId}/clients/${clientId}/map?node=${f.nodeId}`}
+                    className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    View node →
+                  </Link>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

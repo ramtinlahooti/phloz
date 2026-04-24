@@ -11,3 +11,4 @@
 export * from './types';
 export * from './health';
 export * from './node-types';
+export * from './audit';

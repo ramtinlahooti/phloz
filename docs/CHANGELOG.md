@@ -4,6 +4,62 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Tracking-map audit engine (V1)
+
+The moat feature from the scaling/features roadmap. Rules-based
+audit of each client's tracking infrastructure, surfaced as an
+"Audit" tab on the client detail page. What makes Phloz genuinely
+useful vs. a generic PM tool.
+
+### Rules shipped (V1)
+
+Pure function over `{nodes, edges}` → triaged list of findings.
+
+- **`broken-node`** (critical) — any node with health `broken`.
+- **`missing-node`** (warning) — health `missing`.
+- **`stale-verification`** (info) — working node, last_verified_at
+  > 30 days ago.
+- **`never-verified`** (info) — working node, never verified.
+- **`orphan-gtm`** (warning) — GTM container with zero outgoing
+  edges.
+- **`ga4-no-measurement`** (warning) — GA4 property with empty
+  `measurementIds`.
+- **`meta-pixel-no-capi`** (warning) — Meta pixel without a CAPI
+  node on the same client. iOS 14.5+ revenue leak.
+- **`no-ga4`** (critical) — client has tracking nodes but zero
+  GA4 property / stream.
+- **`empty-map`** (info) — client has no nodes on the map at all.
+
+### Implementation
+
+- `packages/tracking-map/src/audit.ts` — pure, isomorphic, no
+  external deps. Output sorted deterministically by (severity,
+  ruleId). `AUDIT_RULE_IDS` exported for future suppress-rule UX.
+- Client detail page now fetches full node + edge rows (was only
+  fetching node health). Runs `auditMap()` every render — cheap.
+- `AuditPanel` renders findings grouped by severity with a
+  coloured left border per severity, title + description +
+  "Suggested fix", "View node →" deep-link when node-scoped
+  (navigates to the tracking map with `?node=<id>` — map page
+  doesn't respect that param yet, follow-up).
+- Tab trigger shows a count badge for critical/warning findings
+  (red/amber).
+- Empty state congratulates rather than blanks.
+
+### Intentional scope
+
+- No scheduled / background runs. Live on every page render.
+- No rule suppression UI yet. `AUDIT_RULE_IDS` is exported so
+  we can add `workspaces.suppressed_audit_rules` when needed.
+- V2 rules that need external APIs (GA4 live signal, Google
+  Ads account status) deferred until those integrations land.
+- Tracking map `?node=<id>` scroll-focus is a follow-up — the
+  link lands on the map page, just doesn't auto-scroll yet.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Client detail header — stats strip + health badge
 
 The client detail page landed straight into a bare `<h1>` with no
