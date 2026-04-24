@@ -24,6 +24,7 @@ import type {
 } from '@phloz/config';
 import { TASK_STATUSES } from '@phloz/config';
 
+import { TaskDetailDialog } from './task-detail-dialog';
 import {
   deleteTaskAction,
   setTaskApprovalAction,
@@ -85,6 +86,7 @@ export function TaskRow({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [optimisticStatus, setOptimisticStatus] = useState<TaskStatus>(task.status);
+  const [detailOpen, setDetailOpen] = useState(false);
   const StatusIcon = STATUS_ICONS[optimisticStatus];
 
   async function changeStatus(next: TaskStatus) {
@@ -139,6 +141,7 @@ export function TaskRow({
     task.dueDate.getTime() < Date.now();
 
   return (
+    <>
     <li className="flex items-center gap-3 px-4 py-3 hover:bg-muted/50">
       <DropdownMenu>
         <DropdownMenuTrigger
@@ -192,13 +195,17 @@ export function TaskRow({
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 text-sm">
-          <span
-            className={`truncate ${
-              optimisticStatus === 'done' ? 'text-muted-foreground line-through' : ''
+          <button
+            type="button"
+            onClick={() => setDetailOpen(true)}
+            className={`truncate text-left transition-colors hover:text-primary ${
+              optimisticStatus === 'done'
+                ? 'text-muted-foreground line-through'
+                : ''
             }`}
           >
             {task.title}
-          </span>
+          </button>
           {task.visibility === 'client_visible' && (
             <Badge variant="outline" className="text-[10px]">
               Client-visible
@@ -245,5 +252,13 @@ export function TaskRow({
         </div>
       </div>
     </li>
+
+    <TaskDetailDialog
+      workspaceId={workspaceId}
+      task={task}
+      open={detailOpen}
+      onOpenChange={setDetailOpen}
+    />
+    </>
   );
 }
