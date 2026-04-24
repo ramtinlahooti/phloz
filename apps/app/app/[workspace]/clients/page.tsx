@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, lt, not } from 'drizzle-orm';
 import Link from 'next/link';
 
 import { getDb, schema } from '@phloz/db/client';
@@ -10,6 +10,11 @@ import {
   EmptyState,
 } from '@phloz/ui';
 
+import {
+  HEALTH_COLORS,
+  computeClientHealth,
+  type HealthResult,
+} from '@/lib/client-health';
 import { buildAppMetadata } from '@/lib/metadata';
 
 export const metadata = buildAppMetadata({ title: 'Clients' });
@@ -23,11 +28,129 @@ export default async function ClientsListPage({
 }) {
   const { workspace: workspaceId } = await params;
   const db = getDb();
-  const clients = await db
-    .select()
-    .from(schema.clients)
-    .where(eq(schema.clients.workspaceId, workspaceId))
-    .orderBy(desc(schema.clients.updatedAt));
+
+  const now = new Date();
+
+  const [
+    clients,
+    overdueTaskRows,
+    inboundMessageRows,
+    outboundMessageRows,
+    trackingNodeRows,
+  ] = await Promise.all([
+    db
+      .select()
+      .from(schema.clients)
+      .where(eq(schema.clients.workspaceId, workspaceId))
+      .orderBy(desc(schema.clients.updatedAt)),
+    // Overdue tasks with a client_id — count per client.
+    db
+      .select({ clientId: schema.tasks.clientId })
+      .from(schema.tasks)
+      .where(
+        and(
+          eq(schema.tasks.workspaceId, workspaceId),
+          inArray(schema.tasks.status, ['todo', 'in_progress', 'blocked']),
+          isNotNull(schema.tasks.clientId),
+          isNotNull(schema.tasks.dueDate),
+          lt(schema.tasks.dueDate, now),
+        ),
+      ),
+    // Last 60 days of inbound messages (excluding internal notes)
+    // — we compare against outbound to decide which are "unreplied".
+    db
+      .select({
+        clientId: schema.messages.clientId,
+        createdAt: schema.messages.createdAt,
+      })
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.workspaceId, workspaceId),
+          eq(schema.messages.direction, 'inbound'),
+          not(eq(schema.messages.channel, 'internal_note')),
+        ),
+      ),
+    db
+      .select({
+        clientId: schema.messages.clientId,
+        createdAt: schema.messages.createdAt,
+      })
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.workspaceId, workspaceId),
+          eq(schema.messages.direction, 'outbound'),
+          not(eq(schema.messages.channel, 'internal_note')),
+        ),
+      ),
+    // Tracking node health rollup per client.
+    db
+      .select({
+        clientId: schema.trackingNodes.clientId,
+        healthStatus: schema.trackingNodes.healthStatus,
+      })
+      .from(schema.trackingNodes)
+      .where(eq(schema.trackingNodes.workspaceId, workspaceId)),
+  ]);
+
+  // Aggregate per-client inputs for the health scorer.
+  const overdueCount = new Map<string, number>();
+  for (const t of overdueTaskRows) {
+    if (!t.clientId) continue;
+    overdueCount.set(t.clientId, (overdueCount.get(t.clientId) ?? 0) + 1);
+  }
+
+  // Last outbound per client, then compare inbound dates to decide
+  // which inbound messages are newer than the last reply.
+  const lastOutboundByClient = new Map<string, Date>();
+  for (const m of outboundMessageRows) {
+    if (!m.clientId) continue;
+    const existing = lastOutboundByClient.get(m.clientId);
+    if (!existing || m.createdAt > existing) {
+      lastOutboundByClient.set(m.clientId, m.createdAt);
+    }
+  }
+  const unrepliedCount = new Map<string, number>();
+  for (const m of inboundMessageRows) {
+    if (!m.clientId) continue;
+    const lastOut = lastOutboundByClient.get(m.clientId) ?? null;
+    if (lastOut === null || m.createdAt > lastOut) {
+      unrepliedCount.set(m.clientId, (unrepliedCount.get(m.clientId) ?? 0) + 1);
+    }
+  }
+
+  const brokenNodeCount = new Map<string, number>();
+  const missingNodeCount = new Map<string, number>();
+  for (const n of trackingNodeRows) {
+    if (!n.clientId) continue;
+    if (n.healthStatus === 'broken') {
+      brokenNodeCount.set(
+        n.clientId,
+        (brokenNodeCount.get(n.clientId) ?? 0) + 1,
+      );
+    } else if (n.healthStatus === 'missing') {
+      missingNodeCount.set(
+        n.clientId,
+        (missingNodeCount.get(n.clientId) ?? 0) + 1,
+      );
+    }
+  }
+
+  const healthById = new Map<string, HealthResult>();
+  for (const c of clients) {
+    healthById.set(
+      c.id,
+      computeClientHealth({
+        archived: c.archivedAt !== null,
+        lastActivityAt: c.lastActivityAt,
+        overdueTaskCount: overdueCount.get(c.id) ?? 0,
+        unrepliedInboundCount: unrepliedCount.get(c.id) ?? 0,
+        brokenNodeCount: brokenNodeCount.get(c.id) ?? 0,
+        missingNodeCount: missingNodeCount.get(c.id) ?? 0,
+      }),
+    );
+  }
 
   const active = clients.filter((c) => c.archivedAt === null);
   const archived = clients.filter((c) => c.archivedAt !== null);
@@ -67,53 +190,55 @@ export default async function ClientsListPage({
           <CardContent className="p-0">
             <ul className="divide-y divide-border/60">
               {clients.map((client) => {
-                const lastActivity = client.lastActivityAt ?? client.updatedAt;
-                const daysInactive = Math.floor(
-                  (Date.now() - new Date(lastActivity).getTime()) /
-                    (1000 * 60 * 60 * 24),
-                );
-                const atRisk =
-                  !client.archivedAt && daysInactive >= 30 && daysInactive < 60;
-                const inactive =
-                  !client.archivedAt && daysInactive >= 60;
+                const health = healthById.get(client.id)!;
+                const colors = HEALTH_COLORS[health.tier];
+                const tooltip = health.reasons.join(' · ') || 'All signals good';
                 return (
                   <li key={client.id}>
                     <Link
                       href={`/${workspaceId}/clients/${client.id}`}
                       className="flex items-center justify-between gap-4 px-6 py-4 transition-colors hover:bg-muted/50"
                     >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate font-medium">
-                            {client.name}
-                          </span>
-                          {client.archivedAt && (
-                            <Badge variant="outline" className="text-xs">
-                              Archived
-                            </Badge>
-                          )}
-                          {atRisk && (
-                            <Badge
-                              variant="outline"
-                              className="border-amber-400/50 text-[10px] text-amber-400"
-                            >
-                              At risk · {daysInactive}d
-                            </Badge>
-                          )}
-                          {inactive && (
-                            <Badge
-                              variant="outline"
-                              className="border-red-400/50 text-[10px] text-red-400"
-                            >
-                              Inactive · {daysInactive}d
-                            </Badge>
+                      <div className="flex min-w-0 items-center gap-3">
+                        {/* Health dot. Archived clients render a dim grey
+                            dot since their score is always 0 and that's
+                            misleading without context. */}
+                        <span
+                          title={client.archivedAt ? 'Archived' : tooltip}
+                          className={`inline-block size-2 shrink-0 rounded-full ${
+                            client.archivedAt
+                              ? 'bg-muted-foreground/40'
+                              : colors.dot
+                          }`}
+                          aria-hidden
+                        />
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="truncate font-medium">
+                              {client.name}
+                            </span>
+                            {client.archivedAt && (
+                              <Badge variant="outline" className="text-xs">
+                                Archived
+                              </Badge>
+                            )}
+                            {!client.archivedAt &&
+                              health.tier !== 'healthy' && (
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[10px] ${colors.badge}`}
+                                  title={tooltip}
+                                >
+                                  {colors.label} · {health.score}
+                                </Badge>
+                              )}
+                          </div>
+                          {client.businessName && (
+                            <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                              {client.businessName}
+                            </div>
                           )}
                         </div>
-                        {client.businessName && (
-                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                            {client.businessName}
-                          </div>
-                        )}
                       </div>
                       <div className="shrink-0 text-xs text-muted-foreground">
                         {client.lastActivityAt

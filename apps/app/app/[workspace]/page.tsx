@@ -1,9 +1,13 @@
-import { and, count, desc, eq, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNotNull, lt, lte, not } from 'drizzle-orm';
 import {
+  AlertTriangle,
+  CalendarClock,
   CheckCircle2,
   FilePlus2,
+  Hourglass,
   ListChecks,
   Mail,
+  MailOpen,
   MessageSquare,
   RefreshCw,
   XCircle,
@@ -55,6 +59,9 @@ export default async function WorkspaceOverviewPage({
   const { workspace: workspaceId } = await params;
   const db = getDb();
 
+  const now = new Date();
+  const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
   const [
     workspace,
     activeClientCount,
@@ -65,6 +72,11 @@ export default async function WorkspaceOverviewPage({
     recentAssets,
     recentApprovals,
     clientRows,
+    overdueTasks,
+    dueThisWeekTasks,
+    pendingApprovalTasks,
+    allInboundMessages,
+    allOutboundMessages,
   ] = await Promise.all([
     db
       .select()
@@ -152,6 +164,101 @@ export default async function WorkspaceOverviewPage({
       .select({ id: schema.clients.id, name: schema.clients.name })
       .from(schema.clients)
       .where(eq(schema.clients.workspaceId, workspaceId)),
+    // Overdue: open tasks with a due_date in the past.
+    db
+      .select({
+        id: schema.tasks.id,
+        title: schema.tasks.title,
+        dueDate: schema.tasks.dueDate,
+        clientId: schema.tasks.clientId,
+      })
+      .from(schema.tasks)
+      .where(
+        and(
+          eq(schema.tasks.workspaceId, workspaceId),
+          inArray(schema.tasks.status, ['todo', 'in_progress', 'blocked']),
+          isNotNull(schema.tasks.dueDate),
+          lt(schema.tasks.dueDate, now),
+        ),
+      )
+      .orderBy(schema.tasks.dueDate)
+      .limit(5),
+    // Due this week: open tasks with due_date between now and +7d.
+    db
+      .select({
+        id: schema.tasks.id,
+        title: schema.tasks.title,
+        dueDate: schema.tasks.dueDate,
+        clientId: schema.tasks.clientId,
+      })
+      .from(schema.tasks)
+      .where(
+        and(
+          eq(schema.tasks.workspaceId, workspaceId),
+          inArray(schema.tasks.status, ['todo', 'in_progress', 'blocked']),
+          isNotNull(schema.tasks.dueDate),
+          gte(schema.tasks.dueDate, now),
+          lte(schema.tasks.dueDate, weekFromNow),
+        ),
+      )
+      .orderBy(schema.tasks.dueDate)
+      .limit(5),
+    // Pending client approval: tasks we've asked the client to approve.
+    db
+      .select({
+        id: schema.tasks.id,
+        title: schema.tasks.title,
+        approvalUpdatedAt: schema.tasks.approvalUpdatedAt,
+        clientId: schema.tasks.clientId,
+      })
+      .from(schema.tasks)
+      .where(
+        and(
+          eq(schema.tasks.workspaceId, workspaceId),
+          eq(schema.tasks.approvalState, 'pending'),
+        ),
+      )
+      .orderBy(desc(schema.tasks.approvalUpdatedAt))
+      .limit(5),
+    // For unreplied-inbound: fetch the last 60 days of messages per
+    // direction. Volume is small at launch; when it isn't we can
+    // rewrite as a SQL aggregate.
+    db
+      .select({
+        id: schema.messages.id,
+        clientId: schema.messages.clientId,
+        createdAt: schema.messages.createdAt,
+        subject: schema.messages.subject,
+        body: schema.messages.body,
+        channel: schema.messages.channel,
+      })
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.workspaceId, workspaceId),
+          eq(schema.messages.direction, 'inbound'),
+          // Exclude internal_note — those aren't from the client.
+          not(eq(schema.messages.channel, 'internal_note')),
+          gte(
+            schema.messages.createdAt,
+            new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000),
+          ),
+        ),
+      )
+      .orderBy(desc(schema.messages.createdAt)),
+    db
+      .select({
+        clientId: schema.messages.clientId,
+        createdAt: schema.messages.createdAt,
+      })
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.workspaceId, workspaceId),
+          eq(schema.messages.direction, 'outbound'),
+          not(eq(schema.messages.channel, 'internal_note')),
+        ),
+      ),
   ]);
 
   if (!workspace) return null;
@@ -160,6 +267,43 @@ export default async function WorkspaceOverviewPage({
   const clientName = new Map(clientRows.map((c) => [c.id, c.name]));
   const nameFor = (id: string | null) =>
     id ? clientName.get(id) ?? null : null;
+
+  // Unreplied inbound: for each client, the most recent inbound message
+  // is newer than any outbound message we've sent. Surfaces the "client
+  // emailed us, we haven't answered" backlog without needing a complex
+  // SQL aggregate.
+  const lastOutboundByClient = new Map<string, Date>();
+  for (const m of allOutboundMessages) {
+    if (!m.clientId) continue;
+    const existing = lastOutboundByClient.get(m.clientId);
+    if (!existing || m.createdAt > existing) {
+      lastOutboundByClient.set(m.clientId, m.createdAt);
+    }
+  }
+  const seenClients = new Set<string>();
+  const unrepliedInbound: {
+    id: string;
+    clientId: string;
+    clientName: string;
+    at: Date;
+    preview: string;
+  }[] = [];
+  for (const m of allInboundMessages) {
+    if (!m.clientId || seenClients.has(m.clientId)) continue;
+    const lastOut = lastOutboundByClient.get(m.clientId) ?? null;
+    if (lastOut === null || m.createdAt > lastOut) {
+      seenClients.add(m.clientId);
+      unrepliedInbound.push({
+        id: m.id,
+        clientId: m.clientId,
+        clientName: nameFor(m.clientId) ?? 'Unknown',
+        at: m.createdAt,
+        preview: (m.subject ?? m.body).slice(0, 80),
+      });
+    }
+  }
+  unrepliedInbound.sort((a, b) => a.at.getTime() - b.at.getTime()); // oldest waiting first
+  const topUnreplied = unrepliedInbound.slice(0, 5);
 
   const feed: FeedItem[] = [];
 
@@ -269,6 +413,98 @@ export default async function WorkspaceOverviewPage({
           Add client
         </Link>
       </header>
+
+      {/* This week — what needs attention. Shown above the vanity
+          counters because these are action prompts, not just metrics. */}
+      <section className="mb-8">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          This week
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <AttentionCard
+            tone="red"
+            icon={AlertTriangle}
+            title="Overdue"
+            count={overdueTasks.length}
+            items={overdueTasks.map((t) => ({
+              id: t.id,
+              title: t.title,
+              subtitle:
+                t.dueDate !== null
+                  ? `${daysAgo(t.dueDate)}d overdue${
+                      t.clientId
+                        ? ` · ${nameFor(t.clientId) ?? ''}`
+                        : ''
+                    }`
+                  : undefined,
+              href: t.clientId
+                ? `/${workspaceId}/clients/${t.clientId}`
+                : `/${workspaceId}/tasks`,
+            }))}
+            ctaHref={`/${workspaceId}/tasks?status=todo`}
+            ctaLabel="See all tasks"
+            emptyLabel="Nothing overdue — nice."
+          />
+          <AttentionCard
+            tone="amber"
+            icon={CalendarClock}
+            title="Due this week"
+            count={dueThisWeekTasks.length}
+            items={dueThisWeekTasks.map((t) => ({
+              id: t.id,
+              title: t.title,
+              subtitle:
+                t.dueDate !== null
+                  ? `${daysUntil(t.dueDate)}${
+                      t.clientId
+                        ? ` · ${nameFor(t.clientId) ?? ''}`
+                        : ''
+                    }`
+                  : undefined,
+              href: t.clientId
+                ? `/${workspaceId}/clients/${t.clientId}`
+                : `/${workspaceId}/tasks`,
+            }))}
+            ctaHref={`/${workspaceId}/tasks?sort=due_soonest`}
+            ctaLabel="Sort by due"
+            emptyLabel="Clear runway this week."
+          />
+          <AttentionCard
+            tone="primary"
+            icon={Hourglass}
+            title="Pending client approval"
+            count={pendingApprovalTasks.length}
+            items={pendingApprovalTasks.map((t) => ({
+              id: t.id,
+              title: t.title,
+              subtitle: t.clientId
+                ? (nameFor(t.clientId) ?? undefined)
+                : undefined,
+              href: t.clientId
+                ? `/${workspaceId}/clients/${t.clientId}`
+                : `/${workspaceId}/tasks`,
+            }))}
+            ctaHref={`/${workspaceId}/tasks`}
+            ctaLabel="View approvals"
+            emptyLabel="No pending approvals."
+          />
+          <AttentionCard
+            tone="purple"
+            icon={MailOpen}
+            title="Waiting on a reply"
+            count={topUnreplied.length}
+            items={topUnreplied.map((u) => ({
+              id: u.id,
+              title: u.preview,
+              subtitle: `${u.clientName} · ${daysAgo(u.at)}d waiting`,
+              href: `/${workspaceId}/clients/${u.clientId}`,
+            }))}
+            ctaHref={`/${workspaceId}/messages`}
+            ctaLabel="Open inbox"
+            emptyLabel="Inbox is clear."
+          />
+        </div>
+      </section>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
@@ -489,5 +725,129 @@ function formatRelative(d: Date): string {
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
   return d.toLocaleDateString();
+}
+
+// --- This-week widget ------------------------------------------------
+
+type AttentionItem = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  href: string;
+};
+
+type AttentionTone = 'red' | 'amber' | 'primary' | 'purple';
+
+const ATTENTION_STYLES: Record<
+  AttentionTone,
+  { icon: string; count: string; ring: string }
+> = {
+  red: {
+    icon: 'text-red-400',
+    count: 'text-red-400',
+    ring: 'ring-red-400/30',
+  },
+  amber: {
+    icon: 'text-amber-400',
+    count: 'text-amber-400',
+    ring: 'ring-amber-400/30',
+  },
+  primary: {
+    icon: 'text-primary',
+    count: 'text-primary',
+    ring: 'ring-primary/30',
+  },
+  purple: {
+    icon: 'text-purple-400',
+    count: 'text-purple-400',
+    ring: 'ring-purple-400/30',
+  },
+};
+
+function AttentionCard({
+  tone,
+  icon: Icon,
+  title,
+  count,
+  items,
+  ctaHref,
+  ctaLabel,
+  emptyLabel,
+}: {
+  tone: AttentionTone;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  count: number;
+  items: AttentionItem[];
+  ctaHref: string;
+  ctaLabel: string;
+  emptyLabel: string;
+}) {
+  const styles = ATTENTION_STYLES[tone];
+  const zero = count === 0;
+
+  return (
+    <Card
+      className={`flex flex-col ${zero ? '' : `ring-1 ${styles.ring}`}`}
+    >
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Icon className={`size-3.5 ${styles.icon}`} />
+            {title}
+          </CardTitle>
+          <span className={`text-xl font-semibold ${zero ? 'text-muted-foreground' : styles.count}`}>
+            {count}
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent className="flex-1 pt-0">
+        {zero ? (
+          <p className="text-xs text-muted-foreground">{emptyLabel}</p>
+        ) : (
+          <ul className="space-y-2">
+            {items.slice(0, 3).map((item) => (
+              <li key={item.id}>
+                <Link
+                  href={item.href}
+                  className="block text-xs leading-tight text-foreground/90 transition-colors hover:text-primary"
+                >
+                  <span className="line-clamp-1 font-medium">{item.title}</span>
+                  {item.subtitle && (
+                    <span className="line-clamp-1 text-muted-foreground">
+                      {item.subtitle}
+                    </span>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+      {!zero && (
+        <div className="border-t border-border/60 px-6 py-2">
+          <Link
+            href={ctaHref}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            {ctaLabel} →
+          </Link>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function daysAgo(d: Date): number {
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24)));
+}
+
+function daysUntil(d: Date): string {
+  const ms = d.getTime() - Date.now();
+  if (ms < 0) return 'overdue';
+  const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+  if (days === 0) return 'today';
+  if (days === 1) return 'tomorrow';
+  return `in ${days}d`;
 }
 

@@ -4,6 +4,71 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Dashboard "This week" + client health scoring
+
+First-login impression was a blank-ish dashboard with three vanity
+counters. Now it opens with an actionable panel showing **what needs
+attention this week**, and the clients list shows a quick visual
+health signal per client. Both use only data that's already in the
+DB — no external services, no new costs.
+
+### Client health (`apps/app/lib/client-health.ts`)
+
+Pure computation. 0–100 score, three tiers:
+- **≥ 70 healthy** (green)
+- **40–69 at_risk** (amber)
+- **< 40 needs_attention** (red)
+
+Weights (explainable to the user — the UI surfaces the reason list
+as a tooltip):
+- Inactivity: -10 at 7d, -30 at 30d, -60 at 60d
+- Overdue tasks: -10 each up to -30
+- Unreplied inbound messages: -5 each up to -20
+- Broken tracking nodes: -5 each up to -20
+- Missing tracking nodes: -3 each up to -12
+
+Archived clients short-circuit to score 0. Callers render a dim dot
+there to distinguish "archived" from "needs attention" visually.
+
+### Dashboard "This week" widget (`apps/app/app/[workspace]/page.tsx`)
+
+New panel above the existing count cards. Four attention cards:
+
+1. **Overdue** (red) — open tasks with due_date < now. Top 3 titles
+   + days overdue.
+2. **Due this week** (amber) — open tasks with due_date in the next
+   7 days. Top 3 with "today" / "tomorrow" / "in Nd".
+3. **Pending client approval** (primary) — `approvalState='pending'`
+   client-visible tasks. Top 3 with client name.
+4. **Waiting on a reply** (purple) — per-client: oldest inbound
+   message newer than the last outbound. Top 3 with "Nd waiting".
+
+Cards glow with a subtle colored ring when count > 0, render a
+muted "clear" state when count = 0. Each has a contextual "See
+all tasks" / "Open inbox" CTA underneath.
+
+### Clients list (`apps/app/app/[workspace]/clients/page.tsx`)
+
+- Added per-client aggregation queries (overdue tasks, unreplied
+  inbound, broken/missing nodes) that feed the scorer.
+- Each row now shows:
+  - A colored health dot (green/amber/red, or dim grey for
+    archived).
+  - A health badge with score (e.g. "At risk · 55") when the
+    tier is not healthy. Hover tooltip lists the reasons.
+
+### Performance note
+
+Both pages fetch messages in full (last 60d inbound + all outbound
+— excluding internal notes) and compute unreplied-inbound in JS
+because the volume at launch is small. When this starts to bite
+(probably around 10k+ messages per workspace), rewrite as a
+correlated subquery or a materialized view.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Error boundaries (launch blocker)
 
 Code audit flagged one real issue: both apps had `not-found` only on
