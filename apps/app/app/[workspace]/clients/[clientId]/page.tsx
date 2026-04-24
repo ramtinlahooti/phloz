@@ -2,6 +2,7 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+import { requireUser } from '@phloz/auth/session';
 import type {
   ApprovalState,
   Department,
@@ -54,6 +55,7 @@ export default async function ClientDetailPage({
 }) {
   const { workspace: workspaceId, clientId } = await params;
   const db = getDb();
+  const user = await requireUser();
 
   const [
     client,
@@ -62,6 +64,7 @@ export default async function ClientDetailPage({
     inboundAddressRow,
     clientAssets,
     clientContactRows,
+    memberRows,
   ] = await Promise.all([
       db
         .select()
@@ -134,6 +137,19 @@ export default async function ClientDetailPage({
           ),
         )
         .orderBy(asc(schema.clientContacts.name)),
+      // Members for the task assignee picker (NewTaskDialog + detail
+      // dialog edit mode). Kept in the same Promise.all so the page
+      // stays one roundtrip.
+      db
+        .select({
+          id: schema.workspaceMembers.id,
+          userId: schema.workspaceMembers.userId,
+          role: schema.workspaceMembers.role,
+          displayName: schema.workspaceMembers.displayName,
+          email: schema.workspaceMembers.email,
+        })
+        .from(schema.workspaceMembers)
+        .where(eq(schema.workspaceMembers.workspaceId, workspaceId)),
     ]);
 
   if (!client) notFound();
@@ -149,7 +165,28 @@ export default async function ClientDetailPage({
     clientId: t.clientId,
     clientName: client.name,
     approvalState: t.approvalState as ApprovalState,
+    assigneeMembershipId: t.assigneeId,
   }));
+
+  // Build assignee options with the same label precedence as the
+  // workspace-wide Tasks page. See `/tasks/page.tsx` for the ordering
+  // logic.
+  const memberOptions = memberRows
+    .map((m) => {
+      const isSelf = m.userId === user.id;
+      const primary = isSelf
+        ? 'You'
+        : (m.displayName?.trim() ||
+           m.email?.trim() ||
+           `${(m.userId ?? 'unknown').slice(0, 8)}…`);
+      return {
+        id: m.id,
+        label: `${primary} · ${m.role}`,
+        sortKey: isSelf ? '' : primary.toLowerCase(),
+      };
+    })
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+    .map(({ id, label }) => ({ id, label }));
   const openTasks = tasksAsRows.filter(
     (t) => t.status !== 'done' && t.status !== 'archived',
   );
@@ -285,6 +322,7 @@ export default async function ClientDetailPage({
                   <NewTaskDialog
                     workspaceId={workspaceId}
                     clientId={clientId}
+                    members={memberOptions}
                   />
                 </div>
               </div>
@@ -304,6 +342,7 @@ export default async function ClientDetailPage({
                           key={task.id}
                           workspaceId={workspaceId}
                           task={task}
+                          members={memberOptions}
                         />
                       ))}
                     </ul>

@@ -4,6 +4,80 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Member display names + task assignee picker
+
+### Schema
+
+1. **`workspace_members.display_name` + `workspace_members.email`** —
+   cached identity columns so the Team page + task assignee picker
+   don't have to show UUID prefixes (or cross-schema-join against
+   `auth.users` on every read).
+   - New migration `0001_loving_marauders.sql`. Written idempotently
+     with `ADD COLUMN IF NOT EXISTS` because the live DB has been
+     receiving schema changes via `db:push` ahead of the migration
+     file — the 0001 also formalises that drift (description /
+     website_url / timezone on workspaces, last_activity_at on
+     clients, client_visible on client_assets, approval_* on tasks).
+   - Backfill stanza at the bottom reads `auth.users.raw_user_meta_data`
+     and `auth.users.email` with `COALESCE` so re-runs are safe.
+
+### Write paths
+
+2. **Identity cached at insert time.** `apps/app/app/onboarding/
+   actions.ts`, `apps/app/app/accept-invite/page.tsx`, and the
+   `packages/db/src/seed/index.ts` owner-row insert now populate
+   `display_name` + `email` from the signed-in user's Supabase metadata.
+3. **Profile sync.** `apps/app/app/[workspace]/settings/profile-actions.ts`
+   updates `auth.users.user_metadata.full_name` **and** fans the new
+   name out to `workspace_members.display_name` for every workspace
+   the user belongs to. Fan-out is best-effort (logs + continues if
+   it fails) because the sidebar user-menu label is the primary
+   signal.
+
+### Read paths
+
+4. **Team page renders real names.** `apps/app/app/[workspace]/team/
+   page.tsx` + `member-row.tsx` use precedence
+   `display_name → email → UUID prefix`, plus a secondary email line
+   when the label is a name.
+5. **Tasks `memberOptions` carry names.** Workspace `/tasks` and
+   `/clients/[clientId]` pages build `{ id, label }` options with the
+   same precedence, sorted so "You" is first then alphabetical.
+
+### Task assignee picker
+
+6. **`NewTaskDialog`** — new optional `members` prop. When present,
+   renders an Assignee Select (defaults to Unassigned) next to the due
+   date. Schema + submit wire `assigneeMembershipId` through to
+   `createTaskAction` (which already accepted it).
+7. **`TaskDetailDialog`** — new optional `members` prop. Edit-mode now
+   shows an Assignee Select seeded from `task.assigneeMembershipId`.
+   The update payload only includes `assigneeMembershipId` when the
+   picker was actually rendered, so callers that don't pass members
+   don't null out assignees on save.
+8. **`TaskRowModel` gains `assigneeMembershipId`** so detail-dialog
+   edit mode can show the current assignee.
+9. **Client detail page** now fetches `workspaceMembers` in the main
+   `Promise.all` and threads `memberOptions` through
+   `NewTaskDialog` + each `TaskRow`.
+
+### Files touched
+
+- `packages/db/src/schema/workspace-members.ts`
+- `packages/db/migrations/0001_loving_marauders.sql` (new)
+- `packages/db/migrations/meta/{_journal,0001_snapshot}.json`
+- `packages/db/src/seed/index.ts`
+- `apps/app/app/accept-invite/page.tsx`
+- `apps/app/app/onboarding/actions.ts`
+- `apps/app/app/[workspace]/settings/profile-actions.ts`
+- `apps/app/app/[workspace]/team/{page,member-row}.tsx`
+- `apps/app/app/[workspace]/tasks/{page,new-task-dialog,task-detail-dialog,task-row}.tsx`
+- `apps/app/app/[workspace]/clients/[clientId]/page.tsx`
+
+`pnpm check` 29/29 green.
+
+---
+
 ## 2026-04-23 — Invite refresh + DNS fix + task-client bug + rich settings
 
 ### Fixes

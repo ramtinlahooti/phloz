@@ -5,6 +5,34 @@ workaround (if any), and planned fix. Oldest first.
 
 ---
 
+## 2026-04-24: `workspace_members.email` can lag after Supabase email change
+
+**Description:** Identity is cached on `workspace_members` so the Team
+page + task assignee picker don't have to join against `auth.users` on
+every read. The cache is written on insert (invite accept, onboarding)
+and `display_name` is refreshed whenever the user saves their profile.
+**But**: when a user changes their email via Supabase's built-in
+email-change flow (confirmation link from the account page), there is
+no hook that updates `workspace_members.email`. It stays stale until
+the user saves their profile again (which doesn't currently touch the
+email column anyway).
+
+**Impact:** Low. The Team page falls back from email to `display_name`
+to UUID prefix, so a stale email only appears as a subtitle under the
+real name. No RLS/security implication — the cache is a display hint,
+not a permission signal.
+
+**Workaround:** User can trigger a refresh by saving their profile
+name; we'd need to extend `updateUserProfileAction` to also sync
+`email` from `auth.users`, or add an Inngest handler on the
+`user.email_changed` event.
+
+**Planned fix:** Defer until the first real agency reports it.
+Alternative long-term: drop the column entirely and use Supabase's
+`select auth.users` via a service-role RPC. Logged in NEXT-STEPS.
+
+---
+
 ## 2026-04-23: `pnpm install` not yet run — RESOLVED
 
 **Description:** This session scaffolded every `package.json` but did not

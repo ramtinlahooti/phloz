@@ -75,10 +75,21 @@ export async function createWorkspaceAction(
     return { error: 'Could not create workspace. Try again.' };
   }
 
+  // Cache the user's identity on the membership row so the Team page +
+  // task assignee picker can render names without a cross-schema join
+  // against auth.users on every request. Kept in sync via
+  // updateUserProfileAction when the user renames themselves.
+  const fullName =
+    typeof user.user_metadata?.full_name === 'string'
+      ? (user.user_metadata.full_name as string)
+      : null;
+
   await db.insert(schema.workspaceMembers).values({
     workspaceId: workspace.id,
     userId: user.id,
     role: 'owner',
+    displayName: fullName,
+    email: user.email ?? null,
     acceptedAt: new Date(),
   });
 

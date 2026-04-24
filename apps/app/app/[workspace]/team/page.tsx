@@ -44,13 +44,15 @@ export default async function TeamPage({
     currentMembership?.role === 'admin';
   const viewerIsOwner = currentMembership?.role === 'owner';
 
+  // Label precedence: cached display_name → cached email → UUID prefix.
+  // The cache is populated at invite-accept / onboarding time and synced
+  // on profile edits (see profile-actions.ts). Pre-cache rows backfilled
+  // by the 0001 migration.
   const memberViews: MemberRowView[] = members.map((m) => ({
     id: m.id,
     userId: m.userId,
-    label:
-      m.userId === user.id
-        ? 'You'
-        : `${(m.userId ?? 'unknown').slice(0, 8)}…`,
+    label: memberLabel(m, user.id),
+    email: m.userId === user.id ? user.email ?? m.email : m.email,
     role: m.role as Role,
     isSelf: m.userId === user.id,
     viewerIsOwner,
@@ -115,4 +117,22 @@ export default async function TeamPage({
       )}
     </div>
   );
+}
+
+/**
+ * Pick the best human label for a member row:
+ * - Current user → always "You" (matches the `You` badge semantics).
+ * - Cached display_name if present.
+ * - Cached email as a fallback (meaningful for freshly-accepted invites
+ *   that haven't set a full_name yet).
+ * - Truncated UUID as last resort (only happens pre-backfill).
+ */
+function memberLabel(
+  m: { userId: string | null; displayName: string | null; email: string | null },
+  currentUserId: string,
+): string {
+  if (m.userId === currentUserId) return 'You';
+  if (m.displayName && m.displayName.trim()) return m.displayName;
+  if (m.email && m.email.trim()) return m.email;
+  return `${(m.userId ?? 'unknown').slice(0, 8)}…`;
 }

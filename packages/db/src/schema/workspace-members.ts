@@ -13,6 +13,20 @@ export const workspaceMembers = pgTable(
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     userId: userIdRef('user_id'),
     role: text('role').$type<Role>().notNull(),
+    /**
+     * Cached copy of `auth.users.user_metadata.full_name`. Kept in sync on
+     * insert (invite accept / onboarding) + on profile updates. Nullable so
+     * pre-existing rows don't break when this migration lands; reads fall
+     * back to email → `Member` → UUID prefix.
+     */
+    displayName: text('display_name'),
+    /**
+     * Cached copy of `auth.users.email`. Backfilled from Supabase at insert
+     * time. Duplicated here because joining against `auth.users` from app
+     * queries requires service-role + a schema crossing — expensive for a
+     * value that mutates rarely.
+     */
+    email: text('email'),
     invitedAt: timestamp('invited_at', { withTimezone: true, mode: 'date' }),
     acceptedAt: timestamp('accepted_at', { withTimezone: true, mode: 'date' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),

@@ -42,7 +42,14 @@ export type TaskRowModel = {
   clientId: string | null;
   clientName: string | null;
   approvalState: ApprovalState;
+  /** Membership id of the current assignee, if any. */
+  assigneeMembershipId: string | null;
 };
+
+/** Lightweight member option for assignee pickers. Built in the server
+ *  component that renders the task list and threaded through TaskRow so
+ *  TaskDetailDialog can show names in edit mode. */
+export type MemberOption = { id: string; label: string };
 
 const APPROVAL_BADGE: Record<
   ApprovalState,
@@ -79,9 +86,13 @@ const PRIORITY_TONE: Record<TaskPriority, string> = {
 export function TaskRow({
   workspaceId,
   task,
+  members,
 }: {
   workspaceId: string;
   task: TaskRowModel;
+  /** Passed to TaskDetailDialog so its edit mode can offer an assignee
+   *  picker. Omit when the caller hasn't fetched members (picker hidden). */
+  members?: MemberOption[];
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -256,6 +267,7 @@ export function TaskRow({
     <TaskDetailDialog
       workspaceId={workspaceId}
       task={task}
+      members={members}
       open={detailOpen}
       onOpenChange={setDetailOpen}
     />

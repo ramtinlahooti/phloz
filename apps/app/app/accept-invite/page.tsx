@@ -103,10 +103,20 @@ export default async function AcceptInvitePage({ searchParams }: PageProps) {
     .then((rows) => rows[0]);
 
   if (!existingMembership) {
+    // Cache identity on insert — see packages/db/src/schema/workspace-members.ts
+    // for the rationale. Falls back to null when the invitee hasn't set a
+    // full_name yet; the Team page then shows the email as the primary label.
+    const fullName =
+      typeof user.user_metadata?.full_name === 'string'
+        ? (user.user_metadata.full_name as string)
+        : null;
+
     await db.insert(schema.workspaceMembers).values({
       workspaceId: invitation.workspaceId,
       userId: user.id,
       role: invitation.role,
+      displayName: fullName,
+      email: user.email ?? null,
       invitedAt: invitation.createdAt,
       acceptedAt: new Date(),
     });

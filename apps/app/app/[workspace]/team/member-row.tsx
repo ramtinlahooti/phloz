@@ -33,7 +33,14 @@ function initials(label: string): string {
 export type MemberRowView = {
   id: string;
   userId: string | null;
+  /** Primary label — display_name, falling back to email then UUID prefix. */
   label: string;
+  /**
+   * Cached email. Rendered as a secondary line below the label when it
+   * differs from the label (i.e. when the label is a real name, not the
+   * email fallback).
+   */
+  email: string | null;
   role: Role;
   isSelf: boolean;
   /** Only owners can act on other owners. */
@@ -102,6 +109,11 @@ export function MemberRow({
             </Badge>
           )}
         </div>
+        {member.email && member.email !== member.label && (
+          <div className="truncate text-xs text-muted-foreground">
+            {member.email}
+          </div>
+        )}
       </div>
       <Badge variant="secondary" className="capitalize">
         {member.role}

@@ -42,6 +42,8 @@ async function main() {
     workspaceId: workspace.id,
     userId: SEED_OWNER_ID,
     role: 'owner',
+    displayName: 'Demo Owner',
+    email: 'owner@demo-agency.local',
     acceptedAt: new Date(),
   });
 

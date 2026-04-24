@@ -101,6 +101,8 @@ export default async function TasksPage({
           id: schema.workspaceMembers.id,
           userId: schema.workspaceMembers.userId,
           role: schema.workspaceMembers.role,
+          displayName: schema.workspaceMembers.displayName,
+          email: schema.workspaceMembers.email,
         })
         .from(schema.workspaceMembers)
         .where(eq(schema.workspaceMembers.workspaceId, workspaceId)),
@@ -114,17 +116,28 @@ export default async function TasksPage({
     ]);
 
   const clientById = new Map(clientRows.map((c) => [c.id, c.name]));
-  // Membership options for the assignee dropdown. We don't have
-  // human names yet (auth.users.id → email lookup is expensive here)
-  // so list by short uuid. "You" is labeled when the current user
-  // matches. Portal contacts are never assignees.
-  const memberOptions = memberRows.map((m) => ({
-    id: m.id,
-    label:
-      m.userId === user.id
-        ? 'You'
-        : `${(m.userId ?? 'unknown').slice(0, 8)}… · ${m.role}`,
-  }));
+  // Membership options for the assignee filter + dialog pickers.
+  // Label precedence: "You" for current user → cached display_name →
+  // cached email → UUID prefix. Sorted so "You" is first, then
+  // alphabetical. Portal contacts are never assignees.
+  const memberOptions = memberRows
+    .map((m) => {
+      const isSelf = m.userId === user.id;
+      const primary =
+        isSelf
+          ? 'You'
+          : (m.displayName?.trim() ||
+             m.email?.trim() ||
+             `${(m.userId ?? 'unknown').slice(0, 8)}…`);
+      return {
+        id: m.id,
+        label: `${primary} · ${m.role}`,
+        /** Used for sorting only. */
+        sortKey: isSelf ? '' : primary.toLowerCase(),
+      };
+    })
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+    .map(({ id, label }) => ({ id, label }));
 
   // Filter rows.
   const filtered = taskRows.filter((t) => {
@@ -165,6 +178,7 @@ export default async function TasksPage({
       clientId: t.clientId,
       clientName: t.clientId ? clientById.get(t.clientId) ?? null : null,
       approvalState: t.approvalState as ApprovalState,
+      assigneeMembershipId: t.assigneeId,
     });
   }
 
@@ -191,7 +205,11 @@ export default async function TasksPage({
             open
           </p>
         </div>
-        <NewTaskDialog workspaceId={workspaceId} clients={clientRows} />
+        <NewTaskDialog
+          workspaceId={workspaceId}
+          clients={clientRows}
+          members={memberOptions}
+        />
       </header>
 
       {/* Filters */}
@@ -238,7 +256,11 @@ export default async function TasksPage({
           title="No tasks yet"
           description="Create your first task to track work across clients."
           action={
-            <NewTaskDialog workspaceId={workspaceId} clients={clientRows} />
+            <NewTaskDialog
+              workspaceId={workspaceId}
+              clients={clientRows}
+              members={memberOptions}
+            />
           }
         />
       ) : filtered.length === 0 ? (
@@ -279,6 +301,7 @@ export default async function TasksPage({
                         key={task.id}
                         workspaceId={workspaceId}
                         task={task}
+                        members={memberOptions}
                       />
                     ))}
                   </ul>

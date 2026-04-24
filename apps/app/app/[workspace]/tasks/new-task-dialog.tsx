@@ -37,6 +37,8 @@ import {
 
 import { createTaskAction } from './actions';
 
+const UNASSIGNED = '__unassigned__';
+
 const schema = z.object({
   title: z.string().trim().min(1, 'Required').max(200),
   description: z.string().max(4000).optional(),
@@ -50,6 +52,13 @@ const schema = z.object({
    * and there's no stale-state window on submit.
    */
   clientId: z.string().default('__none__'),
+  /**
+   * `__unassigned__` sentinel → null assigneeMembershipId on submit. Any
+   * other value is a `workspace_members.id`. We use a sentinel instead
+   * of an empty string because shadcn's <Select> treats `''` as "no
+   * value" and won't render the placeholder label correctly.
+   */
+  assigneeMembershipId: z.string().default(UNASSIGNED),
 });
 
 type Values = z.infer<typeof schema>;
@@ -59,10 +68,13 @@ type Props = {
   /** When supplied, the task is attached to this client; otherwise workspace-scoped. */
   clientId?: string | null;
   clients?: { id: string; name: string }[];
+  /** Workspace members eligible to own a task. When omitted the picker
+   *  is hidden (new tasks default to unassigned). */
+  members?: { id: string; label: string }[];
   trigger?: React.ReactNode;
 };
 
-export function NewTaskDialog({ workspaceId, clientId, clients, trigger }: Props) {
+export function NewTaskDialog({ workspaceId, clientId, clients, members, trigger }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -76,6 +88,7 @@ export function NewTaskDialog({ workspaceId, clientId, clients, trigger }: Props
       visibility: 'internal',
       dueDate: '',
       clientId: clientId ?? '__none__',
+      assigneeMembershipId: UNASSIGNED,
     },
   });
 
@@ -98,6 +111,11 @@ export function NewTaskDialog({ workspaceId, clientId, clients, trigger }: Props
       dueDate: values.dueDate
         ? new Date(values.dueDate).toISOString()
         : null,
+      assigneeMembershipId:
+        values.assigneeMembershipId &&
+        values.assigneeMembershipId !== UNASSIGNED
+          ? values.assigneeMembershipId
+          : null,
     });
     if (!res.ok) {
       toast.error(res.error);
@@ -113,6 +131,7 @@ export function NewTaskDialog({ workspaceId, clientId, clients, trigger }: Props
       visibility: 'internal',
       dueDate: '',
       clientId: clientId ?? '__none__',
+      assigneeMembershipId: UNASSIGNED,
     });
     router.refresh();
   }
@@ -262,6 +281,37 @@ export function NewTaskDialog({ workspaceId, clientId, clients, trigger }: Props
                   </FormItem>
                 )}
               />
+              {members && members.length > 0 && (
+                <FormField
+                  control={form.control}
+                  name="assigneeMembershipId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Assignee (optional)</FormLabel>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value={UNASSIGNED}>
+                            Unassigned
+                          </SelectItem>
+                          {members.map((m) => (
+                            <SelectItem key={m.id} value={m.id}>
+                              {m.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+              )}
               {!clientId && clients && clients.length > 0 && (
                 <FormField
                   control={form.control}

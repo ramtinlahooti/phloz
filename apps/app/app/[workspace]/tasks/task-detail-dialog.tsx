@@ -40,7 +40,9 @@ import {
   type CommentView,
 } from './comments-actions';
 import { updateTaskAction } from './actions';
-import type { TaskRowModel } from './task-row';
+import type { MemberOption, TaskRowModel } from './task-row';
+
+const UNASSIGNED = '__unassigned__';
 
 /**
  * Task detail + comments thread. Lazy-loads comments on open so the
@@ -51,11 +53,16 @@ import type { TaskRowModel } from './task-row';
 export function TaskDetailDialog({
   workspaceId,
   task,
+  members,
   open,
   onOpenChange,
 }: {
   workspaceId: string;
   task: TaskRowModel;
+  /** Workspace members available to be assigned. Omitted when the caller
+   *  didn't fetch members — the assignee picker is then hidden from edit
+   *  mode and assignee stays unchanged on save. */
+  members?: MemberOption[];
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
@@ -80,6 +87,9 @@ export function TaskDetailDialog({
   const [editDueDate, setEditDueDate] = useState(
     task.dueDate ? toDateInput(task.dueDate) : '',
   );
+  const [editAssignee, setEditAssignee] = useState<string>(
+    task.assigneeMembershipId ?? UNASSIGNED,
+  );
   const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
@@ -93,6 +103,7 @@ export function TaskDetailDialog({
     setEditDepartment(task.department);
     setEditVisibility(task.visibility);
     setEditDueDate(task.dueDate ? toDateInput(task.dueDate) : '');
+    setEditAssignee(task.assigneeMembershipId ?? UNASSIGNED);
     setEditDescription(''); // description isn't on TaskRowModel — fetch below
 
     let cancelled = false;
@@ -113,7 +124,17 @@ export function TaskDetailDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, workspaceId, task.id, task.title, task.priority, task.department, task.visibility, task.dueDate]);
+  }, [
+    open,
+    workspaceId,
+    task.id,
+    task.title,
+    task.priority,
+    task.department,
+    task.visibility,
+    task.dueDate,
+    task.assigneeMembershipId,
+  ]);
 
   async function saveEdit() {
     setSavingEdit(true);
@@ -129,6 +150,15 @@ export function TaskDetailDialog({
         dueDate: editDueDate
           ? new Date(editDueDate).toISOString()
           : null,
+        // Only include assignee in the update when we actually rendered
+        // the picker — otherwise the caller hasn't given us members to
+        // choose from and we don't want to silently null it out.
+        ...(members
+          ? {
+              assigneeMembershipId:
+                editAssignee === UNASSIGNED ? null : editAssignee,
+            }
+          : {}),
       });
       if (!res.ok) {
         toast.error(res.error);
@@ -311,13 +341,37 @@ export function TaskDetailDialog({
                 </Select>
               </div>
             </div>
-            <div className="space-y-1">
-              <Label>Due date (optional)</Label>
-              <Input
-                type="date"
-                value={editDueDate}
-                onChange={(e) => setEditDueDate(e.target.value)}
-              />
+            <div
+              className={`grid gap-3 ${
+                members && members.length > 0 ? 'sm:grid-cols-2' : ''
+              }`}
+            >
+              <div className="space-y-1">
+                <Label>Due date (optional)</Label>
+                <Input
+                  type="date"
+                  value={editDueDate}
+                  onChange={(e) => setEditDueDate(e.target.value)}
+                />
+              </div>
+              {members && members.length > 0 && (
+                <div className="space-y-1">
+                  <Label>Assignee</Label>
+                  <Select value={editAssignee} onValueChange={setEditAssignee}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                      {members.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button

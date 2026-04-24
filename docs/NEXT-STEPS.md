@@ -1,4 +1,32 @@
-# Next Steps (as of 2026-04-23, end of the intense feature session)
+# Next Steps (as of 2026-04-24)
+
+## What shipped this session
+
+Bundle: team member name resolution + task assignee picker.
+
+- `workspace_members` gained `display_name` + `email` (cached from
+  `auth.users`). Migration `0001_loving_marauders.sql` is
+  idempotent and also formalises the prior drift between schema and
+  checked-in migrations.
+- Insert paths (onboarding, accept-invite, seed) and the profile
+  settings action now keep the cache in sync.
+- Team page renders display names with email as a secondary line;
+  the task assignee filter + pickers show the same label.
+- `NewTaskDialog` and the task detail dialog's edit mode both have
+  an assignee Select. Threaded through `tasks/page.tsx` +
+  `clients/[clientId]/page.tsx`.
+- `pnpm check` 29/29 green.
+
+**Ramtin still needs to apply `0001_loving_marauders.sql`** against
+Supabase before the new columns work in production. Options:
+  - `pnpm --filter @phloz/db db:migrate` (requires `DATABASE_URL` to
+    the service-role connection string).
+  - Paste the SQL into the Supabase dashboard SQL editor.
+The file is safe to re-run.
+
+---
+
+# Previous Next Steps (as of 2026-04-23, end of the intense feature session)
 
 ## Where Phloz stands
 
@@ -78,13 +106,13 @@ product out substantially.
 - **Ownership transfer** — promoting a member to `owner` is
   blocked today. Needs a confirmation flow because it demotes
   the current owner.
-- **Name resolution for teammates** — the Team page and task
-  assignee filter show short UUIDs for non-self members. Needs
-  either a Supabase Admin-API lookup or a cached
-  `workspace_members.display_name` column.
-- **Task assignee picker** — column exists + filter works, but
-  the NewTaskDialog + detail-dialog edit mode don't surface an
-  assignee Select yet.
+- **Name resolution for teammates** — ✅ shipped 2026-04-24.
+- **Task assignee picker** — ✅ shipped 2026-04-24.
+- **Email change sync to `workspace_members.email`** — users
+  who change their email via the Supabase email-change flow will
+  have stale `workspace_members.email` until next profile edit.
+  Rare; acceptable for V1. Future fix: Inngest handler on
+  `auth.users` update event, or drop the column and join lazily.
 
 ## What Ramtin needs to do to go live
 
