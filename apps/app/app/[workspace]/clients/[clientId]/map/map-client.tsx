@@ -1,5 +1,6 @@
 'use client';
 
+import { track } from '@phloz/analytics';
 import type { TrackingMapSnapshot } from '@phloz/tracking-map';
 import {
   TrackingMapCanvas,
@@ -114,6 +115,9 @@ export function MapClient({
       clientId={clientId}
       initial={initial}
       onAction={handler}
+      onLayoutArranged={() => {
+        void track('map_layout_arranged', {});
+      }}
     />
   );
 }

@@ -4,6 +4,98 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Billing + map analytics + ownership transfer
+
+### Stripe webhook analytics
+
+Previously the webhook updated `workspaces.tier` silently; now it
+fetches the prior tier + owner, then emits the right event when the
+tier changes. All events run through `fireTrack` — PostHog/GA4 outage
+can't fail webhook reconciliation.
+
+- `upgrade_tier` — fires when a subscription created/updated event
+  moves the workspace to a higher tier. Includes `from_tier`,
+  `to_tier`, `billing_period` (derived from
+  `sub.items[0].price.recurring.interval`), and `value` (USD
+  cents from `TIERS[tier].{monthly,annual}PriceUsd`).
+- `downgrade_tier` — same event, opposite direction.
+- `subscription_canceled` — fires on
+  `customer.subscription.deleted` with `from_tier` + Stripe's
+  `cancellation_details.reason`.
+- `payment_failed` — fires on `invoice.payment_failed` with the
+  current tier.
+
+Ownership attribution: the webhook has no user session, so events use
+`workspaces.owner_user_id` as the distinctId. No-op if the owner row
+is missing.
+
+### Tracking-map analytics (full coverage)
+
+- `node_updated` — `updateNodeAction`. Position-only updates
+  (drag autosave → debounced) are excluded from the event via a
+  `pickPrimaryField` helper; otherwise PostHog would get flooded
+  with one event per pixel moved.
+- `node_health_changed` — fires on top of `node_updated` when the
+  health status actually transitioned, with old/new status.
+- `node_deleted` — `deleteNodeAction` now reads `nodeType` before
+  the delete so the event can carry it.
+- `edge_created` — `createEdgeAction` now pulls `nodeType` from
+  both endpoints in the existing validation query (no extra
+  roundtrip), lets the event carry `source_type` + `target_type`.
+- `edge_deleted` — `deleteEdgeAction`.
+- `map_layout_arranged` — new `onLayoutArranged` callback prop
+  on `TrackingMapCanvas`. The consumer (`map-client.tsx`) fires
+  `track('map_layout_arranged', {})`. Kept as a callback so the
+  `@phloz/tracking-map` package stays decoupled from
+  `@phloz/analytics`.
+
+### Team events
+
+- `member_role_changed` — `changeMemberRoleAction`.
+- `member_removed` — `removeMemberAction`.
+
+### Ownership transfer
+
+Previously blocked in `changeMemberRoleAction` with a "not supported
+yet" error. Now fully shipped.
+
+- **`transferOwnershipAction`** (new, in `team/actions.ts`). Runs
+  inside a Drizzle transaction so the workspace is never left
+  owner-less:
+  1. Demote current owner to `admin`
+  2. Promote target member to `owner`
+  3. Update `workspaces.owner_user_id`
+  4. Insert `audit_log` row with action `ownership_transferred`
+     and `{from_user_id, to_user_id, ...}` metadata
+- **Guards**:
+  - `requireOwner(workspaceId)` — only the current owner can
+    initiate.
+  - Confirmation phrase must equal `"TRANSFER"` (case-sensitive).
+  - Target must be a non-owner member.
+- **`TransferOwnershipDialog`** (new component). Typed-confirmation
+  modal — button stays disabled until the user types `TRANSFER`.
+  Shown via a "Transfer ownership…" item in the member row's
+  dropdown (visible only to the current owner, never on self).
+- **`changeMemberRoleAction`** error message updated to route users
+  to the new flow when they pick "owner" from the radio group.
+- Emits two `member_role_changed` events (old-owner → admin,
+  target → owner). No new event added to the taxonomy — the audit
+  log is the authoritative record of the transfer semantics.
+
+### Files touched
+
+- `apps/app/app/api/webhooks/stripe/route.ts`
+- `apps/app/app/[workspace]/clients/[clientId]/map/actions.ts`
+- `apps/app/app/[workspace]/clients/[clientId]/map/map-client.tsx`
+- `packages/tracking-map/src/canvas/index.tsx` (new `onLayoutArranged` prop)
+- `apps/app/app/[workspace]/team/actions.ts` (transferOwnershipAction, analytics)
+- `apps/app/app/[workspace]/team/transfer-ownership-dialog.tsx` (new)
+- `apps/app/app/[workspace]/team/member-row.tsx`
+
+`pnpm check` 29/29 green.
+
+---
+
 ## 2026-04-24 — Analytics track() wiring across product actions
 
 ### Plumbing

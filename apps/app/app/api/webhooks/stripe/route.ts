@@ -6,12 +6,14 @@ import {
   markBillingEventProcessed,
   recordBillingEvent,
   HANDLED_EVENT_TYPES,
+  TIERS,
   type HandledStripeEventType,
 } from '@phloz/billing';
 import { getDb, schema } from '@phloz/db/client';
-import type { TierName } from '@phloz/config';
+import type { BillingPeriod, TierName } from '@phloz/config';
 import type Stripe from 'stripe';
 
+import { fireTrack, serverTrackContext } from '@/lib/analytics';
 import { inngest } from '@/inngest';
 
 // Must use the raw body for signature verification — disable Next's parsing.
@@ -100,6 +102,27 @@ async function reconcile(event: Stripe.Event, workspaceId: string | null) {
   if (!workspaceId) return;
   const db = getDb();
 
+  // Fetch the prior state once — analytics events (upgrade_tier vs.
+  // downgrade_tier, subscription_canceled with `from_tier`) need it, and
+  // it's one round-trip regardless of branch below. ownerUserId is the
+  // distinctId for all workspace-level billing events (the webhook has
+  // no user session; attribution falls to the workspace owner).
+  const existing = await db
+    .select({
+      tier: schema.workspaces.tier,
+      ownerUserId: schema.workspaces.ownerUserId,
+    })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.id, workspaceId))
+    .limit(1)
+    .then((r) => r[0] ?? null);
+
+  const fromTier = (existing?.tier ?? 'starter') as TierName;
+  const ownerUserId = existing?.ownerUserId ?? null;
+  const ctx = ownerUserId
+    ? serverTrackContext(ownerUserId, workspaceId)
+    : null;
+
   switch (event.type) {
     case 'checkout.session.completed': {
       const session = event.data.object as Stripe.Checkout.Session;
@@ -123,6 +146,8 @@ async function reconcile(event: Stripe.Event, workspaceId: string | null) {
       const sub = event.data.object as Stripe.Subscription;
       const priceId = sub.items.data[0]?.price.id;
       const tier = priceId ? PRICE_TO_TIER[priceId] : undefined;
+      const billingPeriod = deriveBillingPeriod(sub);
+
       await db
         .update(schema.workspaces)
         .set({
@@ -144,9 +169,37 @@ async function reconcile(event: Stripe.Event, workspaceId: string | null) {
       } catch (err) {
         console.error('[stripe.webhook] inngest fanout failed', err);
       }
+
+      // Tier-change analytics. Only fires when a resolved tier came
+      // through *and* the tier actually moved — a plain status change
+      // (active → past_due on same tier) isn't an upgrade/downgrade.
+      if (tier && ctx && tier !== fromTier) {
+        const direction = tierRank(tier) > tierRank(fromTier)
+          ? 'upgrade'
+          : 'downgrade';
+        if (direction === 'upgrade') {
+          fireTrack(
+            'upgrade_tier',
+            {
+              from_tier: fromTier,
+              to_tier: tier,
+              billing_period: billingPeriod,
+              value: tierValueUsdCents(tier, billingPeriod),
+            },
+            ctx,
+          );
+        } else {
+          fireTrack(
+            'downgrade_tier',
+            { from_tier: fromTier, to_tier: tier },
+            ctx,
+          );
+        }
+      }
       break;
     }
     case 'customer.subscription.deleted': {
+      const sub = event.data.object as Stripe.Subscription;
       await db
         .update(schema.workspaces)
         .set({
@@ -156,10 +209,63 @@ async function reconcile(event: Stripe.Event, workspaceId: string | null) {
           updatedAt: new Date(),
         })
         .where(eq(schema.workspaces.id, workspaceId));
+
+      if (ctx) {
+        fireTrack(
+          'subscription_canceled',
+          {
+            from_tier: fromTier,
+            // Stripe's `cancellation_details.reason` is the closest
+            // thing to a free-form reason; fall back to the enum if
+            // absent.
+            reason:
+              sub.cancellation_details?.reason ??
+              (sub.cancel_at_period_end ? 'cancel_at_period_end' : 'unknown'),
+          },
+          ctx,
+        );
+      }
       break;
     }
-    // invoice.paid / invoice.payment_failed: emit analytics events in V2.
+    case 'invoice.payment_failed': {
+      if (ctx) {
+        fireTrack('payment_failed', { tier: fromTier }, ctx);
+      }
+      break;
+    }
+    // invoice.paid → `upgrade_tier` already fires from the subscription
+    // event; we don't need a separate event here.
     default:
       break;
   }
+}
+
+// --- helpers --------------------------------------------------------------
+
+const TIER_ORDER: TierName[] = [
+  'starter',
+  'pro',
+  'growth',
+  'business',
+  'scale',
+  'enterprise',
+];
+
+function tierRank(tier: TierName): number {
+  return TIER_ORDER.indexOf(tier);
+}
+
+function deriveBillingPeriod(sub: Stripe.Subscription): BillingPeriod {
+  const interval = sub.items.data[0]?.price.recurring?.interval;
+  return interval === 'year' ? 'annual' : 'monthly';
+}
+
+/** Revenue in USD cents for GA4 / PostHog. Returns 0 for enterprise
+ *  (custom pricing) or any tier without a public price. */
+function tierValueUsdCents(tier: TierName, period: BillingPeriod): number {
+  const cfg = TIERS[tier];
+  const dollars =
+    period === 'annual' ? cfg.annualPriceUsd : cfg.monthlyPriceUsd;
+  if (dollars === null) return 0;
+  return Math.round(dollars * 100);
 }

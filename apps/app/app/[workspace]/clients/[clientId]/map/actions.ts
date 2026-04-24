@@ -120,8 +120,9 @@ export async function updateNodeAction(
   const parsed = updateNodeInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.message };
 
+  let actor;
   try {
-    await requireRole(parsed.data.workspaceId, ['owner', 'admin', 'member']);
+    actor = await requireRole(parsed.data.workspaceId, ['owner', 'admin', 'member']);
   } catch {
     return { ok: false, error: 'forbidden' };
   }
@@ -159,7 +160,53 @@ export async function updateNodeAction(
     .set(updates)
     .where(eq(schema.trackingNodes.id, parsed.data.id));
 
+  // Analytics. Position-only updates (auto-save on drag) are noisy and
+  // not meaningful — skip them. Every other edit fires `node_updated`
+  // with the primary field changed. `node_health_changed` fires on top
+  // of that when the health status transitioned.
+  const ctx = serverTrackContext(actor.user.id, parsed.data.workspaceId);
+  const primaryField = pickPrimaryField(parsed.data);
+  if (primaryField) {
+    fireTrack(
+      'node_updated',
+      { node_type: existing.nodeType, field_changed: primaryField },
+      ctx,
+    );
+  }
+  if (
+    parsed.data.healthStatus !== undefined &&
+    existing.healthStatus !== parsed.data.healthStatus
+  ) {
+    fireTrack(
+      'node_health_changed',
+      {
+        node_type: existing.nodeType,
+        old_status: existing.healthStatus as HealthStatus,
+        new_status: parsed.data.healthStatus as HealthStatus,
+      },
+      ctx,
+    );
+  }
+
   return { ok: true };
+}
+
+/** Pick the field to attribute a node_updated event to. Position-only
+ *  updates (drag autosave) return null so we skip the event — otherwise
+ *  dashboards would be flooded with mutation noise. */
+function pickPrimaryField(update: {
+  label?: string;
+  metadata?: Record<string, unknown>;
+  healthStatus?: string;
+  position?: { x: number; y: number };
+  markVerified?: boolean;
+}): string | null {
+  if (update.label !== undefined) return 'label';
+  if (update.metadata !== undefined) return 'metadata';
+  if (update.healthStatus !== undefined) return 'health_status';
+  if (update.markVerified) return 'last_verified_at';
+  // position-only → skip
+  return null;
 }
 
 // --- delete node -------------------------------------------------------
@@ -170,13 +217,28 @@ export async function deleteNodeAction(input: {
   if (!uuid.safeParse(input.workspaceId).success || !uuid.safeParse(input.id).success) {
     return { ok: false, error: 'invalid_input' };
   }
+  let actor;
   try {
-    await requireRole(input.workspaceId, ['owner', 'admin', 'member']);
+    actor = await requireRole(input.workspaceId, ['owner', 'admin', 'member']);
   } catch {
     return { ok: false, error: 'forbidden' };
   }
 
   const db = getDb();
+
+  // Read nodeType before the delete so the analytics event can carry it.
+  const existing = await db
+    .select({ nodeType: schema.trackingNodes.nodeType })
+    .from(schema.trackingNodes)
+    .where(
+      and(
+        eq(schema.trackingNodes.id, input.id),
+        eq(schema.trackingNodes.workspaceId, input.workspaceId),
+      ),
+    )
+    .limit(1)
+    .then((r) => r[0] ?? null);
+
   await db
     .delete(schema.trackingNodes)
     .where(
@@ -185,6 +247,14 @@ export async function deleteNodeAction(input: {
         eq(schema.trackingNodes.workspaceId, input.workspaceId),
       ),
     );
+
+  if (existing) {
+    fireTrack(
+      'node_deleted',
+      { node_type: existing.nodeType },
+      serverTrackContext(actor.user.id, input.workspaceId),
+    );
+  }
   return { ok: true };
 }
 
@@ -218,8 +288,14 @@ export async function createEdgeAction(
   const db = getDb();
 
   // Both endpoints must belong to the same client within this workspace.
+  // We also pull nodeType here so the edge_created analytics event can
+  // carry source_type + target_type without an extra roundtrip.
   const endpoints = await db
-    .select({ id: schema.trackingNodes.id, clientId: schema.trackingNodes.clientId })
+    .select({
+      id: schema.trackingNodes.id,
+      clientId: schema.trackingNodes.clientId,
+      nodeType: schema.trackingNodes.nodeType,
+    })
     .from(schema.trackingNodes)
     .where(
       and(
@@ -247,6 +323,17 @@ export async function createEdgeAction(
     .returning({ id: schema.trackingEdges.id });
 
   if (!row) return { ok: false, error: 'insert_failed' };
+
+  fireTrack(
+    'edge_created',
+    {
+      edge_type: parsed.data.edgeType,
+      source_type: bySource.nodeType,
+      target_type: byTarget.nodeType,
+    },
+    serverTrackContext(user.id, parsed.data.workspaceId),
+  );
+
   return { ok: true, id: row.id };
 }
 
@@ -296,8 +383,9 @@ export async function deleteEdgeAction(input: {
   if (!uuid.safeParse(input.workspaceId).success || !uuid.safeParse(input.id).success) {
     return { ok: false, error: 'invalid_input' };
   }
+  let actor;
   try {
-    await requireRole(input.workspaceId, ['owner', 'admin', 'member']);
+    actor = await requireRole(input.workspaceId, ['owner', 'admin', 'member']);
   } catch {
     return { ok: false, error: 'forbidden' };
   }
@@ -311,6 +399,12 @@ export async function deleteEdgeAction(input: {
         eq(schema.trackingEdges.workspaceId, input.workspaceId),
       ),
     );
+
+  fireTrack(
+    'edge_deleted',
+    {},
+    serverTrackContext(actor.user.id, input.workspaceId),
+  );
   return { ok: true };
 }
 

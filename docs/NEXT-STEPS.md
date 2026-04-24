@@ -3,26 +3,35 @@
 ## What shipped this session
 
 **Part 1:** team member name resolution + task assignee picker
-(commit `135fdec`).
+(commit `135fdec`). `workspace_members.display_name` + `email`
+cached; used across team page, assignee picker/filter.
 
-- `workspace_members` gained `display_name` + `email` columns. SQL
-  applied to Supabase.
-- Team page + assignee filter + new/detail task dialog pickers all
-  use the cached names.
+**Part 2:** ~18 analytics `track()` events wired across auth,
+workspace, team, clients, tasks, node map, messages, billing
+checkout (commit `49f7acf`). Plus `serverTrackContext` + `fireTrack`
+helpers and `AnalyticsIdentify` client component.
 
-**Part 2:** analytics `track()` wiring across the product.
+**Part 3:** analytics picture completed + ownership transfer.
 
-- `apps/app/lib/analytics.ts` helpers (serverTrackContext +
-  fireTrack fire-and-forget) — use these from every server action
-  that wants to emit an event.
-- PostHog provider refactored to use `@phloz/analytics` primitives;
-  new `AnalyticsIdentify` component mounted in the workspace layout
-  attaches the hashed user id + tier + role to every PH event.
-- ~18 events wired across auth, workspace, team, clients, tasks,
-  node map, messages, billing checkout. Full list in CHANGELOG.
+- **Stripe webhook** now emits `upgrade_tier` / `downgrade_tier` /
+  `subscription_canceled` / `payment_failed` with correct
+  from/to + billing period + USD-cents value. Events attributed
+  to `workspaces.owner_user_id`.
+- **Tracking map** full coverage: `node_updated` (position-only
+  updates excluded to avoid drag-noise), `node_health_changed`,
+  `node_deleted`, `edge_created` (with source_type + target_type),
+  `edge_deleted`, `map_layout_arranged` (via new canvas callback
+  prop).
+- **Team events**: `member_role_changed`, `member_removed`.
+- **Ownership transfer** (NEXT-STEPS item) — new
+  `transferOwnershipAction` wrapped in a DB transaction (demote
+  owner → promote target → update workspaces.owner_user_id →
+  audit_log insert, all atomic). Typed-confirmation dialog
+  (`TRANSFER`) in the team page. Only the current owner sees
+  the "Transfer ownership…" menu item.
 
-`pnpm check` 29/29 green. Nothing user-visible until analytics
-keys are set; events just no-op without them.
+`pnpm check` 29/29 green. Nothing user-visible in analytics until
+keys are set; transfer UX is live as soon as deployed.
 
 ## To actually see the analytics data
 
@@ -120,15 +129,16 @@ product out substantially.
 - **Tests** — only the package-level ones ship. No Playwright
   smoke tests for the actual app flows. Add when there's a second
   developer.
-- **Analytics tracking wiring** — ✅ shipped 2026-04-24 for ~18
-  core lifecycle events. Still to do: `upgrade_tier` in the
-  Stripe webhook, `node_updated/deleted` + `edge_*` +
-  `map_layout_arranged` in the tracking-map, `client_updated` +
-  `workspace_settings_updated`, portal events, and marketing
-  site events (`cta_click`, `pricing_page_view_tier`, etc).
-- **Ownership transfer** — promoting a member to `owner` is
-  blocked today. Needs a confirmation flow because it demotes
-  the current owner.
+- **Analytics tracking wiring** — ✅ product-surface shipped
+  2026-04-24 (auth, workspace, team, clients, tasks, tracking
+  map, messages, billing checkout, Stripe webhook). Still to
+  do: `client_updated` + `workspace_settings_updated` (many
+  edit paths), portal events (`portal_accessed` /
+  `portal_link_sent` / `message_received`), and **marketing
+  site events** on `apps/web` (`cta_click`,
+  `pricing_page_view_tier`, `blog_post_view`,
+  `newsletter_signup`, `compare_page_view`, `page_view`).
+- **Ownership transfer** — ✅ shipped 2026-04-24.
 - **Name resolution for teammates** — ✅ shipped 2026-04-24.
 - **Task assignee picker** — ✅ shipped 2026-04-24.
 - **Email change sync to `workspace_members.email`** — users

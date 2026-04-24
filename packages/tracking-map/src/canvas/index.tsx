@@ -116,6 +116,10 @@ export type TrackingMapCanvasProps = {
   onAction: CanvasActionHandler;
   /** Read-only mode — still interactive (pan/zoom) but no writes. */
   readOnly?: boolean;
+  /** Fired when the user clicks "Arrange" (dagre auto-layout). Consumers
+   *  use this to emit the `map_layout_arranged` analytics event. Kept
+   *  as a callback so this package doesn't depend on @phloz/analytics. */
+  onLayoutArranged?: () => void;
 };
 
 const NODE_TYPES = { phloz: PhlozMapNode };
@@ -136,6 +140,7 @@ function CanvasInner({
   initial,
   onAction,
   readOnly,
+  onLayoutArranged,
 }: TrackingMapCanvasProps) {
   const { fitView, screenToFlowPosition, setCenter, getNode } = useReactFlow();
   const [nodes, setNodes] = useState<PhlozNode[]>(() =>
@@ -450,6 +455,7 @@ function CanvasInner({
       schedulePositionSave(n);
     }
     setTimeout(() => fitView({ duration: 400, padding: 0.2 }), 50);
+    onLayoutArranged?.();
   }
 
   // Clean up pending debounces on unmount.

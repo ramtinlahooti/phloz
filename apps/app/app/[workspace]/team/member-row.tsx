@@ -1,8 +1,8 @@
 'use client';
 
-import { MoreHorizontal, Trash2, UserCog, X } from 'lucide-react';
+import { Crown, MoreHorizontal, Trash2, UserCog, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useTransition } from 'react';
+import { useState, useTransition } from 'react';
 
 import type { Role } from '@phloz/config';
 import {
@@ -24,6 +24,7 @@ import {
   removeMemberAction,
   revokeInvitationAction,
 } from './actions';
+import { TransferOwnershipDialog } from './transfer-ownership-dialog';
 
 function initials(label: string): string {
   const parts = label.trim().split(/\s+/).slice(0, 2);
@@ -56,11 +57,15 @@ export function MemberRow({
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
+  const [transferOpen, setTransferOpen] = useState(false);
 
   const canManage = !member.isSelf;
   // Only an owner can modify another owner.
   const canActOnThisRole =
     member.role !== 'owner' || member.viewerIsOwner;
+  // Ownership transfer: owner-only, never to self or to existing owner.
+  const canTransferOwnership =
+    member.viewerIsOwner && !member.isSelf && member.role !== 'owner';
 
   async function changeRole(role: Role) {
     if (role === member.role) return;
@@ -96,68 +101,88 @@ export function MemberRow({
   }
 
   return (
-    <li className="flex items-center gap-4 px-6 py-4">
-      <Avatar>
-        <AvatarFallback>{initials(member.label)}</AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 text-sm">
-          <span className="truncate font-medium">{member.label}</span>
-          {member.isSelf && (
-            <Badge variant="outline" className="text-xs">
-              You
-            </Badge>
+    <>
+      <li className="flex items-center gap-4 px-6 py-4">
+        <Avatar>
+          <AvatarFallback>{initials(member.label)}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="truncate font-medium">{member.label}</span>
+            {member.isSelf && (
+              <Badge variant="outline" className="text-xs">
+                You
+              </Badge>
+            )}
+          </div>
+          {member.email && member.email !== member.label && (
+            <div className="truncate text-xs text-muted-foreground">
+              {member.email}
+            </div>
           )}
         </div>
-        {member.email && member.email !== member.label && (
-          <div className="truncate text-xs text-muted-foreground">
-            {member.email}
-          </div>
+        <Badge variant="secondary" className="capitalize">
+          {member.role}
+        </Badge>
+        {canManage && canActOnThisRole && (
+          <DropdownMenu>
+            <DropdownMenuTrigger className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+              <MoreHorizontal className="size-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel className="flex items-center gap-2">
+                <UserCog className="size-3.5" /> Role
+              </DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={member.role}>
+                <DropdownMenuItem
+                  onClick={() => changeRole('admin')}
+                  className="capitalize"
+                >
+                  Admin {member.role === 'admin' && '·'}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => changeRole('member')}
+                  className="capitalize"
+                >
+                  Member {member.role === 'member' && '·'}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => changeRole('viewer')}
+                  className="capitalize"
+                >
+                  Viewer {member.role === 'viewer' && '·'}
+                </DropdownMenuItem>
+              </DropdownMenuRadioGroup>
+              {canTransferOwnership && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setTransferOpen(true)}>
+                    <Crown className="size-3.5" /> Transfer ownership…
+                  </DropdownMenuItem>
+                </>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={remove}
+                className="text-red-400"
+              >
+                <Trash2 className="size-3.5" /> Remove from workspace
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
-      </div>
-      <Badge variant="secondary" className="capitalize">
-        {member.role}
-      </Badge>
-      {canManage && canActOnThisRole && (
-        <DropdownMenu>
-          <DropdownMenuTrigger className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-            <MoreHorizontal className="size-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel className="flex items-center gap-2">
-              <UserCog className="size-3.5" /> Role
-            </DropdownMenuLabel>
-            <DropdownMenuRadioGroup value={member.role}>
-              <DropdownMenuItem
-                onClick={() => changeRole('admin')}
-                className="capitalize"
-              >
-                Admin {member.role === 'admin' && '·'}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => changeRole('member')}
-                className="capitalize"
-              >
-                Member {member.role === 'member' && '·'}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => changeRole('viewer')}
-                className="capitalize"
-              >
-                Viewer {member.role === 'viewer' && '·'}
-              </DropdownMenuItem>
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={remove}
-              className="text-red-400"
-            >
-              <Trash2 className="size-3.5" /> Remove from workspace
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+      </li>
+
+      {canTransferOwnership && (
+        <TransferOwnershipDialog
+          workspaceId={workspaceId}
+          memberId={member.id}
+          memberLabel={member.label}
+          open={transferOpen}
+          onOpenChange={setTransferOpen}
+        />
       )}
-    </li>
+    </>
   );
 }
 
