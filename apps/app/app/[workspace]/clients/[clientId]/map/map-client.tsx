@@ -12,6 +12,8 @@ import {
   createNodeAction,
   deleteEdgeAction,
   deleteNodeAction,
+  importMapAction,
+  updateEdgeAction,
   updateNodeAction,
 } from './actions';
 
@@ -67,14 +69,41 @@ export function MapClient({
           sourceNodeId: action.payload.sourceNodeId,
           targetNodeId: action.payload.targetNodeId,
           edgeType: action.payload.edgeType,
+          label: action.payload.label ?? null,
         });
         return res.ok
           ? { ok: true, replacementId: res.id }
           : { ok: false, error: res.error };
       }
+      case 'update-edge': {
+        const res = await updateEdgeAction({
+          workspaceId,
+          id: action.payload.id,
+          edgeType: action.payload.edgeType,
+          label: action.payload.label,
+        });
+        return res.ok ? { ok: true } : { ok: false, error: res.error };
+      }
       case 'delete-edge': {
         const res = await deleteEdgeAction({ workspaceId, id: action.payload.id });
         return res.ok ? { ok: true } : { ok: false, error: res.error };
+      }
+      case 'import': {
+        const res = await importMapAction({
+          workspaceId,
+          clientId,
+          // @ts-expect-error — enum coercion happens in the Zod parse
+          nodes: action.payload.nodes,
+          // @ts-expect-error — same
+          edges: action.payload.edges,
+        });
+        return res.ok
+          ? {
+              ok: true,
+              nodesInserted: res.nodesInserted,
+              edgesInserted: res.edgesInserted,
+            }
+          : { ok: false, error: res.error };
       }
     }
   };

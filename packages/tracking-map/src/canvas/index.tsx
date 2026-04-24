@@ -17,7 +17,7 @@ import {
   type NodeChange,
   useReactFlow,
 } from '@xyflow/react';
-import { Download, LayoutGrid, Search } from 'lucide-react';
+import { Download, LayoutGrid, Search, Upload } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { EdgeType, HealthStatus, NodeType } from '@phloz/config';
@@ -29,11 +29,15 @@ import type { TrackingEdgeDto, TrackingMapSnapshot, TrackingNodeDto } from '../t
 
 import { AddNodeMenu } from './add-node-menu';
 import { PhlozMapNode, type PhlozNode, type PhlozNodeData } from './custom-node';
+import { EdgeEditDialog, type EdgeEditState } from './edge-edit-dialog';
+import { ImportMapDialog, type ImportPayload } from './import-dialog';
 import { autoLayout } from './layout';
 import { NodeDrawer } from './node-drawer';
 import { NodeSearchDialog } from './search';
 
 export { NodeSearchDialog } from './search';
+export { EdgeEditDialog, EDGE_TYPE_LABELS } from './edge-edit-dialog';
+export { ImportMapDialog } from './import-dialog';
 export type { PhlozNode, PhlozNodeData } from './custom-node';
 
 type CanvasAction =
@@ -66,13 +70,44 @@ type CanvasAction =
         sourceNodeId: string;
         targetNodeId: string;
         edgeType: EdgeType;
+        label?: string | null;
       };
     }
-  | { kind: 'delete-edge'; payload: { id: string } };
+  | {
+      kind: 'update-edge';
+      payload: {
+        id: string;
+        edgeType?: EdgeType;
+        label?: string | null;
+      };
+    }
+  | { kind: 'delete-edge'; payload: { id: string } }
+  | {
+      kind: 'import';
+      payload: {
+        nodes: Array<{
+          id: string;
+          nodeType: string;
+          label: string;
+          healthStatus?: string;
+          position?: { x: number; y: number } | null;
+          metadata?: Record<string, unknown>;
+        }>;
+        edges: Array<{
+          sourceNodeId: string;
+          targetNodeId: string;
+          edgeType?: string;
+          label?: string | null;
+        }>;
+      };
+    };
 
 export type CanvasActionHandler = (
   action: CanvasAction,
-) => Promise<{ ok: true; replacementId?: string } | { ok: false; error: string }>;
+) => Promise<
+  | { ok: true; replacementId?: string; nodesInserted?: number; edgesInserted?: number }
+  | { ok: false; error: string }
+>;
 
 export type TrackingMapCanvasProps = {
   clientId: string;
@@ -114,6 +149,8 @@ function CanvasInner({
   });
   const [searchOpen, setSearchOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [edgeDialog, setEdgeDialog] = useState<EdgeEditState>({ open: false });
 
   // Keep a ref to throttle position autosaves per-node.
   const positionSaveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -158,41 +195,121 @@ function CanvasInner({
   const onConnect = useCallback(
     (connection: Connection) => {
       if (readOnly) return;
+      // Instead of persisting immediately, open the edge dialog so the
+      // user picks the edge type + optional label. We store the pending
+      // connection in the dialog state; Save commits + persists.
+      const src = nodes.find((n) => n.id === connection.source);
+      const tgt = nodes.find((n) => n.id === connection.target);
+      setEdgeDialog({
+        open: true,
+        mode: 'create',
+        dbId: null,
+        edgeType: 'custom',
+        label: '',
+        sourceLabel: src?.data.label,
+        targetLabel: tgt?.data.label,
+        // Carry the source/target so handleSave knows where to wire.
+        // Cast via the state to keep the public type narrow.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...(connection as any),
+      } as EdgeEditState & { source: string; target: string });
+    },
+    [nodes, readOnly],
+  );
+
+  async function handleEdgeDialogSave(next: {
+    edgeType: EdgeType;
+    label: string;
+  }) {
+    if (!edgeDialog.open) return;
+    const labelOrNull = next.label.trim() ? next.label.trim() : null;
+
+    if (edgeDialog.mode === 'create') {
+      // Read the stashed source/target off the dialog state.
+      const pending = edgeDialog as unknown as { source: string; target: string };
       const tempId = `tmp-edge-${Math.random().toString(36).slice(2, 10)}`;
       const optimistic: Edge = {
         id: tempId,
-        source: connection.source!,
-        target: connection.target!,
+        source: pending.source,
+        target: pending.target,
         type: 'default',
-        data: { edgeType: 'custom' satisfies EdgeType },
+        label: labelOrNull ?? undefined,
+        data: { edgeType: next.edgeType },
       };
       setEdges((c) => addEdge(optimistic, c));
-      void (async () => {
-        const result = await onAction({
-          kind: 'create-edge',
-          payload: {
-            tempId,
-            sourceNodeId: connection.source!,
-            targetNodeId: connection.target!,
-            edgeType: 'custom',
-          },
-        });
-        if (!result.ok) {
-          toast.error(result.error);
-          setEdges((c) => c.filter((e) => e.id !== tempId));
-          return;
-        }
-        if (result.replacementId) {
-          setEdges((c) =>
-            c.map((e) =>
-              e.id === tempId ? { ...e, id: result.replacementId! } : e,
-            ),
-          );
-        }
-      })();
-    },
-    [onAction, readOnly],
-  );
+      setEdgeDialog({ open: false });
+
+      const result = await onAction({
+        kind: 'create-edge',
+        payload: {
+          tempId,
+          sourceNodeId: pending.source,
+          targetNodeId: pending.target,
+          edgeType: next.edgeType,
+          label: labelOrNull,
+        },
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        setEdges((c) => c.filter((e) => e.id !== tempId));
+        return;
+      }
+      if (result.replacementId) {
+        setEdges((c) =>
+          c.map((e) =>
+            e.id === tempId ? { ...e, id: result.replacementId! } : e,
+          ),
+        );
+      }
+      return;
+    }
+
+    // edit mode
+    if (!edgeDialog.dbId) return;
+    const dbId = edgeDialog.dbId;
+    setEdges((c) =>
+      c.map((e) =>
+        e.id === dbId
+          ? {
+              ...e,
+              label: labelOrNull ?? undefined,
+              data: { ...(e.data ?? {}), edgeType: next.edgeType },
+            }
+          : e,
+      ),
+    );
+    setEdgeDialog({ open: false });
+
+    const result = await onAction({
+      kind: 'update-edge',
+      payload: { id: dbId, edgeType: next.edgeType, label: labelOrNull },
+    });
+    if (!result.ok) toast.error(result.error);
+  }
+
+  async function handleEdgeDialogDelete() {
+    if (!edgeDialog.open || edgeDialog.mode !== 'edit' || !edgeDialog.dbId) return;
+    const dbId = edgeDialog.dbId;
+    setEdges((c) => c.filter((e) => e.id !== dbId));
+    setEdgeDialog({ open: false });
+    const result = await onAction({ kind: 'delete-edge', payload: { id: dbId } });
+    if (!result.ok) toast.error(result.error);
+  }
+
+  async function handleImport(payload: ImportPayload) {
+    const result = await onAction({
+      kind: 'import',
+      payload,
+    });
+    if (!result.ok) return result;
+    // Re-fetch on next render via router — caller triggers revalidatePath.
+    // For immediate UX we'd reload here, but revalidation pipes through.
+    return {
+      ok: true as const,
+      nodesInserted: result.nodesInserted ?? 0,
+      edgesInserted: result.edgesInserted ?? 0,
+    };
+  }
 
   function schedulePositionSave(node: PhlozNode) {
     const existing = positionSaveTimers.current.get(node.id);
@@ -434,6 +551,21 @@ function CanvasInner({
         onNodeClick={(_, node) => {
           setDrawer({ open: true, node: node.data as PhlozNodeData });
         }}
+        onEdgeClick={(_, edge) => {
+          if (readOnly) return;
+          const src = nodes.find((n) => n.id === edge.source);
+          const tgt = nodes.find((n) => n.id === edge.target);
+          const data = (edge.data ?? {}) as { edgeType?: EdgeType };
+          setEdgeDialog({
+            open: true,
+            mode: 'edit',
+            dbId: edge.id,
+            edgeType: data.edgeType ?? 'custom',
+            label: typeof edge.label === 'string' ? edge.label : '',
+            sourceLabel: src?.data.label,
+            targetLabel: tgt?.data.label,
+          });
+        }}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.2}
@@ -491,6 +623,15 @@ function CanvasInner({
               >
                 <Download className="size-3.5" /> Export
               </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setImportOpen(true)}
+                className="gap-1.5"
+                title="Import map JSON"
+              >
+                <Upload className="size-3.5" /> Import
+              </Button>
               <div
                 className={`pl-2 pr-1 text-xs ${
                   nodes.length >= SOFT_NODE_CAP
@@ -523,6 +664,23 @@ function CanvasInner({
         onOpenChange={setSearchOpen}
         nodes={nodes}
         onSelect={handleSearchPick}
+      />
+
+      <EdgeEditDialog
+        state={edgeDialog}
+        onCancel={() => setEdgeDialog({ open: false })}
+        onSave={handleEdgeDialogSave}
+        onDelete={
+          edgeDialog.open && edgeDialog.mode === 'edit'
+            ? handleEdgeDialogDelete
+            : undefined
+        }
+      />
+
+      <ImportMapDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImport={handleImport}
       />
 
       {/* Hidden context so the component doesn't warn about unused

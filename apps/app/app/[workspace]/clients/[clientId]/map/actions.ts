@@ -12,6 +12,7 @@ import {
 } from '@phloz/tracking-map';
 import type { EdgeType, HealthStatus, NodeType } from '@phloz/config';
 import { EDGE_TYPES, HEALTH_STATUSES, NODE_TYPES } from '@phloz/config';
+import { revalidatePath } from 'next/cache';
 
 /**
  * Server actions for the tracking-map canvas. Each function returns
@@ -237,6 +238,44 @@ export async function createEdgeAction(
   return { ok: true, id: row.id };
 }
 
+// --- update edge (type + label) ----------------------------------------
+const updateEdgeInput = z.object({
+  workspaceId: uuid,
+  id: uuid,
+  edgeType: z.enum(EDGE_TYPES).optional(),
+  label: z.string().max(120).nullable().optional(),
+});
+
+export async function updateEdgeAction(
+  input: z.infer<typeof updateEdgeInput>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = updateEdgeInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.message };
+
+  try {
+    await requireRole(parsed.data.workspaceId, ['owner', 'admin', 'member']);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if (parsed.data.edgeType !== undefined)
+    updates.edgeType = parsed.data.edgeType as EdgeType;
+  if (parsed.data.label !== undefined) updates.label = parsed.data.label;
+
+  const db = getDb();
+  await db
+    .update(schema.trackingEdges)
+    .set(updates)
+    .where(
+      and(
+        eq(schema.trackingEdges.id, parsed.data.id),
+        eq(schema.trackingEdges.workspaceId, parsed.data.workspaceId),
+      ),
+    );
+  return { ok: true };
+}
+
 // --- delete edge -------------------------------------------------------
 export async function deleteEdgeAction(input: {
   workspaceId: string;
@@ -261,4 +300,121 @@ export async function deleteEdgeAction(input: {
       ),
     );
   return { ok: true };
+}
+
+// --- bulk import (from JSON) -------------------------------------------
+const importInput = z.object({
+  workspaceId: uuid,
+  clientId: uuid,
+  nodes: z
+    .array(
+      z.object({
+        id: z.string(),
+        nodeType: z.enum(NODE_TYPES),
+        label: z.string().trim().min(1).max(200),
+        healthStatus: z.enum(HEALTH_STATUSES).default('unverified'),
+        position: z
+          .object({ x: z.number(), y: z.number() })
+          .nullable()
+          .optional(),
+        metadata: z.record(z.unknown()).default({}),
+      }),
+    )
+    .max(500),
+  edges: z
+    .array(
+      z.object({
+        sourceNodeId: z.string(),
+        targetNodeId: z.string(),
+        edgeType: z.enum(EDGE_TYPES).default('custom'),
+        label: z.string().max(120).nullable().optional(),
+      }),
+    )
+    .max(2000),
+});
+
+/**
+ * Bulk-import a map snapshot (the shape `handleExportJson` produces).
+ * New nodes get fresh UUIDs; the input `id` is treated as a local
+ * reference used only to remap edges. Runs in a single transaction
+ * so a partial import never leaves orphan rows.
+ */
+export async function importMapAction(
+  input: z.infer<typeof importInput>,
+): Promise<
+  | { ok: true; nodesInserted: number; edgesInserted: number }
+  | { ok: false; error: string }
+> {
+  const parsed = importInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.message };
+
+  try {
+    await requireRole(parsed.data.workspaceId, ['owner', 'admin', 'member']);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const user = await requireUser();
+  const db = getDb();
+
+  type ImportResult =
+    | { ok: true; nodesInserted: number; edgesInserted: number }
+    | { ok: false; error: string };
+
+  return db.transaction<ImportResult>(async (tx) => {
+    const idMap = new Map<string, string>();
+
+    for (const n of parsed.data.nodes) {
+      const descriptor = getNodeTypeDescriptor(n.nodeType);
+      const metaValidation = descriptor.schema.safeParse(n.metadata);
+      if (!metaValidation.success) {
+        // Abort the transaction — metadata validation is per-node, so
+        // we reject the whole import rather than silently dropping nodes.
+        throw new Error(
+          `metadata invalid for node ${n.label}: ${metaValidation.error.message}`,
+        );
+      }
+      const [row] = await tx
+        .insert(schema.trackingNodes)
+        .values({
+          workspaceId: parsed.data.workspaceId,
+          clientId: parsed.data.clientId,
+          nodeType: n.nodeType,
+          label: n.label,
+          metadata: metaValidation.data as Record<string, unknown>,
+          healthStatus: n.healthStatus,
+          position: n.position ?? null,
+          createdBy: user.id,
+        })
+        .returning({ id: schema.trackingNodes.id });
+      if (!row) throw new Error('node insert failed');
+      idMap.set(n.id, row.id);
+    }
+
+    let edgesInserted = 0;
+    for (const e of parsed.data.edges) {
+      const src = idMap.get(e.sourceNodeId);
+      const tgt = idMap.get(e.targetNodeId);
+      if (!src || !tgt) continue; // skip dangling edges silently
+      await tx.insert(schema.trackingEdges).values({
+        workspaceId: parsed.data.workspaceId,
+        clientId: parsed.data.clientId,
+        sourceNodeId: src,
+        targetNodeId: tgt,
+        edgeType: e.edgeType as EdgeType,
+        label: e.label ?? null,
+        createdBy: user.id,
+      });
+      edgesInserted++;
+    }
+
+    revalidatePath(
+      `/${parsed.data.workspaceId}/clients/${parsed.data.clientId}/map`,
+    );
+    return {
+      ok: true as const,
+      nodesInserted: idMap.size,
+      edgesInserted,
+    };
+  }).catch((err: Error): ImportResult => ({ ok: false, error: err.message }));
 }
