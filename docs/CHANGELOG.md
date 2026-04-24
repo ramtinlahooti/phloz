@@ -4,6 +4,62 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Node-create bug + client edit + task filters + team mgmt
+
+### Fix: tracking-map "Add node" blew up with Zod errors
+
+`createNodeAction` was running the full descriptor schema against
+`descriptor.defaults()`, which by design contains empty placeholder
+fields (e.g. GA4 data stream's `streamId: ''`, `measurementId: ''`).
+The user filling those in via the drawer is the whole point. Dropped
+the create-path validation — defaults come from trusted code, strict
+validation still runs on save via `updateNodeAction`.
+
+### Editable client details
+
+Previously only notes were editable. Added `ClientOverviewForm`:
+- Read mode renders a two-column `<dl>` of name / business name /
+  email (mailto link) / phone / website (https link) / industry.
+  Em-dash placeholders for empty fields.
+- Edit button flips the card into a react-hook-form that submits
+  all fields via the generic `updateClientAction`, then
+  `router.refresh()`es so the page header name updates too.
+- Sits above Notes on the Overview tab.
+
+### Tasks page — client filter, assignee filter, sort dropdown
+
+On top of the existing department + status pills:
+- **Client filter** — All clients / Unassigned / each client by name.
+- **Assignee filter** — Anyone / Unassigned / each workspace member
+  ("You" for the current user, short uuid + role for teammates
+  until Supabase Admin-API name lookup lands).
+- **Sort dropdown** — Priority (default, high→low with due-date
+  tiebreaker), Due soonest / latest, Recently updated / created.
+- Active filters render as X-able chips with a Clear all link.
+- All URL-backed so views are shareable and refresh-safe.
+
+### Team management
+
+`/[workspace]/team` previously could invite but couldn't:
+- **`changeMemberRoleAction`** — owner/admin only. Can't demote
+  yourself, can't promote to owner (ownership transfer is V2),
+  non-owners can't demote an owner.
+- **`removeMemberAction`** — same guards, deletes the
+  `workspace_members` row (Supabase auth.users untouched).
+- **`revokeInvitationAction`** — deletes a pending row so email
+  typos can be corrected.
+- New `MemberRow` client component exposes a `⋯` dropdown with a
+  role radio group and a red Remove item; only shown when the row
+  is manageable (not self, not owner unless viewer is owner).
+- New `InvitationRow` with an ✕ revoke button.
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `next build` (`apps/app`) — compiles cleanly.
+
+---
+
 ## 2026-04-23 — Task comments + task edit dialog
 
 ### Task comments
