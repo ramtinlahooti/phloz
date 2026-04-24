@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull, isNull, lt, not } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
 import { requireUser } from '@phloz/auth/session';
@@ -75,18 +75,98 @@ export default async function WorkspaceLayout({
   if (!workspace) redirect('/onboarding');
 
   // Every workspace the user belongs to — for the switcher.
-  const allWorkspaces = await db
-    .select({
-      id: schema.workspaces.id,
-      name: schema.workspaces.name,
-      role: schema.workspaceMembers.role,
-    })
-    .from(schema.workspaceMembers)
-    .innerJoin(
-      schema.workspaces,
-      eq(schema.workspaceMembers.workspaceId, schema.workspaces.id),
-    )
-    .where(eq(schema.workspaceMembers.userId, user.id));
+  // Plus the two sidebar-badge counts (overdue tasks assigned to this
+  // user, clients with unreplied inbound). Batched into one Promise.all
+  // so the layout stays one roundtrip per page load.
+  const now = new Date();
+  const [
+    allWorkspaces,
+    overdueMineCountRow,
+    inboundMessages,
+    outboundMessages,
+  ] = await Promise.all([
+    db
+      .select({
+        id: schema.workspaces.id,
+        name: schema.workspaces.name,
+        role: schema.workspaceMembers.role,
+      })
+      .from(schema.workspaceMembers)
+      .innerJoin(
+        schema.workspaces,
+        eq(schema.workspaceMembers.workspaceId, schema.workspaces.id),
+      )
+      .where(eq(schema.workspaceMembers.userId, user.id)),
+    // Overdue tasks assigned to me, scoped to this workspace. Subtasks
+    // excluded (they roll up into their parent's badge already).
+    db
+      .select({ c: count() })
+      .from(schema.tasks)
+      .where(
+        and(
+          eq(schema.tasks.workspaceId, workspaceId),
+          eq(schema.tasks.assigneeId, membership.id),
+          inArray(schema.tasks.status, ['todo', 'in_progress', 'blocked']),
+          isNotNull(schema.tasks.dueDate),
+          lt(schema.tasks.dueDate, now),
+          isNull(schema.tasks.parentTaskId),
+        ),
+      )
+      .then((r) => r[0]?.c ?? 0),
+    // Last-60-day inbound messages per client (excluding internal
+    // notes). Joined in JS against outbound timestamps to count
+    // distinct "waiting on a reply" clients. Same heuristic the
+    // dashboard + inbox use — one source of truth.
+    db
+      .select({
+        clientId: schema.messages.clientId,
+        createdAt: schema.messages.createdAt,
+      })
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.workspaceId, workspaceId),
+          eq(schema.messages.direction, 'inbound'),
+          not(eq(schema.messages.channel, 'internal_note')),
+        ),
+      ),
+    db
+      .select({
+        clientId: schema.messages.clientId,
+        createdAt: schema.messages.createdAt,
+      })
+      .from(schema.messages)
+      .where(
+        and(
+          eq(schema.messages.workspaceId, workspaceId),
+          eq(schema.messages.direction, 'outbound'),
+          not(eq(schema.messages.channel, 'internal_note')),
+        ),
+      ),
+  ]);
+
+  // Unreplied-clients rollup: for each client, does the latest inbound
+  // post-date the latest outbound? Same logic as the dashboard
+  // "Waiting on a reply" widget. At launch scale (~100s of messages
+  // per workspace) this is cheap in JS; rewrite as a correlated
+  // subquery when a workspace gets 10k+ messages.
+  const lastOutboundByClient = new Map<string, Date>();
+  for (const m of outboundMessages) {
+    if (!m.clientId) continue;
+    const existing = lastOutboundByClient.get(m.clientId);
+    if (!existing || m.createdAt > existing) {
+      lastOutboundByClient.set(m.clientId, m.createdAt);
+    }
+  }
+  const seenClients = new Set<string>();
+  for (const m of inboundMessages) {
+    if (!m.clientId || seenClients.has(m.clientId)) continue;
+    const lastOut = lastOutboundByClient.get(m.clientId) ?? null;
+    if (lastOut === null || m.createdAt > lastOut) {
+      seenClients.add(m.clientId);
+    }
+  }
+  const unrepliedClientCount = seenClients.size;
 
   return (
     <>
@@ -113,6 +193,10 @@ export default async function WorkspaceLayout({
             'You',
         }}
         allWorkspaces={allWorkspaces}
+        navBadges={{
+          tasks: overdueMineCountRow,
+          messages: unrepliedClientCount,
+        }}
       >
         {children}
       </DashboardShell>

@@ -4,6 +4,35 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Sidebar nav badges (Tasks + Messages)
+
+Count badges next to the Tasks and Messages nav items. Visible
+on every authed page — first "something needs attention" signal
+without having to land on the dashboard first.
+
+- **Tasks** (red) — overdue tasks assigned to you (scoped to
+  this workspace, subtasks excluded).
+- **Messages** (amber) — clients with at least one unreplied
+  inbound. Same heuristic as the inbox + dashboard widgets.
+- Badges hide when count = 0. `99+` cap for layout stability.
+
+Implementation:
+- Layout runs 3 extra queries (overdue-mine count, inbound msgs,
+  outbound msgs) inside the existing Promise.all. Computes the
+  unreplied-client count in JS — same pattern as the dashboard.
+- DashboardShell gains an optional `navBadges` prop + `NavItem`
+  type with `badgeKey` + `badgeTone`, easily extensible to other
+  nav items later.
+
+Perf: fires on every navigation. Cheap at launch scale. Promote
+to a correlated subquery or a denormalised
+`workspaces.unreplied_clients_count` column (nightly cron refresh)
+when workspaces have 50k+ messages.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Daily digest email
 
 Retention infrastructure. Daily cron at 09:00 UTC sends the
