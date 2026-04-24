@@ -1,14 +1,8 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import {
-  AlertCircle,
-  CheckCircle2,
-  Circle,
-  CircleDashed,
-  Mail,
-} from 'lucide-react';
+import { Mail } from 'lucide-react';
 
 import { validatePortalMagicLink } from '@phloz/auth/portal';
-import type { TaskPriority, TaskStatus } from '@phloz/config';
+import type { ApprovalState, TaskStatus } from '@phloz/config';
 import { getDb, schema } from '@phloz/db/client';
 import {
   Badge,
@@ -20,6 +14,8 @@ import {
 } from '@phloz/ui';
 
 import { buildAppMetadata } from '@/lib/metadata';
+
+import { PortalTaskCard, type PortalTaskRow } from './portal-task-row';
 
 export const metadata = buildAppMetadata({ title: 'Client portal' });
 
@@ -64,6 +60,8 @@ export default async function PortalHomePage({
         status: schema.tasks.status,
         priority: schema.tasks.priority,
         dueDate: schema.tasks.dueDate,
+        approvalState: schema.tasks.approvalState,
+        approvalComment: schema.tasks.approvalComment,
       })
       .from(schema.tasks)
       .where(
@@ -131,35 +129,20 @@ export default async function PortalHomePage({
         ) : (
           <Card>
             <CardContent className="p-0">
-              <ul className="divide-y divide-border/60">
-                {visibleTasks.map((t) => (
-                  <li key={t.id} className="flex items-start gap-3 px-4 py-3">
-                    <TaskStatusIcon status={t.status as TaskStatus} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="truncate">{t.title}</span>
-                        {(t.priority as TaskPriority) === 'urgent' && (
-                          <Badge
-                            variant="outline"
-                            className="border-red-400/50 text-[10px] text-red-400"
-                          >
-                            Urgent
-                          </Badge>
-                        )}
-                      </div>
-                      {t.description && (
-                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                          {t.description}
-                        </p>
-                      )}
-                      {t.dueDate && (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Due {t.dueDate.toLocaleDateString()}
-                        </p>
-                      )}
-                    </div>
-                  </li>
-                ))}
+              <ul className="space-y-3 p-3">
+                {visibleTasks.map((t) => {
+                  const row: PortalTaskRow = {
+                    id: t.id,
+                    title: t.title,
+                    description: t.description,
+                    status: t.status as TaskStatus,
+                    priority: t.priority as string,
+                    dueDate: t.dueDate,
+                    approvalState: t.approvalState as ApprovalState,
+                    approvalComment: t.approvalComment,
+                  };
+                  return <PortalTaskCard key={t.id} token={token} task={row} />;
+                })}
               </ul>
             </CardContent>
           </Card>
@@ -217,17 +200,4 @@ export default async function PortalHomePage({
       </footer>
     </div>
   );
-}
-
-function TaskStatusIcon({ status }: { status: TaskStatus }) {
-  const cls = 'mt-0.5 size-4 shrink-0';
-  if (status === 'done')
-    return (
-      <CheckCircle2 className={`${cls} text-[var(--color-health-working)]`} />
-    );
-  if (status === 'in_progress')
-    return <CircleDashed className={`${cls} text-primary`} />;
-  if (status === 'blocked')
-    return <AlertCircle className={`${cls} text-[var(--color-health-broken)]`} />;
-  return <Circle className={`${cls} text-muted-foreground`} />;
 }

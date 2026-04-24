@@ -1,5 +1,11 @@
 import { index, pgTable, text, timestamp, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
-import type { Department, TaskPriority, TaskStatus, TaskVisibility } from '@phloz/config';
+import type {
+  ApprovalState,
+  Department,
+  TaskPriority,
+  TaskStatus,
+  TaskVisibility,
+} from '@phloz/config';
 
 import { pkUuid, timestamps, userIdRef } from './_helpers';
 import { clients } from './clients';
@@ -37,6 +43,9 @@ export const tasks = pgTable(
     }),
     relatedMessageId: uuid('related_message_id'),
     completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
+    approvalState: text('approval_state').$type<ApprovalState>().notNull().default('none'),
+    approvalComment: text('approval_comment'),
+    approvalUpdatedAt: timestamp('approval_updated_at', { withTimezone: true, mode: 'date' }),
     createdBy: userIdRef('created_by', { nullable: true }),
     ...timestamps,
   },

@@ -3,6 +3,7 @@ import Link from 'next/link';
 
 import { getDb, schema } from '@phloz/db/client';
 import type {
+  ApprovalState,
   Department,
   TaskPriority,
   TaskStatus,
@@ -95,6 +96,7 @@ export default async function TasksPage({
       dueDate: t.dueDate,
       clientId: t.clientId,
       clientName: t.clientId ? clientById.get(t.clientId) ?? null : null,
+      approvalState: t.approvalState as ApprovalState,
     });
   }
 

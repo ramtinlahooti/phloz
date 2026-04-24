@@ -7,10 +7,12 @@ import { z } from 'zod';
 import { requireRole } from '@phloz/auth/roles';
 import { requireUser } from '@phloz/auth/session';
 import {
+  APPROVAL_STATES,
   DEPARTMENTS,
   TASK_PRIORITIES,
   TASK_STATUSES,
   TASK_VISIBILITIES,
+  type ApprovalState,
 } from '@phloz/config';
 import { getDb, schema } from '@phloz/db/client';
 
@@ -161,5 +163,86 @@ export async function deleteTaskAction(input: {
     );
 
   revalidatePath(`/${input.workspaceId}/tasks`);
+  return { ok: true };
+}
+
+// --- approval (agency side) --------------------------------------------
+const setApprovalSchema = z.object({
+  workspaceId: uuid,
+  id: uuid,
+  state: z.enum(APPROVAL_STATES),
+});
+
+/**
+ * Agency-side approval update. Use cases:
+ * - Request approval: state='pending' on a client-visible task.
+ * - Reset after client action: state='none' to clear.
+ * Agency cannot `approve` a client-visible task on the client's behalf
+ * — UI guards, and the portal action is the only path that sets
+ * `approved` / `rejected` / `needs_changes`.
+ */
+export async function setTaskApprovalAction(
+  input: z.infer<typeof setApprovalSchema>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = setApprovalSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.message };
+
+  try {
+    await requireRole(parsed.data.workspaceId, ['owner', 'admin', 'member']);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  // Agency can only move between none <-> pending. Client-terminal
+  // states flow from the portal action.
+  if (
+    parsed.data.state !== 'none' &&
+    parsed.data.state !== 'pending'
+  ) {
+    return {
+      ok: false,
+      error: 'Agency can only request or reset approval; clients set the outcome.',
+    };
+  }
+
+  const db = getDb();
+  const task = await db
+    .select({
+      id: schema.tasks.id,
+      visibility: schema.tasks.visibility,
+      clientId: schema.tasks.clientId,
+    })
+    .from(schema.tasks)
+    .where(
+      and(
+        eq(schema.tasks.id, parsed.data.id),
+        eq(schema.tasks.workspaceId, parsed.data.workspaceId),
+      ),
+    )
+    .limit(1)
+    .then((r) => r[0]);
+
+  if (!task) return { ok: false, error: 'not_found' };
+  if (task.visibility !== 'client_visible') {
+    return {
+      ok: false,
+      error: 'Only client-visible tasks can go through approval.',
+    };
+  }
+
+  await db
+    .update(schema.tasks)
+    .set({
+      approvalState: parsed.data.state as ApprovalState,
+      approvalUpdatedAt: new Date(),
+      approvalComment: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.tasks.id, parsed.data.id));
+
+  revalidatePath(`/${parsed.data.workspaceId}/tasks`);
+  if (task.clientId) {
+    revalidatePath(`/${parsed.data.workspaceId}/clients/${task.clientId}`);
+  }
   return { ok: true };
 }

@@ -16,6 +16,7 @@ import {
   toast,
 } from '@phloz/ui';
 import type {
+  ApprovalState,
   Department,
   TaskPriority,
   TaskStatus,
@@ -23,7 +24,11 @@ import type {
 } from '@phloz/config';
 import { TASK_STATUSES } from '@phloz/config';
 
-import { deleteTaskAction, updateTaskAction } from './actions';
+import {
+  deleteTaskAction,
+  setTaskApprovalAction,
+  updateTaskAction,
+} from './actions';
 
 export type TaskRowModel = {
   id: string;
@@ -35,6 +40,24 @@ export type TaskRowModel = {
   dueDate: Date | null;
   clientId: string | null;
   clientName: string | null;
+  approvalState: ApprovalState;
+};
+
+const APPROVAL_BADGE: Record<
+  ApprovalState,
+  { label: string; className: string } | null
+> = {
+  none: null,
+  pending: { label: 'Pending client', className: 'border-amber-400/50 text-amber-400' },
+  approved: {
+    label: 'Approved',
+    className: 'border-emerald-400/50 text-emerald-400',
+  },
+  rejected: { label: 'Rejected', className: 'border-red-400/50 text-red-400' },
+  needs_changes: {
+    label: 'Changes requested',
+    className: 'border-orange-400/50 text-orange-400',
+  },
 };
 
 const STATUS_ICONS: Record<TaskStatus, typeof Circle> = {
@@ -92,6 +115,24 @@ export function TaskRow({
     router.refresh();
   }
 
+  async function toggleApproval(next: 'pending' | 'none') {
+    const res = await setTaskApprovalAction({
+      workspaceId,
+      id: task.id,
+      state: next,
+    });
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    toast.success(
+      next === 'pending'
+        ? 'Approval requested — visible in the portal'
+        : 'Approval reset',
+    );
+    router.refresh();
+  }
+
   const overdue =
     task.dueDate !== null &&
     optimisticStatus !== 'done' &&
@@ -127,6 +168,21 @@ export function TaskRow({
               </DropdownMenuItem>
             );
           })}
+          {task.visibility === 'client_visible' && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Client approval</DropdownMenuLabel>
+              {task.approvalState === 'none' ? (
+                <DropdownMenuItem onClick={() => toggleApproval('pending')}>
+                  Request client approval
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onClick={() => toggleApproval('none')}>
+                  Reset approval
+                </DropdownMenuItem>
+              )}
+            </>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={remove} className="text-red-400">
             Delete task
@@ -146,6 +202,14 @@ export function TaskRow({
           {task.visibility === 'client_visible' && (
             <Badge variant="outline" className="text-[10px]">
               Client-visible
+            </Badge>
+          )}
+          {APPROVAL_BADGE[task.approvalState] && (
+            <Badge
+              variant="outline"
+              className={`text-[10px] ${APPROVAL_BADGE[task.approvalState]!.className}`}
+            >
+              {APPROVAL_BADGE[task.approvalState]!.label}
             </Badge>
           )}
           {overdue && (

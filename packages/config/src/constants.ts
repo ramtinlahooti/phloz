@@ -64,6 +64,22 @@ export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 export const TASK_VISIBILITIES = ['internal', 'client_visible'] as const;
 export type TaskVisibility = (typeof TASK_VISIBILITIES)[number];
 
+/**
+ * Approval workflow states for client-visible tasks.
+ * - `none`: default — agency hasn't asked for approval.
+ * - `pending`: agency requested approval; portal shows action buttons.
+ * - `approved` / `rejected` / `needs_changes`: terminal or
+ *   rework-needed states set by the client via the portal.
+ */
+export const APPROVAL_STATES = [
+  'none',
+  'pending',
+  'approved',
+  'rejected',
+  'needs_changes',
+] as const;
+export type ApprovalState = (typeof APPROVAL_STATES)[number];
+
 // --- Tracking node + edge types (ARCHITECTURE.md §5.2, §5.3) ---
 export const NODE_TYPES = [
   'website',

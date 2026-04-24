@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import type {
+  ApprovalState,
   Department,
   MessageChannel,
   MessageDirection,
@@ -120,6 +121,7 @@ export default async function ClientDetailPage({
     dueDate: t.dueDate,
     clientId: t.clientId,
     clientName: client.name,
+    approvalState: t.approvalState as ApprovalState,
   }));
   const openTasks = tasksAsRows.filter(
     (t) => t.status !== 'done' && t.status !== 'archived',
