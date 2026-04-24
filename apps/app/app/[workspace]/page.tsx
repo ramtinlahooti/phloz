@@ -35,6 +35,13 @@ import {
 } from '@phloz/ui';
 
 import {
+  auditMap,
+  type Finding,
+  type TrackingEdgeDto,
+  type TrackingNodeDto,
+} from '@phloz/tracking-map';
+
+import {
   HEALTH_COLORS,
   computeClientHealth,
   type HealthResult,
@@ -92,7 +99,8 @@ export default async function WorkspaceOverviewPage({
     trackingNodeProbe,
     messageProbe,
     overdueTaskClientRows,
-    trackingNodeHealthRows,
+    trackingNodeRows,
+    trackingEdgeRows,
   ] = await Promise.all([
     db
       .select()
@@ -327,14 +335,20 @@ export default async function WorkspaceOverviewPage({
           isNull(schema.tasks.parentTaskId),
         ),
       ),
-    // Tracking-node health rollup per client.
+    // Full tracking-node rows for the workspace — powers both the
+    // client-health scorer (only needs healthStatus) and the audit-
+    // rollup card (needs full node data to run auditMap per client).
+    // One fetch, two uses.
     db
-      .select({
-        clientId: schema.trackingNodes.clientId,
-        healthStatus: schema.trackingNodes.healthStatus,
-      })
+      .select()
       .from(schema.trackingNodes)
       .where(eq(schema.trackingNodes.workspaceId, workspaceId)),
+    // Tracking edges — feeds the audit engine's orphan-gtm +
+    // graph-shape rules.
+    db
+      .select()
+      .from(schema.trackingEdges)
+      .where(eq(schema.trackingEdges.workspaceId, workspaceId)),
   ]);
 
   if (!workspace) return null;
@@ -411,7 +425,7 @@ export default async function WorkspaceOverviewPage({
   }
   const brokenNodeCountByClient = new Map<string, number>();
   const missingNodeCountByClient = new Map<string, number>();
-  for (const n of trackingNodeHealthRows) {
+  for (const n of trackingNodeRows) {
     if (!n.clientId) continue;
     if (n.healthStatus === 'broken') {
       brokenNodeCountByClient.set(
@@ -454,6 +468,84 @@ export default async function WorkspaceOverviewPage({
     return a.health.score - b.health.score;
   });
   const attentionClients = nonHealthy.slice(0, 5);
+
+  // Group nodes + edges by clientId, then run auditMap per client.
+  // Kept on the dashboard (not a separate route) so Ramtin sees the
+  // moat feature on every login without having to click through to
+  // a client. Cheap at launch scale (<100 clients × <50 nodes).
+  const nodesByClient = new Map<string, TrackingNodeDto[]>();
+  for (const n of trackingNodeRows) {
+    if (!n.clientId) continue;
+    const list = nodesByClient.get(n.clientId) ?? [];
+    list.push({
+      id: n.id,
+      clientId: n.clientId,
+      workspaceId: n.workspaceId,
+      nodeType: n.nodeType,
+      label: n.label,
+      metadata: (n.metadata as Record<string, unknown>) ?? {},
+      healthStatus: n.healthStatus,
+      lastVerifiedAt: n.lastVerifiedAt,
+      position: n.position ?? null,
+    });
+    nodesByClient.set(n.clientId, list);
+  }
+  const edgesByClient = new Map<string, TrackingEdgeDto[]>();
+  for (const e of trackingEdgeRows) {
+    if (!e.clientId) continue;
+    const list = edgesByClient.get(e.clientId) ?? [];
+    list.push({
+      id: e.id,
+      clientId: e.clientId,
+      workspaceId: e.workspaceId,
+      sourceNodeId: e.sourceNodeId,
+      targetNodeId: e.targetNodeId,
+      edgeType: e.edgeType,
+      label: e.label,
+      metadata: (e.metadata as Record<string, unknown>) ?? {},
+    });
+    edgesByClient.set(e.clientId, list);
+  }
+
+  type AuditRollupEntry = {
+    id: string;
+    name: string;
+    findings: Finding[];
+    criticalCount: number;
+    warningCount: number;
+  };
+  const auditRollup: AuditRollupEntry[] = [];
+  let totalCritical = 0;
+  let totalWarning = 0;
+  for (const c of clientRows) {
+    if (c.archivedAt !== null) continue;
+    const findings = auditMap({
+      nodes: nodesByClient.get(c.id) ?? [],
+      edges: edgesByClient.get(c.id) ?? [],
+    });
+    const criticals = findings.filter((f) => f.severity === 'critical').length;
+    const warnings = findings.filter((f) => f.severity === 'warning').length;
+    // Skip clients with only `info` findings — too low-signal for the
+    // dashboard card. They still show the Audit tab with advice.
+    if (criticals + warnings === 0) continue;
+    totalCritical += criticals;
+    totalWarning += warnings;
+    auditRollup.push({
+      id: c.id,
+      name: c.name,
+      findings,
+      criticalCount: criticals,
+      warningCount: warnings,
+    });
+  }
+  // Most-critical-first; within a severity bucket more findings wins.
+  auditRollup.sort((a, b) => {
+    if (a.criticalCount !== b.criticalCount) {
+      return b.criticalCount - a.criticalCount;
+    }
+    return b.warningCount - a.warningCount;
+  });
+  const topAuditEntries = auditRollup.slice(0, 4);
 
   const feed: FeedItem[] = [];
 
@@ -740,6 +832,14 @@ export default async function WorkspaceOverviewPage({
               workspaceId={workspaceId}
             />
           )}
+          {topAuditEntries.length > 0 && (
+            <AuditRollupCard
+              clients={topAuditEntries}
+              totalCritical={totalCritical}
+              totalWarning={totalWarning}
+              workspaceId={workspaceId}
+            />
+          )}
           <Card>
             <CardHeader>
               <CardTitle>Your plan</CardTitle>
@@ -978,6 +1078,94 @@ function daysUntil(d: Date): string {
 }
 
 // --- Onboarding checklist card ---------------------------------------
+
+/** Dashboard rollup of tracking-audit findings across all clients.
+ *  Only renders when at least one active client has a critical or
+ *  warning finding — info-only is too low-signal for the dashboard. */
+function AuditRollupCard({
+  clients,
+  totalCritical,
+  totalWarning,
+  workspaceId,
+}: {
+  clients: {
+    id: string;
+    name: string;
+    criticalCount: number;
+    warningCount: number;
+  }[];
+  totalCritical: number;
+  totalWarning: number;
+  workspaceId: string;
+}) {
+  const summary = [
+    totalCritical > 0 &&
+      `${totalCritical} critical`,
+    totalWarning > 0 &&
+      `${totalWarning} warning${totalWarning === 1 ? '' : 's'}`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center justify-between gap-2 text-sm">
+          <span className="flex items-center gap-2">
+            <AlertTriangle
+              className={`size-3.5 ${
+                totalCritical > 0 ? 'text-red-400' : 'text-amber-400'
+              }`}
+              aria-hidden
+            />
+            Tracking audit
+          </span>
+        </CardTitle>
+        <p className="mt-0.5 text-xs text-muted-foreground">{summary}</p>
+      </CardHeader>
+      <CardContent className="space-y-2 pt-0">
+        <ul className="space-y-1.5">
+          {clients.map((c) => (
+            <li key={c.id}>
+              <Link
+                href={`/${workspaceId}/clients/${c.id}?tab=audit`}
+                className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/50"
+              >
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                  {c.name}
+                </span>
+                <span className="shrink-0 text-[10px]">
+                  {c.criticalCount > 0 && (
+                    <span className="text-red-400">
+                      {c.criticalCount} critical
+                    </span>
+                  )}
+                  {c.criticalCount > 0 && c.warningCount > 0 && (
+                    <span className="mx-1 text-muted-foreground">·</span>
+                  )}
+                  {c.warningCount > 0 && (
+                    <span className="text-amber-400">
+                      {c.warningCount} warning
+                      {c.warningCount === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+        <div className="pt-1 text-xs">
+          <Link
+            href={`/${workspaceId}/clients`}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            Review each client →
+          </Link>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function AttentionClientsCard({
   clients,

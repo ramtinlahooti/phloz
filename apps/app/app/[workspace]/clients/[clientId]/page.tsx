@@ -59,12 +59,35 @@ export const metadata = buildAppMetadata({ title: 'Client' });
 
 type RouteParams = { workspace: string; clientId: string };
 
+const VALID_TABS = [
+  'overview',
+  'contacts',
+  'tasks',
+  'messages',
+  'map',
+  'audit',
+  'files',
+] as const;
+type ClientDetailTab = (typeof VALID_TABS)[number];
+
 export default async function ClientDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<RouteParams>;
+  searchParams: Promise<{ tab?: string; task?: string }>;
 }) {
   const { workspace: workspaceId, clientId } = await params;
+  const sp = await searchParams;
+  // `?tab=audit` deep-links to a specific tab on load. Used by the
+  // dashboard audit-rollup card + any other feature that wants to
+  // jump to a specific client surface. Invalid values fall through
+  // to the default.
+  const initialTab: ClientDetailTab = (
+    VALID_TABS as readonly string[]
+  ).includes(sp.tab ?? '')
+    ? (sp.tab as ClientDetailTab)
+    : 'overview';
   const db = getDb();
   const user = await requireUser();
 
@@ -509,7 +532,7 @@ export default async function ClientDetailPage({
       <div className="flex flex-1 min-h-0">
         {/* Main pane */}
         <div className="flex-1 min-w-0 overflow-auto">
-          <Tabs defaultValue="overview" className="p-6">
+          <Tabs defaultValue={initialTab} className="p-6">
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="contacts">Contacts</TabsTrigger>

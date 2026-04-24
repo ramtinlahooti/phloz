@@ -4,6 +4,49 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Dashboard audit rollup + `?tab=` deep-link
+
+Surfaces the audit-engine moat feature on the dashboard so users
+hit it without navigating into a client. Also adds `?tab=…` to
+the client detail page so any client tab is linkable.
+
+### Rollup card
+
+- Right-rail card, only renders when ≥ 1 active client has a
+  critical or warning finding. Info-only clients are filtered —
+  too low-signal for the dashboard.
+- Summary line: `{N critical} · {M warnings}`.
+- Up to 4 clients worst-first (criticals, then warnings),
+  each row → that client's Audit tab.
+- Sibling of "Clients needing attention" — right rail reads
+  cohesively.
+
+### Data
+
+- Widened the dashboard's existing node query from
+  `{clientId, healthStatus}` to a full `select()`, added a
+  `trackingEdgeRows` fetch. Both feed the health scorer AND the
+  audit engine — one fetch, two uses.
+
+### `?tab=…` on client detail
+
+- `/clients/[id]?tab=audit` (or overview / contacts / tasks /
+  messages / map / audit / files) opens that tab on load.
+- Invalid values fall through to overview.
+- Used by the audit rollup card, easily reusable by future
+  cross-page links.
+
+### Perf note
+
+- `auditMap()` runs per client in the dashboard render. Cheap
+  at launch scale (< 100 × < 50). Promote to a
+  `workspace_audit_rollup` materialised table when that stops
+  being true.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Tracking-map audit engine (V1)
 
 The moat feature from the scaling/features roadmap. Rules-based
