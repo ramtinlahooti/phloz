@@ -4,6 +4,48 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Inbox: text search + "Needs reply" filter
+
+The messages inbox had filter pills for direction/channel but no
+text search and no way to answer "which conversations do I owe a
+reply on?" — the single question an agency operator asks their
+inbox every morning. Shipped both.
+
+### Added
+
+- **`?q=` text search** — subject + body (case-insensitive
+  substring). Uses the shared `SearchInput` component from the
+  clients/tasks pages so the pattern is identical across the app.
+  Lives in the header next to the page title.
+- **"Needs reply" filter pill** — `?needs_reply=1` shows only
+  inbound messages (excluding internal notes) newer than the last
+  outbound reply for the same client, capped at the last 60 days.
+  Reuses the same "last outbound per client" logic as the
+  dashboard's "Waiting on a reply" widget — one source of truth
+  for what "unanswered" means.
+- **Clear filters** link in the empty state when filters are
+  active and nothing matches.
+- **Filter-pill refactor** — each pill now uses a shared
+  `hrefWith(key, value)` that toggles a single param while
+  preserving the rest. Clicking an active pill clears it;
+  clicking any filter preserves `q` (and vice versa).
+
+### Intentional scope
+
+- "Needs reply" only surfaces inbound messages — if an outbound
+  was sent but never acknowledged, that's not the agency's
+  problem to resolve.
+- 60-day window is hardcoded. Add a per-workspace setting only
+  when someone asks.
+- No client filter yet — a user who wants to see one client's
+  messages can click through to that client.
+- No unread-state column. We don't have a `read_at` anywhere;
+  "needs reply" is the behavioral stand-in.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Task subtasks (checklist inside the detail dialog)
 
 The `tasks.parent_task_id` column has been in the schema since day
