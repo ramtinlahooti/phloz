@@ -4,6 +4,61 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Map edge polish + file uploads
+
+### Tracking-map edge polish
+
+- `EdgeEditDialog` — shared shadcn Dialog that opens in `create` mode
+  when the user drags a connection between two nodes, and in `edit`
+  mode when they click an existing edge. Picks `edgeType` via a Select
+  of the 8 enum values (with human labels exported as
+  `EDGE_TYPE_LABELS`) and an optional 120-char free-text label. Edit
+  mode has a Remove button.
+- `onConnect` no longer persists immediately — it stages source/target
+  on the dialog state and waits for the user to click Save. The save
+  path is optimistic + rollback-on-error, same as the rest of the map.
+- `onEdgeClick` opens the dialog pre-filled.
+- Canvas `CanvasAction` type grew two new kinds: `update-edge` and
+  `import`.
+- `ImportMapDialog` — shadcn Dialog with drop-file + paste-JSON
+  support. Pairs with the existing Export button.
+
+### File uploads (Supabase Storage)
+
+- DB migration `client_assets_storage_bucket` (applied via MCP):
+  * Private `client-assets` bucket, 50MB hard limit.
+  * Path convention `{workspaceId}/{clientId}/{timestamp}-{safeName}`.
+  * RLS on `storage.objects`: SELECT/INSERT/UPDATE for any workspace
+    member, DELETE restricted to owner/admin/member (viewers read
+    only). Uses the existing `phloz_is_member_of` +
+    `phloz_has_role_in` helpers.
+- `apps/app` — `/[workspace]/clients/[clientId]/files/`:
+  * `uploadAssetAction` — FormData-based (works with `useActionState`),
+    4MB cap (stays under Vercel's 4.5MB body limit), MIME allowlist
+    (images, PDFs, office docs, common videos), uploads via
+    `@phloz/auth/server` + inserts `client_assets` row.
+  * `getAssetSignedUrlAction` — 5-minute signed download URL.
+  * `deleteAssetAction` — removes the Storage object + row.
+- `FilesPanel` client component — file-picker form, type-specific
+  icon per row (image / video / document / other), download opens a
+  signed URL in a new tab, delete with confirm.
+- Client detail Files tab swaps the stub for `FilesPanel`.
+
+### `apps/app/app/[workspace]/clients/[clientId]/map/actions.ts`
+
+- `updateEdgeAction` — Zod-validated patch for `edgeType` + `label`.
+- `importMapAction` — runs in `db.transaction<ImportResult>()`, Zod-
+  validates each node's metadata against the registry schema, re-links
+  edges by local→real id. Aborts the whole transaction on any per-node
+  metadata failure.
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `next build` (`apps/app`) — compiles cleanly.
+
+---
+
 ## 2026-04-23 — Messages module + portal dashboard
 
 ### Messages module

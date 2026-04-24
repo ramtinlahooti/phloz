@@ -1,80 +1,88 @@
-# Next Steps (as of 2026-04-23, post-tasks-module)
+# Next Steps (as of 2026-04-23, post-file-uploads)
 
-Recent shipped:
+Recent shipped (this session):
+- **env.local** created for both apps (gitignored).
 - **Dep upgrade** — Sentry 10, Drizzle 0.45, Inngest 4 (breaking API
   migrated in-session).
-- **Tracking-map polish** — keyboard shortcuts, node search, JSON
-  export, 200-node soft cap.
-- **Tasks module** — workspace-wide view with filter pills, per-client
-  tab, optimistic status toggles, new-task dialog with department /
-  priority / visibility / due date / client select.
+- **Map polish** — keyboard shortcuts, node search, JSON export,
+  200-node soft cap.
+- **Tasks module** — workspace view, per-client tab, filter pills.
+- **Messages module** — unified inbox, per-client thread UI, compose
+  pane with Email + Internal note tabs, `sendPlainEmail` helper.
+- **Portal dashboard** — client-visible tasks + email messages.
+- **Map edge polish** — edge-type picker, labels, JSON import.
+- **File uploads** — Supabase Storage bucket + RLS + Files tab.
 
-`pnpm check` → 29/29 green. `apps/app` → 30 routes. All committed.
+`pnpm check` → 29/29 green. Everything committed.
 
 ---
 
 ## Ramtin's actions (optional)
 
-### Vercel re-deploy
+### Ship to Vercel
 
-The dep-upgrade commit should unblock the Vercel build. If it
-re-surfaces the same drift, double-check that your project's install
-command is `pnpm install --frozen-lockfile` (it is, per each app's
-`vercel.json`).
+Deps are now aligned with what Vercel resolves. Push should build
+cleanly. Keep `installCommand: pnpm install --frozen-lockfile` in the
+project settings (already set via `vercel.json`).
 
 ### Kick the tires
 
-1. `pnpm --filter @phloz/app dev`.
-2. Open a client → Tasks tab → **New task** → create.
-3. Toggle status via the row's status icon dropdown.
-4. Set a due date in the past to see the Overdue badge.
-5. On `/{workspace}/tasks`, try the filter pills (department + status).
-6. Open the tracking map → press `n` → pick a type → press `/` to
-   search → `Esc` to close the drawer → click Export.
+1. `pnpm --filter @phloz/app dev` (env.local has public Supabase keys;
+   you supplied the two secrets).
+2. Open a client → **Tasks** tab → add a task → mark it client-visible.
+3. Open **Messages** tab → forward a client email to the inbound
+   address shown, or compose a reply. Internal note for team-only
+   thoughts.
+4. Open **Files** tab → drop a PDF / image / doc (<4MB). Download
+   opens a 5-minute signed URL.
+5. Open **Tracking map** → `n` to add, drag between nodes to connect,
+   pick edge type + label, click Save. Click an edge to edit. Export +
+   Import round-trip a snapshot.
+6. Open `/portal/<token>` — should show the client-visible task +
+   email messages, no internal notes.
 
 ---
 
-## Feature sessions worth queueing
+## Features worth queueing
 
-**A. Messages module**
-- Unified inbox pulling from `messages` (inbound + outbound).
-- Per-client thread UI grouped by `thread_id`.
-- Compose + reply UI via Resend.
+**G. Breadcrumbs + global ⌘K**
+- Breadcrumb chain (Workspace / Clients / Acme Corp / Tracking map)
+  in the dashboard shell.
+- Global ⌘K palette: switch workspace, jump to client, open a task,
+  add a node.
 
-**B. Portal fleshout**
-- Portal dashboard with tasks (`visibility = client_visible`),
-  messages, assets — today `/portal/[token]` only shows a landing.
-- `portalAccess` toggle per client contact.
+**H. Approvals**
+- Extend `task.visibility = client_visible` with a Done / Rejected /
+  Needs-changes state so agencies can run creative review through
+  the portal. Email notifications on state changes.
 
-**C. File uploads**
-- Supabase Storage bucket per workspace.
-- `client_assets` upload + list UI.
-
-**D. Edge polish for the tracking map**
-- Edge-type picker at connect time (currently defaults to `custom`).
-- Editable edge labels.
-- JSON import (pair with the export we just shipped).
-
-**E. Tests + skills**
-- pgTAP for tracking-nodes/edges RLS invariants.
-- Vitest for tracking-map pure helpers (`autoLayout`,
-  `formatLastVerified`, per-descriptor Zod).
-- Vitest for tasks actions (mocked DB).
+**I. Tests**
+- pgTAP for tracking-nodes / edges / client_assets / storage.objects
+  RLS.
+- Vitest for pure helpers (`autoLayout`, `formatLastVerified`,
+  per-descriptor Zod) and server actions (mocked DB).
 - Playwright smoke: signup → onboarding → add client → add task →
-  add map node.
-- `skills/phloz-tracking-map/SKILL.md` explaining the registry +
-  adding a new node type.
+  upload file → add map node → view in portal.
 
-**F. UX polish**
-- Breadcrumb nav on deep client pages.
-- Global ⌘K to switch workspaces / jump to client / find task.
-- Empty-state copy across the app.
+**J. Reply-from-portal**
+- Portal is read-only today. Add a portal-session-aware action so
+  clients can reply, threading into `channel=portal, direction=inbound`
+  messages that show up alongside email in the client thread.
+
+**K. Task / map templates**
+- "New campaign launch" template → 8 tasks + 5 map nodes + 6 edges.
+  "Monthly report" template → 4 tasks. Per-agency customization.
+
+**L. Client status automations**
+- Client inactive for 30 days → `status = at_risk`, notify owner.
+  Plugs into the existing Inngest `recomputeActiveClientCount` cron.
 
 ---
 
 ## Accounts / provisioning
 
-- ✅ GitHub, Supabase, GTM, Stripe sandbox.
+- ✅ GitHub, Supabase (including Storage bucket now), GTM, Stripe
+  sandbox.
 - ⏳ Vercel (follow `docs/DEPLOYMENT.md`), Resend domain, Inngest
   account, PostHog, Sentry, GA4.
 
