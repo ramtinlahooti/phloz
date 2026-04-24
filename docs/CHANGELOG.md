@@ -4,6 +4,40 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Tracking map `?node=<id>` scroll-focus
+
+Closes the loop on audit findings. When a user clicks "View node
+→" on an audit finding, the map now centers on that node and
+opens its drawer automatically — previously they landed on a
+full view of the map with no hint of which node the finding was
+about.
+
+### Implementation
+
+- **`TrackingMapCanvas`** gains a `focusNodeId?: string | null`
+  prop. When set:
+  - Looks up the node's position in the current state.
+  - `setCenter(pos.x + 120, pos.y + 60, { zoom: 1.2, duration: 500 })`
+    animates the pan. The +120/+60 offsets account for the
+    React Flow node's top-left anchor so the label ends up
+    roughly centered.
+  - Opens the drawer for that node.
+  - Silently no-ops if the id doesn't match any loaded node
+    (the URL is user-supplied; don't flash a 404 for a node
+    that was deleted between audit and click).
+- Effect deps are deliberately limited to `focusNodeId` — using
+  `nodes` in the dep array would re-center every time a user
+  nudges a node on the canvas, which would be maddening. The
+  latest nodes are read via a ref.
+- **`MapClient`** (apps/app) forwards the prop from the server
+  page.
+- **`/clients/[id]/map`** page reads `?node=<id>` from
+  `searchParams` and passes it down.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Dashboard audit rollup + `?tab=` deep-link
 
 Surfaces the audit-engine moat feature on the dashboard so users

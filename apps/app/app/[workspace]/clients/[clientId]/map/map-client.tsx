@@ -27,10 +27,14 @@ export function MapClient({
   workspaceId,
   clientId,
   initial,
+  focusNodeId,
 }: {
   workspaceId: string;
   clientId: string;
   initial: TrackingMapSnapshot;
+  /** `?node=<id>` from the URL — causes the canvas to center + open
+   *  the drawer for this node on mount. */
+  focusNodeId?: string | null;
 }) {
   const handler: CanvasActionHandler = async (action) => {
     switch (action.kind) {
@@ -115,6 +119,7 @@ export function MapClient({
       clientId={clientId}
       initial={initial}
       onAction={handler}
+      focusNodeId={focusNodeId}
       onLayoutArranged={() => {
         void track('map_layout_arranged', {});
       }}

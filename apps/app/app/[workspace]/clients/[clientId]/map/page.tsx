@@ -15,10 +15,13 @@ type RouteParams = { workspace: string; clientId: string };
 
 export default async function ClientMapPage({
   params,
+  searchParams,
 }: {
   params: Promise<RouteParams>;
+  searchParams: Promise<{ node?: string }>;
 }) {
   const { workspace: workspaceId, clientId } = await params;
+  const { node: focusNodeId } = await searchParams;
 
   const db = getDb();
 
@@ -127,6 +130,7 @@ export default async function ClientMapPage({
           workspaceId={workspaceId}
           clientId={clientId}
           initial={snapshot}
+          focusNodeId={focusNodeId ?? null}
         />
       </div>
     </div>

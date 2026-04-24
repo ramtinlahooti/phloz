@@ -120,6 +120,16 @@ export type TrackingMapCanvasProps = {
    *  use this to emit the `map_layout_arranged` analytics event. Kept
    *  as a callback so this package doesn't depend on @phloz/analytics. */
   onLayoutArranged?: () => void;
+  /**
+   * When set, the canvas centers + opens the drawer for this node on
+   * mount (and when the id changes). Used by deep-links from the audit
+   * engine's "View node →" buttons: `/map?node=<id>`.
+   *
+   * If the id doesn't match any loaded node we silently no-op — the
+   * URL is user-supplied and we don't want to flash a 404 for a node
+   * that was deleted between the audit being generated and the click.
+   */
+  focusNodeId?: string | null;
 };
 
 const NODE_TYPES = { phloz: PhlozMapNode };
@@ -141,6 +151,7 @@ function CanvasInner({
   onAction,
   readOnly,
   onLayoutArranged,
+  focusNodeId,
 }: TrackingMapCanvasProps) {
   const { fitView, screenToFlowPosition, setCenter, getNode } = useReactFlow();
   const [nodes, setNodes] = useState<PhlozNode[]>(() =>
@@ -159,6 +170,34 @@ function CanvasInner({
 
   // Keep a ref to throttle position autosaves per-node.
   const positionSaveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  // Deep-link focus: ?node=<id> centers the viewport on the node and
+  // opens its drawer. We intentionally depend only on `focusNodeId` —
+  // re-running on `nodes` changes would re-center every time the user
+  // nudges a node, which would be infuriating. The ref guards against
+  // effect re-fires when the same id is already handled.
+  const focusedOnceRef = useRef<string | null>(null);
+  // Reference nodes via a ref so the effect can read the latest list
+  // without the linter needing it in the dep array.
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+  useEffect(() => {
+    if (!focusNodeId) {
+      focusedOnceRef.current = null;
+      return;
+    }
+    if (focusedOnceRef.current === focusNodeId) return;
+    const node = nodesRef.current.find((n) => n.id === focusNodeId);
+    if (!node) return;
+    focusedOnceRef.current = focusNodeId;
+    // zoom: 1.2 brings the node close enough to read its label without
+    // swallowing its neighbours. Duration 500 ms is snappy but obvious.
+    setCenter(node.position.x + 120, node.position.y + 60, {
+      zoom: 1.2,
+      duration: 500,
+    });
+    setDrawer({ open: true, node: node.data });
+  }, [focusNodeId, setCenter]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
