@@ -4,6 +4,40 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Error boundaries (launch blocker)
+
+Code audit flagged one real issue: both apps had `not-found` only on
+`apps/app` and no route-level / global error boundaries anywhere.
+Unhandled exceptions would render the raw Next.js error overlay to
+users in production.
+
+Fixed:
+
+- **`apps/app/app/error.tsx`** — route-level boundary. Catches
+  errors in any segment below the root layout. Shows a friendly
+  fallback with a `Try again` button (calls Next's `reset()`) +
+  `Go home`. Captures to Sentry with tag `app_route_error` and
+  the Next-supplied `digest` in `extra`.
+- **`apps/app/app/global-error.tsx`** — last-resort boundary.
+  Replaces the root layout when an error escapes `error.tsx` or
+  fires from the layout itself. Renders its own `<html>` + `<body>`
+  with inline styles — no `@phloz/ui` imports, since those could
+  be the thing that crashed.
+- **`apps/web/app/not-found.tsx`** — marketing-site 404 with
+  deep links to Home / Pricing / Blog. `noindex` metadata.
+- **`apps/web/app/error.tsx`** — same pattern as apps/app.
+  Sentry tag `web_route_error`.
+- **`apps/web/app/global-error.tsx`** — same pattern as apps/app.
+  Sentry tag `web_global_error`.
+
+Sentry was already configured with graceful no-op when DSN is
+unset, so these boundaries are harmless in dev without
+`SENTRY_DSN`.
+
+`pnpm check` 29/29 green. Both apps build clean locally.
+
+---
+
 ## 2026-04-24 — Newsletter signup
 
 Closes the last entry in the analytics event catalog and ships a
