@@ -33,6 +33,7 @@ import {
   type ContactRow,
 } from './contacts/contacts-panel';
 import { FilesPanel, type AssetRow } from './files/files-panel';
+import { ApplyTemplateButton } from '../../tasks/apply-template-button';
 import {
   MessageThread,
   type MessageItem,
@@ -257,11 +258,20 @@ export default async function ClientDetailPage({
             </TabsContent>
 
             <TabsContent value="tasks" className="mt-6 space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">
                   {tasksAsRows.length} total · {openTasks.length} open
                 </p>
-                <NewTaskDialog workspaceId={workspaceId} clientId={clientId} />
+                <div className="flex items-center gap-2">
+                  <ApplyTemplateButton
+                    workspaceId={workspaceId}
+                    clientId={clientId}
+                  />
+                  <NewTaskDialog
+                    workspaceId={workspaceId}
+                    clientId={clientId}
+                  />
+                </div>
               </div>
               {tasksAsRows.length === 0 ? (
                 <Card>

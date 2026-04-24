@@ -16,6 +16,8 @@ import {
 } from '@phloz/config';
 import { getDb, schema } from '@phloz/db/client';
 
+import { findTaskTemplate } from './templates';
+
 /**
  * Server actions for tasks. Role gate: `owner`, `admin`, `member` can
  * create/update; `viewer` can read-only. Portal users never reach
@@ -245,4 +247,60 @@ export async function setTaskApprovalAction(
     revalidatePath(`/${parsed.data.workspaceId}/clients/${task.clientId}`);
   }
   return { ok: true };
+}
+
+// --- apply template ----------------------------------------------------
+const applyTemplateSchema = z.object({
+  workspaceId: uuid,
+  clientId: uuid,
+  templateId: z.string().min(1),
+});
+
+/**
+ * Instantiate a built-in task template against a client. Creates N
+ * tasks in one batch insert. `dueInDays` items get a concrete
+ * `dueDate = now + N days`.
+ */
+export async function applyTaskTemplateAction(
+  input: z.infer<typeof applyTemplateSchema>,
+): Promise<{ ok: true; created: number } | { ok: false; error: string }> {
+  const parsed = applyTemplateSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.message };
+
+  try {
+    await requireRole(parsed.data.workspaceId, ['owner', 'admin', 'member']);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const template = findTaskTemplate(parsed.data.templateId);
+  if (!template) return { ok: false, error: 'template_not_found' };
+
+  const user = await requireUser();
+  const db = getDb();
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+
+  const rows = template.items.map((item) => ({
+    workspaceId: parsed.data.workspaceId,
+    clientId: parsed.data.clientId,
+    title: item.title,
+    description: item.description ?? null,
+    status: 'todo' as const,
+    priority: item.priority ?? ('medium' as const),
+    department: item.department ?? ('other' as const),
+    visibility: item.visibility ?? ('internal' as const),
+    dueDate: item.dueInDays
+      ? new Date(now + item.dueInDays * day)
+      : null,
+    createdBy: user.id,
+  }));
+
+  if (rows.length === 0) return { ok: true, created: 0 };
+
+  await db.insert(schema.tasks).values(rows);
+
+  revalidatePath(`/${parsed.data.workspaceId}/tasks`);
+  revalidatePath(`/${parsed.data.workspaceId}/clients/${parsed.data.clientId}`);
+  return { ok: true, created: rows.length };
 }
