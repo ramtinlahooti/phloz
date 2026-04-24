@@ -27,6 +27,7 @@ import {
 
 import { buildAppMetadata } from '@/lib/metadata';
 
+import { ArchiveButton } from './archive-button';
 import {
   ContactsPanel,
   type ContactRow,
@@ -204,9 +205,16 @@ export default async function ClientDetailPage({
               </p>
             )}
           </div>
-          {client.archivedAt && (
-            <Badge variant="outline">Archived</Badge>
-          )}
+          <div className="flex shrink-0 items-center gap-2">
+            {client.archivedAt && (
+              <Badge variant="outline">Archived</Badge>
+            )}
+            <ArchiveButton
+              workspaceId={workspaceId}
+              clientId={clientId}
+              archived={client.archivedAt !== null}
+            />
+          </div>
         </div>
       </header>
 
