@@ -25,6 +25,7 @@ import {
 
 import { buildAppMetadata } from '@/lib/metadata';
 
+import { FilesPanel, type AssetRow } from './files/files-panel';
 import {
   MessageThread,
   type MessageItem,
@@ -44,8 +45,13 @@ export default async function ClientDetailPage({
   const { workspace: workspaceId, clientId } = await params;
   const db = getDb();
 
-  const [client, clientTasks, clientMessages, inboundAddressRow] =
-    await Promise.all([
+  const [
+    client,
+    clientTasks,
+    clientMessages,
+    inboundAddressRow,
+    clientAssets,
+  ] = await Promise.all([
       db
         .select()
         .from(schema.clients)
@@ -89,6 +95,17 @@ export default async function ClientDetailPage({
         )
         .limit(1)
         .then((rows) => rows[0]),
+      db
+        .select()
+        .from(schema.clientAssets)
+        .where(
+          and(
+            eq(schema.clientAssets.workspaceId, workspaceId),
+            eq(schema.clientAssets.clientId, clientId),
+          ),
+        )
+        .orderBy(desc(schema.clientAssets.createdAt))
+        .limit(200),
     ]);
 
   if (!client) notFound();
@@ -122,6 +139,14 @@ export default async function ClientDetailPage({
           ? client.name
           : 'System',
     createdAt: m.createdAt,
+  }));
+
+  const assetRows: AssetRow[] = clientAssets.map((a) => ({
+    id: a.id,
+    name: a.name,
+    assetType: a.assetType,
+    notes: a.notes,
+    createdAt: a.createdAt,
   }));
 
   return (
@@ -241,12 +266,11 @@ export default async function ClientDetailPage({
             </TabsContent>
 
             <TabsContent value="files" className="mt-6">
-              <Card>
-                <CardContent className="p-6 text-sm text-muted-foreground">
-                  File uploads via Supabase Storage ship in a follow-up
-                  session.
-                </CardContent>
-              </Card>
+              <FilesPanel
+                workspaceId={workspaceId}
+                clientId={clientId}
+                assets={assetRows}
+              />
             </TabsContent>
           </Tabs>
         </div>
