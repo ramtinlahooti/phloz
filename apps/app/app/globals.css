@@ -4,6 +4,16 @@
  */
 @import '@phloz/ui/styles/globals.css';
 
+/**
+ * Tailwind v4 auto-detects content from the project's own files, but
+ * won't follow workspace imports into packages/* unless we tell it.
+ * Without these, classes used inside @phloz/ui primitives + @phloz/
+ * tracking-map components never make it into the CSS bundle — buttons
+ * render unstyled, cards look like plain divs, etc.
+ */
+@source "../../../packages/ui/src/**/*.{ts,tsx}";
+@source "../../../packages/tracking-map/src/**/*.{ts,tsx}";
+
 /* The product app is always dark (no light-mode opt-in, unlike web). */
 html {
   color-scheme: dark;

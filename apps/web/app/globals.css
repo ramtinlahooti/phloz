@@ -7,6 +7,13 @@
  */
 @import '@phloz/ui/styles/globals.css';
 
+/**
+ * Tailwind v4 won't scan workspace packages unless we tell it where
+ * to look, so classes used inside @phloz/ui primitives need an
+ * explicit source path or they get stripped from the CSS bundle.
+ */
+@source "../../../packages/ui/src/**/*.{ts,tsx}";
+
 @layer base {
   html {
     scroll-behavior: smooth;

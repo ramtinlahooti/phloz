@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 
 import { requireUser } from '@phloz/auth/session';
 import { getDb, schema } from '@phloz/db/client';
@@ -7,6 +7,14 @@ import { getDb, schema } from '@phloz/db/client';
 import { DashboardShell } from '@/components/dashboard-shell';
 
 type LayoutParams = { workspace: string };
+
+/**
+ * RFC-4122 UUID shape. Any segment that doesn't match is a stray
+ * request (favicon.ico, apple-touch-icon, .well-known probes, etc.).
+ * 404 those at the layout so they never reach the DB.
+ */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Workspace layout. Runs on every page under `/[workspace]/...`.
@@ -27,6 +35,12 @@ export default async function WorkspaceLayout({
   params: Promise<LayoutParams>;
 }) {
   const { workspace: workspaceId } = await params;
+
+  // Reject obviously-invalid segments (favicon.ico, robots.txt, etc.)
+  // before we hit Supabase. The DB would throw a uuid-cast error
+  // otherwise, which surfaces to Sentry as a noisy "Failed query".
+  if (!UUID_RE.test(workspaceId)) notFound();
+
   const user = await requireUser();
 
   const db = getDb();

@@ -141,7 +141,43 @@ Pointing `inbound.phloz.com` at Resend is covered in
 
 ---
 
-## Step 6 — Inngest
+## Step 6 — Supabase Auth emails via Resend SMTP
+
+By default Supabase sends signup / magic-link / password-reset /
+email-change emails from `noreply@mail.app.supabase.io`. Two minutes
+in the Supabase dashboard routes them through Resend instead so
+they land from your own `phloz.com` sender.
+
+**Pre-req:** `phloz.com` must be verified in Resend
+(see `docs/DNS-SETUP.md`).
+
+1. **Create an SMTP key in Resend**: dashboard → API Keys → Create
+   (full access is fine). Copy it.
+2. **In Supabase** → Project Settings → Authentication → SMTP Settings
+   → **Enable Custom SMTP**.
+3. Fill in:
+   - **Sender email**: `no-reply@phloz.com` (or whatever you like on
+     the verified domain)
+   - **Sender name**: `Phloz`
+   - **Host**: `smtp.resend.com`
+   - **Port**: `465` (TLS)
+   - **Username**: `resend`
+   - **Password**: the Resend API key from step 1
+4. Save, then send a test email from the same screen. Check your
+   inbox and confirm the sender is now `no-reply@phloz.com`.
+
+Optionally customise the email templates at Authentication →
+Email Templates — the `{{ .ConfirmationURL }}` placeholder carries
+the magic link.
+
+If you'd rather render the templates in your own code (via React
+Email + `@phloz/email`), the Supabase path is the **Send Email Auth
+Hook** — that's a V2 improvement and we haven't shipped the route
+handler yet. SMTP covers the immediate need.
+
+---
+
+## Step 7 — Inngest
 
 Inngest manages our background jobs. See `docs/INNGEST-SETUP.md` for
 the full flow; the short version:
@@ -153,7 +189,7 @@ the full flow; the short version:
 
 ---
 
-## Step 7 — Sanity checks
+## Step 8 — Sanity checks
 
 After the first deploy of each project:
 
