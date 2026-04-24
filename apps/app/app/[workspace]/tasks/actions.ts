@@ -13,8 +13,12 @@ import {
   TASK_STATUSES,
   TASK_VISIBILITIES,
   type ApprovalState,
+  type Department,
+  type TaskStatus,
 } from '@phloz/config';
 import { getDb, schema } from '@phloz/db/client';
+
+import { fireTrack, serverTrackContext } from '@/lib/analytics';
 
 import { findTaskTemplate } from './templates';
 
@@ -73,6 +77,18 @@ export async function createTaskAction(
 
   if (!row) return { ok: false, error: 'insert_failed' };
 
+  fireTrack(
+    'task_created',
+    {
+      department: parsed.data.department,
+      has_due_date: parsed.data.dueDate !== null && parsed.data.dueDate !== undefined,
+      has_assignee:
+        parsed.data.assigneeMembershipId !== null &&
+        parsed.data.assigneeMembershipId !== undefined,
+    },
+    serverTrackContext(user.id, parsed.data.workspaceId),
+  );
+
   revalidatePath(`/${parsed.data.workspaceId}/tasks`);
   if (parsed.data.clientId) {
     revalidatePath(
@@ -102,13 +118,37 @@ export async function updateTaskAction(
   const parsed = updateTaskSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.message };
 
+  let actor;
   try {
-    await requireRole(parsed.data.workspaceId, ['owner', 'admin', 'member']);
+    actor = await requireRole(parsed.data.workspaceId, ['owner', 'admin', 'member']);
   } catch {
     return { ok: false, error: 'forbidden' };
   }
 
   const db = getDb();
+
+  // Fetch the existing row only when we need to emit an analytics event
+  // that depends on the prior state (status change → from_status +
+  // time_to_complete_hours). Saves a round-trip on plain edits.
+  const needsPrior = parsed.data.status !== undefined;
+  const prior = needsPrior
+    ? await db
+        .select({
+          status: schema.tasks.status,
+          department: schema.tasks.department,
+          createdAt: schema.tasks.createdAt,
+        })
+        .from(schema.tasks)
+        .where(
+          and(
+            eq(schema.tasks.id, parsed.data.id),
+            eq(schema.tasks.workspaceId, parsed.data.workspaceId),
+          ),
+        )
+        .limit(1)
+        .then((r) => r[0] ?? null)
+    : null;
+
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (parsed.data.title !== undefined) updates.title = parsed.data.title;
   if (parsed.data.description !== undefined) updates.description = parsed.data.description;
@@ -136,6 +176,56 @@ export async function updateTaskAction(
         eq(schema.tasks.workspaceId, parsed.data.workspaceId),
       ),
     );
+
+  // Status-change events. task_completed is the activation signal we
+  // care most about (PostHog retention cohorts hang off it), so we
+  // compute time-to-complete in hours from the original createdAt.
+  if (
+    prior &&
+    parsed.data.status !== undefined &&
+    prior.status !== parsed.data.status
+  ) {
+    const ctx = serverTrackContext(actor.user.id, parsed.data.workspaceId);
+    const department = (parsed.data.department ?? prior.department) as Department;
+    fireTrack(
+      'task_status_changed',
+      {
+        from_status: prior.status as TaskStatus,
+        to_status: parsed.data.status as TaskStatus,
+        department,
+      },
+      ctx,
+    );
+    if (parsed.data.status === 'done') {
+      const hours =
+        (Date.now() - prior.createdAt.getTime()) / (1000 * 60 * 60);
+      fireTrack(
+        'task_completed',
+        {
+          department,
+          time_to_complete_hours: Math.round(hours * 10) / 10,
+        },
+        ctx,
+      );
+    }
+  }
+
+  // Assignee-change event (fires whether or not a status change also
+  // happened on the same update — the two are independent signals).
+  if (
+    parsed.data.assigneeMembershipId !== undefined &&
+    parsed.data.assigneeMembershipId !== null
+  ) {
+    fireTrack(
+      'task_assigned',
+      {
+        department: (parsed.data.department ??
+          prior?.department ??
+          'other') as Department,
+      },
+      serverTrackContext(actor.user.id, parsed.data.workspaceId),
+    );
+  }
 
   revalidatePath(`/${parsed.data.workspaceId}/tasks`);
   return { ok: true };

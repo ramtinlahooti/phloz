@@ -8,6 +8,8 @@ import { requireRole } from '@phloz/auth/roles';
 import { canUnarchiveClient } from '@phloz/billing';
 import { getDb, schema } from '@phloz/db/client';
 
+import { fireTrack, serverTrackContext } from '@/lib/analytics';
+
 const uuid = z.string().uuid();
 
 /**
@@ -27,8 +29,9 @@ export async function archiveClientAction(input: {
   ) {
     return { ok: false, error: 'invalid_input' };
   }
+  let actor;
   try {
-    await requireRole(input.workspaceId, ['owner', 'admin', 'member']);
+    actor = await requireRole(input.workspaceId, ['owner', 'admin', 'member']);
   } catch {
     return { ok: false, error: 'forbidden' };
   }
@@ -47,6 +50,12 @@ export async function archiveClientAction(input: {
         eq(schema.clients.workspaceId, input.workspaceId),
       ),
     );
+
+  fireTrack(
+    'client_archived',
+    {},
+    serverTrackContext(actor.user.id, input.workspaceId),
+  );
 
   revalidatePath(`/${input.workspaceId}/clients`);
   revalidatePath(`/${input.workspaceId}/clients/${input.clientId}`);
@@ -71,8 +80,9 @@ export async function unarchiveClientAction(input: {
   ) {
     return { ok: false, error: 'invalid_input' };
   }
+  let actor;
   try {
-    await requireRole(input.workspaceId, ['owner', 'admin', 'member']);
+    actor = await requireRole(input.workspaceId, ['owner', 'admin', 'member']);
   } catch {
     return { ok: false, error: 'forbidden' };
   }
@@ -96,6 +106,12 @@ export async function unarchiveClientAction(input: {
         eq(schema.clients.workspaceId, input.workspaceId),
       ),
     );
+
+  fireTrack(
+    'client_unarchived',
+    {},
+    serverTrackContext(actor.user.id, input.workspaceId),
+  );
 
   revalidatePath(`/${input.workspaceId}/clients`);
   revalidatePath(`/${input.workspaceId}/clients/${input.clientId}`);

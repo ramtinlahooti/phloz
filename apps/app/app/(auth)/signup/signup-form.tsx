@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
+import { track } from '@phloz/analytics';
 import { createBrowserSupabase } from '@phloz/auth/client';
 import {
   Button,
@@ -54,6 +55,10 @@ export function SignupForm() {
       toast.error(error.message);
       return;
     }
+    // Fire sign_up as soon as Supabase accepts the credentials, whether
+    // or not a session exists yet. Email-confirmation flow (no session)
+    // still counts as a signup — the user has an auth.users row.
+    void track('sign_up', { method: 'email' });
     if (!data.session) {
       toast.success('Check your email', {
         description: 'Confirm your address to finish creating your account.',

@@ -11,6 +11,8 @@ import { requireUser } from '@phloz/auth/session';
 import { getDb, schema } from '@phloz/db/client';
 import { sendPlainEmail } from '@phloz/email';
 
+import { fireTrack, serverTrackContext } from '@/lib/analytics';
+
 /**
  * Server actions for the messages module.
  *
@@ -119,6 +121,12 @@ export async function sendEmailReplyAction(
 
   if (!row) return { ok: false, error: 'insert_failed' };
 
+  fireTrack(
+    'message_sent',
+    { channel: 'email', direction: 'outbound' },
+    serverTrackContext(user.id, parsed.data.workspaceId),
+  );
+
   revalidatePath(`/${parsed.data.workspaceId}/clients/${parsed.data.clientId}`);
   revalidatePath(`/${parsed.data.workspaceId}/messages`);
   return { ok: true, id: row.id };
@@ -175,6 +183,12 @@ export async function postInternalNoteAction(
     .returning({ id: schema.messages.id });
 
   if (!row) return { ok: false, error: 'insert_failed' };
+
+  fireTrack(
+    'message_sent',
+    { channel: 'internal_note', direction: 'outbound' },
+    serverTrackContext(user.id, parsed.data.workspaceId),
+  );
 
   revalidatePath(`/${parsed.data.workspaceId}/clients/${parsed.data.clientId}`);
   revalidatePath(`/${parsed.data.workspaceId}/messages`);

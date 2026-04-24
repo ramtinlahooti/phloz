@@ -2,27 +2,48 @@
 
 ## What shipped this session
 
-Bundle: team member name resolution + task assignee picker.
+**Part 1:** team member name resolution + task assignee picker
+(commit `135fdec`).
 
-- `workspace_members` gained `display_name` + `email` (cached from
-  `auth.users`). Migration `0001_loving_marauders.sql` is
-  idempotent and also formalises the prior drift between schema and
-  checked-in migrations.
-- Insert paths (onboarding, accept-invite, seed) and the profile
-  settings action now keep the cache in sync.
-- Team page renders display names with email as a secondary line;
-  the task assignee filter + pickers show the same label.
-- `NewTaskDialog` and the task detail dialog's edit mode both have
-  an assignee Select. Threaded through `tasks/page.tsx` +
-  `clients/[clientId]/page.tsx`.
-- `pnpm check` 29/29 green.
+- `workspace_members` gained `display_name` + `email` columns. SQL
+  applied to Supabase.
+- Team page + assignee filter + new/detail task dialog pickers all
+  use the cached names.
 
-**Ramtin still needs to apply `0001_loving_marauders.sql`** against
-Supabase before the new columns work in production. Options:
-  - `pnpm --filter @phloz/db db:migrate` (requires `DATABASE_URL` to
-    the service-role connection string).
-  - Paste the SQL into the Supabase dashboard SQL editor.
-The file is safe to re-run.
+**Part 2:** analytics `track()` wiring across the product.
+
+- `apps/app/lib/analytics.ts` helpers (serverTrackContext +
+  fireTrack fire-and-forget) — use these from every server action
+  that wants to emit an event.
+- PostHog provider refactored to use `@phloz/analytics` primitives;
+  new `AnalyticsIdentify` component mounted in the workspace layout
+  attaches the hashed user id + tier + role to every PH event.
+- ~18 events wired across auth, workspace, team, clients, tasks,
+  node map, messages, billing checkout. Full list in CHANGELOG.
+
+`pnpm check` 29/29 green. Nothing user-visible until analytics
+keys are set; events just no-op without them.
+
+## To actually see the analytics data
+
+Set these env vars in `.env.local` (local) or Vercel (prod):
+
+- **PostHog** (product analytics, session replay, funnels):
+  - `NEXT_PUBLIC_POSTHOG_KEY` — project API key from
+    app.posthog.com → Project Settings
+  - `NEXT_PUBLIC_POSTHOG_HOST` — defaults to
+    `https://us.i.posthog.com` if unset
+  - `POSTHOG_API_KEY` — same key, for server-side events
+- **GA4** (marketing attribution, conversion reporting):
+  - `GA4_MEASUREMENT_ID` — `G-XXXXXXXXXX` from GA4 admin
+  - `GA4_API_SECRET` — from GA4 Admin → Data Streams →
+    Measurement Protocol API secrets
+- **GTM** (marketing site tag manager, already has container
+  `GTM-W3MGZ8V7`):
+  - `NEXT_PUBLIC_GTM_ID` — the container ID. Fires on
+    apps/web, not apps/app.
+
+Without these, `track()` is a pure no-op.
 
 ---
 
@@ -99,10 +120,12 @@ product out substantially.
 - **Tests** — only the package-level ones ship. No Playwright
   smoke tests for the actual app flows. Add when there's a second
   developer.
-- **Analytics tracking wiring** — `@phloz/analytics` `track()`
-  exists but nothing in `apps/app` calls it yet. Hook into the
-  key events (sign_up, add_client, upgrade_tier, etc.) once
-  PostHog keys are set.
+- **Analytics tracking wiring** — ✅ shipped 2026-04-24 for ~18
+  core lifecycle events. Still to do: `upgrade_tier` in the
+  Stripe webhook, `node_updated/deleted` + `edge_*` +
+  `map_layout_arranged` in the tracking-map, `client_updated` +
+  `workspace_settings_updated`, portal events, and marketing
+  site events (`cta_click`, `pricing_page_view_tier`, etc).
 - **Ownership transfer** — promoting a member to `owner` is
   blocked today. Needs a confirmation flow because it demotes
   the current owner.

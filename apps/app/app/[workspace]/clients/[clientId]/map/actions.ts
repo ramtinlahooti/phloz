@@ -14,6 +14,8 @@ import type { EdgeType, HealthStatus, NodeType } from '@phloz/config';
 import { EDGE_TYPES, HEALTH_STATUSES, NODE_TYPES } from '@phloz/config';
 import { revalidatePath } from 'next/cache';
 
+import { fireTrack, serverTrackContext } from '@/lib/analytics';
+
 /**
  * Server actions for the tracking-map canvas. Each function returns
  * `{ ok: true, ...payload }` or `{ ok: false, error }` so the
@@ -75,6 +77,12 @@ export async function createNodeAction(
     .returning();
 
   if (!row) return { ok: false, error: 'insert_failed' };
+
+  fireTrack(
+    'node_created',
+    { node_type: parsed.data.nodeType },
+    serverTrackContext(user.id, parsed.data.workspaceId),
+  );
 
   return {
     ok: true,

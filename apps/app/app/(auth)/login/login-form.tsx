@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
+import { track } from '@phloz/analytics';
 import { createBrowserSupabase } from '@phloz/auth/client';
 import {
   Button,
@@ -48,6 +49,7 @@ export function LoginForm() {
       toast.error(error.message);
       return;
     }
+    void track('login', { method: 'email' });
     router.push(redirectTo);
     router.refresh();
   }
@@ -72,6 +74,9 @@ export function LoginForm() {
         toast.error(error.message);
         return;
       }
+      // Magic-link send itself isn't in the event taxonomy — `login`
+      // fires on the callback return (method: magic_link) where we
+      // know the auth actually succeeded.
       toast.success('Check your email', {
         description: 'We sent a magic link. Click it to sign in.',
       });

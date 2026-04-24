@@ -2,7 +2,10 @@
 
 import { useState } from 'react';
 
+import { track, type EventMap } from '@phloz/analytics';
 import { Button, toast } from '@phloz/ui';
+
+type TierSlug = EventMap['begin_checkout']['tier'];
 
 export function BillingActions({
   workspaceId,
@@ -32,8 +35,11 @@ export function BillingActions({
     }
   }
 
-  async function openCheckout(tier: string, period: 'monthly' | 'annual' = 'monthly') {
+  async function openCheckout(tier: TierSlug, period: 'monthly' | 'annual' = 'monthly') {
     setLoading('checkout');
+    // Fire begin_checkout *before* the redirect. GA4 recognises this
+    // event name for ecommerce funnels; PostHog just records it.
+    void track('begin_checkout', { tier, billing_period: period });
     try {
       const res = await fetch(
         `/api/workspaces/${workspaceId}/billing/checkout`,

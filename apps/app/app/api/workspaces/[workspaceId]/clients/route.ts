@@ -5,6 +5,7 @@ import { requireRole } from '@phloz/auth/roles';
 import { canAddClient } from '@phloz/billing';
 import { getDb, schema } from '@phloz/db/client';
 
+import { fireTrack, serverTrackContext } from '@/lib/analytics';
 import { inngest } from '@/inngest';
 
 const bodySchema = z.object({
@@ -20,14 +21,26 @@ export async function POST(
 ) {
   const { workspaceId } = await params;
 
+  let actor;
   try {
-    await requireRole(workspaceId, ['owner', 'admin', 'member']);
+    actor = await requireRole(workspaceId, ['owner', 'admin', 'member']);
   } catch {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
   const gate = await canAddClient(workspaceId);
   if (!gate.allowed) {
+    // Surface a gate_hit event so PostHog funnels can measure how
+    // often users slam into a tier ceiling vs. successfully add. The
+    // tier is exposed via `meta.tier` on the gate result (see
+    // packages/billing/src/gates.ts canAddClientCheck).
+    const tier = (gate.meta?.tier ?? 'starter') as
+      | 'starter' | 'pro' | 'growth' | 'business' | 'scale' | 'enterprise';
+    fireTrack(
+      'gate_hit',
+      { gate: 'client_limit', current_tier: tier },
+      serverTrackContext(actor.user.id, workspaceId),
+    );
     return NextResponse.json(
       { error: gate.message, code: gate.reason },
       { status: 402 },
@@ -74,6 +87,12 @@ export async function POST(
   } catch (err) {
     console.error('[clients.POST] failed to send workspace/client-added', err);
   }
+
+  fireTrack(
+    'client_created',
+    {},
+    serverTrackContext(actor.user.id, workspaceId),
+  );
 
   return NextResponse.json({ id: client.id }, { status: 201 });
 }

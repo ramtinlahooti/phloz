@@ -4,6 +4,109 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Analytics track() wiring across product actions
+
+### Plumbing
+
+1. **`apps/app/lib/analytics.ts`** (new). Two helpers:
+   - `serverTrackContext(userId, workspaceId?)` — builds the
+     `TrackContext` with hashed auth uid + workspace id tag.
+   - `fireTrack(event, params, context)` — fire-and-forget server
+     wrapper around `track()`. Errors are logged + swallowed so
+     PostHog / GA4 hiccups can't fail a client create or a task
+     save.
+2. **PostHog provider refactor.** Previously imported `posthog-js`
+   directly and called `posthog.init` / `posthog.capture` — a
+   violation of the golden rule in CLAUDE.md §2. Now uses
+   `initClientPostHog` + `captureClient` from `@phloz/analytics`.
+3. **`components/analytics-identify.tsx`** (new). Client component
+   mounted inside the authed workspace layout. Hashes the user id
+   via SubtleCrypto and calls `identifyClient` so PostHog sessions
+   are attributed to the user (with `tier` + `role` + `workspace_id`
+   traits) from the first event onward.
+
+### Events wired (ARCHITECTURE.md §11.2)
+
+Client-side (forms fire `track()` directly):
+- `sign_up` (method: email) — signup-form success
+- `login` (method: email) — login-form password success
+- `login` (method: magic_link) — auth callback on successful session
+  exchange (skipped on signup-confirmation + password-reset flows
+  to avoid double-firing)
+- `password_reset_requested` — forgot-password form submit
+- `logout` — user menu, fires before PostHog reset + Supabase signOut
+- `begin_checkout` — billing-actions "Upgrade" button, fires before
+  the redirect to Stripe so the event lands even if the user
+  abandons on Stripe's hosted page
+
+Server-side (`fireTrack` through server actions):
+- `workspace_created` — onboarding action (workspace_id_hash
+  included)
+- `member_invited` — team invitations API route
+- `member_accepted_invite` — accept-invite page (only on the first
+  acceptance, not on re-clicks of an already-used link)
+- `client_created` — clients POST route
+- `client_archived` / `client_unarchived` — archive actions
+- `gate_hit` (gate: client_limit) — clients POST route when
+  `canAddClient` denies, so PostHog funnels can measure ceiling
+  pain vs. successful adds
+- `task_created` — with has_due_date + has_assignee booleans
+- `task_status_changed` — fires on any status transition; fetches
+  prior status first so `from_status` is accurate
+- `task_completed` — with `time_to_complete_hours` rounded to 1
+  decimal
+- `task_assigned` — fires when the update payload includes a
+  non-null `assigneeMembershipId`
+- `node_created` — tracking-map createNodeAction, with node_type
+- `message_sent` (channel: email) — sendEmailReplyAction
+- `message_sent` (channel: internal_note) — postInternalNoteAction
+
+### Not wired yet (deferred)
+
+- `upgrade_tier` — lives in the Stripe webhook handler, needs the
+  prior/next tier + MRR calculation. Next session.
+- `client_updated` / `workspace_settings_updated` — many edit paths
+  spread across page-specific components; worth a dedicated pass.
+- `node_updated` / `node_deleted` / `edge_created` / `edge_deleted`
+  / `map_layout_arranged` — dedicated tracking-map pass.
+- `portal_accessed` / `portal_link_sent` / `message_received` —
+  need care around portal vs. agency identity.
+- Marketing site events (cta_click, pricing_page_view_tier, etc.)
+  — separate pass, different app.
+
+### Files touched
+
+- `apps/app/lib/analytics.ts` (new)
+- `apps/app/components/{posthog-provider,analytics-identify}.tsx`
+- `apps/app/app/[workspace]/layout.tsx`
+- `apps/app/app/(auth)/{signup/signup-form,login/login-form,forgot-password/forgot-password-form}.tsx`
+- `apps/app/app/auth/callback/route.ts`
+- `apps/app/components/user-menu.tsx`
+- `apps/app/app/onboarding/actions.ts`
+- `apps/app/app/accept-invite/page.tsx`
+- `apps/app/app/api/workspaces/[workspaceId]/invitations/route.ts`
+- `apps/app/app/api/workspaces/[workspaceId]/clients/route.ts`
+- `apps/app/app/[workspace]/clients/[clientId]/archive-actions.ts`
+- `apps/app/app/[workspace]/clients/[clientId]/map/actions.ts`
+- `apps/app/app/[workspace]/tasks/actions.ts`
+- `apps/app/app/[workspace]/messages/actions.ts`
+- `apps/app/app/[workspace]/billing/billing-actions.tsx`
+
+**When it starts working:** events dispatch as soon as the env
+vars are set:
+- `NEXT_PUBLIC_POSTHOG_KEY` / `NEXT_PUBLIC_POSTHOG_HOST` →
+  browser-side PostHog + pageviews + identify
+- `POSTHOG_API_KEY` → server-side PostHog (node SDK)
+- `GA4_MEASUREMENT_ID` + `GA4_API_SECRET` → server-side `sign_up` +
+  `upgrade_tier` via the Measurement Protocol
+- `NEXT_PUBLIC_GTM_ID` → client-side GTM on the marketing site
+Without any of these set, `track()` is a no-op — zero network
+calls, no errors.
+
+`pnpm check` 29/29 green.
+
+---
+
 ## 2026-04-24 — Member display names + task assignee picker
 
 ### Schema

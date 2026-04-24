@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 import { requireUser } from '@phloz/auth/session';
 import { getDb, schema } from '@phloz/db/client';
 
+import { AnalyticsIdentify } from '@/components/analytics-identify';
 import { DashboardShell } from '@/components/dashboard-shell';
 
 type LayoutParams = { workspace: string };
@@ -87,24 +88,32 @@ export default async function WorkspaceLayout({
     .where(eq(schema.workspaceMembers.userId, user.id));
 
   return (
-    <DashboardShell
-      workspace={{
-        id: workspace.id,
-        name: workspace.name,
-        tier: workspace.tier,
-      }}
-      role={membership.role}
-      user={{
-        id: user.id,
-        email: user.email ?? '',
-        name:
-          (user.user_metadata?.full_name as string | undefined) ??
-          user.email ??
-          'You',
-      }}
-      allWorkspaces={allWorkspaces}
-    >
-      {children}
-    </DashboardShell>
+    <>
+      <AnalyticsIdentify
+        userId={user.id}
+        workspaceId={workspace.id}
+        tier={workspace.tier}
+        role={membership.role}
+      />
+      <DashboardShell
+        workspace={{
+          id: workspace.id,
+          name: workspace.name,
+          tier: workspace.tier,
+        }}
+        role={membership.role}
+        user={{
+          id: user.id,
+          email: user.email ?? '',
+          name:
+            (user.user_metadata?.full_name as string | undefined) ??
+            user.email ??
+            'You',
+        }}
+        allWorkspaces={allWorkspaces}
+      >
+        {children}
+      </DashboardShell>
+    </>
   );
 }

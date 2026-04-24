@@ -4,6 +4,7 @@ import { LogOut, User } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
+import { resetClient, track } from '@phloz/analytics';
 import { createBrowserSupabase } from '@phloz/auth/client';
 import {
   Avatar,
@@ -31,6 +32,10 @@ export function UserMenu({
   const router = useRouter();
 
   async function signOut() {
+    // Track + reset PostHog before the session drops so the final event
+    // is still attributed to the departing user.
+    void track('logout', {});
+    resetClient();
     const supabase = createBrowserSupabase();
     await supabase.auth.signOut();
     router.push('/login');

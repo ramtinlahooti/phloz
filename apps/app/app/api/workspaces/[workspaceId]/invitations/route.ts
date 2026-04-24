@@ -7,6 +7,7 @@ import { sendInvitation } from '@phloz/email';
 import { canInviteMember } from '@phloz/billing';
 import { getDb, schema } from '@phloz/db/client';
 
+import { fireTrack, serverTrackContext } from '@/lib/analytics';
 import { getAppUrlFromRequest } from '@/lib/app-url';
 
 const bodySchema = z.object({
@@ -79,6 +80,12 @@ export async function POST(
     workspaceName: workspace?.name ?? 'your new workspace',
     acceptUrl: `${getAppUrlFromRequest(request)}/accept-invite?token=${token}`,
   });
+
+  fireTrack(
+    'member_invited',
+    { role: parsed.data.role },
+    serverTrackContext(actor.user.id, workspaceId),
+  );
 
   return NextResponse.json({ ok: true }, { status: 201 });
 }

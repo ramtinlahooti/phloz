@@ -3,10 +3,12 @@
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
+import { hashAuthUidServer } from '@phloz/analytics';
 import { createServerSupabase, createServiceRoleSupabase } from '@phloz/auth/server';
 import { requireUser } from '@phloz/auth/session';
 import { getDb, schema } from '@phloz/db/client';
 
+import { fireTrack, serverTrackContext } from '@/lib/analytics';
 import { inngest } from '@/inngest';
 
 /**
@@ -120,6 +122,15 @@ export async function createWorkspaceAction(
   } catch (err) {
     console.error('[onboarding] failed to send workspace/created', err);
   }
+
+  // Emit workspace_created. workspace_id_hash is also hashed (PostHog
+  // is fine with raw workspace ids, but GA4 MP receives it server-side
+  // and we keep all external-facing identifiers hashed for consistency).
+  fireTrack(
+    'workspace_created',
+    { workspace_id_hash: hashAuthUidServer(workspace.id) },
+    serverTrackContext(user.id, workspace.id),
+  );
 
   redirect(`/${workspace.id}`);
 }

@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
+import { track } from '@phloz/analytics';
 import { createBrowserSupabase } from '@phloz/auth/client';
 import {
   Button,
@@ -38,6 +39,7 @@ export function ForgotPasswordForm() {
       toast.error(error.message);
       return;
     }
+    void track('password_reset_requested', {});
     toast.success('Check your email', {
       description: 'If an account exists we\'ve sent a reset link.',
     });

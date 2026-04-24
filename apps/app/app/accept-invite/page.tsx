@@ -3,9 +3,11 @@ import Link from 'next/link';
 
 import { getCurrentUser } from '@phloz/auth/session';
 import { createServerSupabase } from '@phloz/auth/server';
+import type { Role } from '@phloz/config';
 import { getDb, schema } from '@phloz/db/client';
 import { buttonVariants, Card, CardContent } from '@phloz/ui';
 
+import { fireTrack, serverTrackContext } from '@/lib/analytics';
 import { buildAppMetadata } from '@/lib/metadata';
 
 export const metadata = buildAppMetadata({ title: 'Accept invitation' });
@@ -120,6 +122,15 @@ export default async function AcceptInvitePage({ searchParams }: PageProps) {
       invitedAt: invitation.createdAt,
       acceptedAt: new Date(),
     });
+
+    // Fire the accept event only on the first acceptance. An existing
+    // membership means the user clicked the link a second time, which
+    // we don't want double-counted as a new conversion.
+    fireTrack(
+      'member_accepted_invite',
+      { role: invitation.role as Role },
+      serverTrackContext(user.id, invitation.workspaceId),
+    );
   }
 
   await db
