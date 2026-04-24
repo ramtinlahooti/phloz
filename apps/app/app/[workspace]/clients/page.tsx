@@ -66,36 +66,64 @@ export default async function ClientsListPage({
         <Card>
           <CardContent className="p-0">
             <ul className="divide-y divide-border/60">
-              {clients.map((client) => (
-                <li key={client.id}>
-                  <Link
-                    href={`/${workspaceId}/clients/${client.id}`}
-                    className="flex items-center justify-between gap-4 px-6 py-4 transition-colors hover:bg-muted/50"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate font-medium">
-                          {client.name}
-                        </span>
-                        {client.archivedAt && (
-                          <Badge variant="outline" className="text-xs">
-                            Archived
-                          </Badge>
+              {clients.map((client) => {
+                const lastActivity = client.lastActivityAt ?? client.updatedAt;
+                const daysInactive = Math.floor(
+                  (Date.now() - new Date(lastActivity).getTime()) /
+                    (1000 * 60 * 60 * 24),
+                );
+                const atRisk =
+                  !client.archivedAt && daysInactive >= 30 && daysInactive < 60;
+                const inactive =
+                  !client.archivedAt && daysInactive >= 60;
+                return (
+                  <li key={client.id}>
+                    <Link
+                      href={`/${workspaceId}/clients/${client.id}`}
+                      className="flex items-center justify-between gap-4 px-6 py-4 transition-colors hover:bg-muted/50"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate font-medium">
+                            {client.name}
+                          </span>
+                          {client.archivedAt && (
+                            <Badge variant="outline" className="text-xs">
+                              Archived
+                            </Badge>
+                          )}
+                          {atRisk && (
+                            <Badge
+                              variant="outline"
+                              className="border-amber-400/50 text-[10px] text-amber-400"
+                            >
+                              At risk · {daysInactive}d
+                            </Badge>
+                          )}
+                          {inactive && (
+                            <Badge
+                              variant="outline"
+                              className="border-red-400/50 text-[10px] text-red-400"
+                            >
+                              Inactive · {daysInactive}d
+                            </Badge>
+                          )}
+                        </div>
+                        {client.businessName && (
+                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {client.businessName}
+                          </div>
                         )}
                       </div>
-                      {client.businessName && (
-                        <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                          {client.businessName}
-                        </div>
-                      )}
-                    </div>
-                    <div className="shrink-0 text-xs text-muted-foreground">
-                      Updated{' '}
-                      {new Date(client.updatedAt).toLocaleDateString()}
-                    </div>
-                  </Link>
-                </li>
-              ))}
+                      <div className="shrink-0 text-xs text-muted-foreground">
+                        {client.lastActivityAt
+                          ? `Active ${new Date(client.lastActivityAt).toLocaleDateString()}`
+                          : `Updated ${new Date(client.updatedAt).toLocaleDateString()}`}
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           </CardContent>
         </Card>

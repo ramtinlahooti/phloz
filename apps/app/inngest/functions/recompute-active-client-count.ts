@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { getActiveClientCount, getTier } from '@phloz/billing';
 import { getDb, schema } from '@phloz/db/client';
@@ -80,10 +80,57 @@ export const recomputeActiveClientCount = inngest.createFunction(
       });
     }
 
+    // Refresh clients.last_activity_at for every workspace scanned.
+    // Single SQL pass per workspace: greatest(created_at, max across
+    // activity tables). Cheap enough to batch into one statement.
+    let refreshed = 0;
+    for (const ws of workspaces) {
+      refreshed += await step.run(`refresh-activity-${ws.id}`, async () => {
+        const result = await db.execute<{ updated_count: number }>(sql`
+          with activity as (
+            select
+              c.id as client_id,
+              greatest(
+                c.created_at,
+                coalesce((
+                  select max(t.updated_at) from ${schema.tasks} t
+                  where t.client_id = c.id
+                ), c.created_at),
+                coalesce((
+                  select max(m.created_at) from ${schema.messages} m
+                  where m.client_id = c.id
+                ), c.created_at),
+                coalesce((
+                  select max(n.updated_at) from ${schema.trackingNodes} n
+                  where n.client_id = c.id
+                ), c.created_at),
+                coalesce((
+                  select max(e.updated_at) from ${schema.trackingEdges} e
+                  where e.client_id = c.id
+                ), c.created_at),
+                coalesce((
+                  select max(a.created_at) from ${schema.clientAssets} a
+                  where a.client_id = c.id
+                ), c.created_at)
+              ) as last_activity_at
+            from ${schema.clients} c
+            where c.workspace_id = ${ws.id}
+          )
+          update ${schema.clients} c
+          set last_activity_at = a.last_activity_at
+          from activity a
+          where c.id = a.client_id
+          returning 1 as updated_count;
+        `);
+        return Array.isArray(result) ? result.length : 0;
+      });
+    }
+
     return {
       scanned: workspaces.length,
       overLimit: results.filter((r) => r.overLimit).length,
       approachingLimit: results.filter((r) => r.approachingLimit).length,
+      clientsRefreshed: refreshed,
       results,
     };
   },

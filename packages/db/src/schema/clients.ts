@@ -39,6 +39,17 @@ export const clients = pgTable(
     notes: text('notes'),
     archivedAt: timestamp('archived_at', { withTimezone: true, mode: 'date' }),
     archivedReason: text('archived_reason'),
+    /**
+     * Cached max(createdAt) across tasks / messages / tracking_nodes /
+     * tracking_edges / client_assets. Populated by the Inngest
+     * `recomputeActiveClientCount` cron. Used for at-risk / inactive
+     * surfacing — NOT authoritative for billing (billing computes
+     * activity live in `getActiveClientCount`).
+     */
+    lastActivityAt: timestamp('last_activity_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
     customFields: jsonb('custom_fields').$type<Record<string, unknown>>().notNull().default({}),
     createdBy: userIdRef('created_by', { nullable: true }),
     ...timestamps,
@@ -46,6 +57,9 @@ export const clients = pgTable(
   (table) => ({
     workspaceIdx: index('clients_workspace_id_idx').on(table.workspaceId),
     archivedIdx: index('clients_archived_at_idx').on(table.archivedAt),
+    lastActivityIdx: index('clients_last_activity_at_idx').on(
+      table.lastActivityAt,
+    ),
   }),
 );
 
