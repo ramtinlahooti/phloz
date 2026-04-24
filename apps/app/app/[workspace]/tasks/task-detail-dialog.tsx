@@ -1,17 +1,35 @@
 'use client';
 
-import { MessageSquare, Send, Trash2 } from 'lucide-react';
+import { MessageSquare, Pencil, Send, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 
-import type { TaskVisibility } from '@phloz/config';
+import type {
+  Department,
+  TaskPriority,
+  TaskVisibility,
+} from '@phloz/config';
+import {
+  DEPARTMENTS,
+  TASK_PRIORITIES,
+  TASK_VISIBILITIES,
+} from '@phloz/config';
 import {
   Badge,
   Button,
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   toast,
 } from '@phloz/ui';
 
@@ -21,6 +39,7 @@ import {
   listCommentsAction,
   type CommentView,
 } from './comments-actions';
+import { updateTaskAction } from './actions';
 import type { TaskRowModel } from './task-row';
 
 /**
@@ -40,6 +59,7 @@ export function TaskDetailDialog({
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
+  const router = useRouter();
   const [comments, setComments] = useState<CommentView[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [body, setBody] = useState('');
@@ -47,8 +67,34 @@ export function TaskDetailDialog({
   const [sending, setSending] = useState(false);
   const [, startTransition] = useTransition();
 
+  const [editMode, setEditMode] = useState(false);
+  const [editTitle, setEditTitle] = useState(task.title);
+  const [editDescription, setEditDescription] = useState('');
+  const [editPriority, setEditPriority] = useState<TaskPriority>(task.priority);
+  const [editDepartment, setEditDepartment] = useState<Department>(
+    task.department,
+  );
+  const [editVisibility, setEditVisibility] = useState<TaskVisibility>(
+    task.visibility,
+  );
+  const [editDueDate, setEditDueDate] = useState(
+    task.dueDate ? toDateInput(task.dueDate) : '',
+  );
+  const [savingEdit, setSavingEdit] = useState(false);
+
   useEffect(() => {
     if (!open) return;
+    // Reset edit state to reflect the latest task payload every time
+    // we open (covers the case where the list was refreshed while the
+    // dialog was closed).
+    setEditMode(false);
+    setEditTitle(task.title);
+    setEditPriority(task.priority);
+    setEditDepartment(task.department);
+    setEditVisibility(task.visibility);
+    setEditDueDate(task.dueDate ? toDateInput(task.dueDate) : '');
+    setEditDescription(''); // description isn't on TaskRowModel — fetch below
+
     let cancelled = false;
     (async () => {
       const res = await listCommentsAction({
@@ -67,7 +113,34 @@ export function TaskDetailDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, workspaceId, task.id]);
+  }, [open, workspaceId, task.id, task.title, task.priority, task.department, task.visibility, task.dueDate]);
+
+  async function saveEdit() {
+    setSavingEdit(true);
+    try {
+      const res = await updateTaskAction({
+        workspaceId,
+        id: task.id,
+        title: editTitle.trim(),
+        description: editDescription.trim() ? editDescription.trim() : null,
+        priority: editPriority,
+        department: editDepartment,
+        visibility: editVisibility,
+        dueDate: editDueDate
+          ? new Date(editDueDate).toISOString()
+          : null,
+      });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success('Saved');
+      setEditMode(false);
+      router.refresh();
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -121,7 +194,7 @@ export function TaskDetailDialog({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2">
-            <span>{task.title}</span>
+            <span className="min-w-0 flex-1 truncate">{task.title}</span>
             <Badge variant="outline" className="text-[10px] capitalize">
               {task.status.replace('_', ' ')}
             </Badge>
@@ -129,6 +202,17 @@ export function TaskDetailDialog({
               <Badge variant="outline" className="text-[10px]">
                 Client-visible
               </Badge>
+            )}
+            {!editMode && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setEditMode(true)}
+                className="gap-1.5"
+              >
+                <Pencil className="size-3.5" /> Edit
+              </Button>
             )}
           </DialogTitle>
           {task.clientName && (
@@ -149,6 +233,113 @@ export function TaskDetailDialog({
             </DialogDescription>
           )}
         </DialogHeader>
+
+        {editMode && (
+          <section className="space-y-4 border-y border-border py-4">
+            <div className="space-y-1">
+              <Label>Title</Label>
+              <Input
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                maxLength={200}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Description</Label>
+              <textarea
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                rows={3}
+                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+                placeholder="What does this task cover?"
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1">
+                <Label>Priority</Label>
+                <Select
+                  value={editPriority}
+                  onValueChange={(v) => setEditPriority(v as TaskPriority)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TASK_PRIORITIES.map((p) => (
+                      <SelectItem key={p} value={p} className="capitalize">
+                        {p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Department</Label>
+                <Select
+                  value={editDepartment}
+                  onValueChange={(v) => setEditDepartment(v as Department)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DEPARTMENTS.map((d) => (
+                      <SelectItem key={d} value={d} className="capitalize">
+                        {d.replace('_', ' ')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Visibility</Label>
+                <Select
+                  value={editVisibility}
+                  onValueChange={(v) => setEditVisibility(v as TaskVisibility)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TASK_VISIBILITIES.map((v) => (
+                      <SelectItem key={v} value={v}>
+                        {v === 'internal' ? 'Internal' : 'Client-visible'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label>Due date (optional)</Label>
+              <Input
+                type="date"
+                value={editDueDate}
+                onChange={(e) => setEditDueDate(e.target.value)}
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setEditMode(false)}
+                disabled={savingEdit}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={saveEdit}
+                disabled={savingEdit || !editTitle.trim()}
+              >
+                {savingEdit ? 'Saving…' : 'Save changes'}
+              </Button>
+            </DialogFooter>
+          </section>
+        )}
 
         <section className="space-y-3">
           <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -254,4 +445,12 @@ export function TaskDetailDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Convert a Date to the `YYYY-MM-DD` string the date input expects. */
+function toDateInput(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
