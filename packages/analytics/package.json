@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./server": "./src/server.ts",
     "./track": "./src/track.ts",
     "./events": "./src/events/index.ts",
     "./gtm": "./src/gtm/index.ts",

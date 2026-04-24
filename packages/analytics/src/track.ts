@@ -10,14 +10,17 @@
  *
  * CLAUDE.md §2 golden rule 4: no other code in the monorepo may call
  * `dataLayer.push`, `gtag()`, or `posthog.capture()` directly.
+ *
+ * Important bundling note: server-only paths are imported **dynamically**
+ * so client bundles never pull in `posthog-node` (which imports
+ * `node:fs` and other Node built-ins). Turbopack fails with "chunking
+ * context does not support external modules" otherwise.
  */
 
 import type { EventMap, EventName } from './events/types';
 import { SERVER_GA4_EVENTS } from './events/types';
 import { pushDataLayer } from './gtm';
 import { captureClient } from './posthog/client';
-import { captureServer } from './posthog/server';
-import { sendGa4ServerEvent } from './ga4';
 
 export interface TrackContext {
   /**
@@ -71,6 +74,17 @@ export async function track<E extends EventName>(
     });
     return;
   }
+
+  // Lazy-load the server-only modules so client bundles don't pull
+  // `posthog-node` (which statically imports `node:fs`). Turbopack
+  // errors with "chunking context does not support external modules"
+  // if these are top-level imports. ga4 is fetch-only and safe to
+  // import statically, but bundling it here too keeps the conditional
+  // code path isolated.
+  const [{ captureServer }, { sendGa4ServerEvent }] = await Promise.all([
+    import('./posthog/server'),
+    import('./ga4'),
+  ]);
 
   const tasks: Promise<unknown>[] = [];
 

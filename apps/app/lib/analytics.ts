@@ -20,12 +20,12 @@
  */
 
 import {
-  hashAuthUidServer,
   track,
   type EventMap,
   type EventName,
   type TrackContext,
 } from '@phloz/analytics';
+import { hashAuthUidServer } from '@phloz/analytics/server';
 
 export function serverTrackContext(
   userId: string,

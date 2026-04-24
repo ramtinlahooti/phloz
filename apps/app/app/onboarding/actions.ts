@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
-import { hashAuthUidServer } from '@phloz/analytics';
+import { hashAuthUidServer } from '@phloz/analytics/server';
 import { createServerSupabase, createServiceRoleSupabase } from '@phloz/auth/server';
 import { requireUser } from '@phloz/auth/session';
 import { getDb, schema } from '@phloz/db/client';
