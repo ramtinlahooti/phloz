@@ -49,11 +49,15 @@ export async function createNodeAction(
   }
 
   const user = await requireUser();
-  const descriptor = getNodeTypeDescriptor(parsed.data.nodeType);
-  const metaValidation = descriptor.schema.safeParse(parsed.data.metadata);
-  if (!metaValidation.success) {
-    return { ok: false, error: metaValidation.error.message };
-  }
+
+  // NOTE: we deliberately don't validate metadata against
+  // `descriptor.schema` here. Create-time metadata comes from
+  // `descriptor.defaults()` (trusted code), and defaults frequently
+  // contain empty placeholder fields so the user can fill them in via
+  // the drawer. Strict per-field validation runs on save, in
+  // `updateNodeAction` — see the descriptor lookup below that path.
+  // Fields must still be a plain JSON object, which the top-level
+  // `z.record(z.unknown())` on the input schema already enforces.
 
   const db = getDb();
   const [row] = await db
@@ -63,7 +67,7 @@ export async function createNodeAction(
       clientId: parsed.data.clientId,
       nodeType: parsed.data.nodeType,
       label: parsed.data.label,
-      metadata: metaValidation.data as Record<string, unknown>,
+      metadata: parsed.data.metadata,
       healthStatus: 'unverified',
       position: parsed.data.position,
       createdBy: user.id,

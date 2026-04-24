@@ -1,6 +1,7 @@
-import { asc, desc, eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import Link from 'next/link';
 
+import { requireUser } from '@phloz/auth/session';
 import { getDb, schema } from '@phloz/db/client';
 import type {
   ApprovalState,
@@ -23,6 +24,7 @@ import { buildAppMetadata } from '@/lib/metadata';
 
 import { NewTaskDialog } from './new-task-dialog';
 import { TaskRow, type TaskRowModel } from './task-row';
+import { TaskFilters, type TaskSort } from './task-filters';
 
 export const metadata = buildAppMetadata({ title: 'Tasks' });
 
@@ -30,6 +32,9 @@ type RouteParams = { workspace: string };
 type SearchParams = {
   department?: string;
   status?: string;
+  client?: string;
+  assignee?: string;
+  sort?: string;
 };
 
 const DISPLAY_GROUPS: TaskStatus[] = [
@@ -38,6 +43,25 @@ const DISPLAY_GROUPS: TaskStatus[] = [
   'blocked',
   'done',
 ];
+
+const PRIORITY_RANK: Record<TaskPriority, number> = {
+  urgent: 3,
+  high: 2,
+  medium: 1,
+  low: 0,
+};
+
+const SORT_OPTIONS: TaskSort[] = [
+  'priority',
+  'due_soonest',
+  'due_latest',
+  'recently_updated',
+  'recently_created',
+];
+
+function isSort(v: string | undefined): v is TaskSort {
+  return !!v && (SORT_OPTIONS as string[]).includes(v);
+}
 
 export default async function TasksPage({
   params,
@@ -54,29 +78,73 @@ export default async function TasksPage({
   const statusFilter = TASK_STATUSES.includes(sp.status as TaskStatus)
     ? (sp.status as TaskStatus)
     : null;
+  const clientFilter = sp.client ?? null;
+  const assigneeFilter = sp.assignee ?? null;
+  const sort: TaskSort = isSort(sp.sort) ? sp.sort : 'priority';
 
   const db = getDb();
+  const user = await requireUser();
 
-  const [taskRows, clientRows] = await Promise.all([
-    db
-      .select()
-      .from(schema.tasks)
-      .where(eq(schema.tasks.workspaceId, workspaceId))
-      .orderBy(desc(schema.tasks.priority), asc(schema.tasks.dueDate)),
-    db
-      .select({ id: schema.clients.id, name: schema.clients.name })
-      .from(schema.clients)
-      .where(eq(schema.clients.workspaceId, workspaceId))
-      .orderBy(asc(schema.clients.name)),
-  ]);
+  const [taskRows, clientRows, memberRows, currentMembership] =
+    await Promise.all([
+      db
+        .select()
+        .from(schema.tasks)
+        .where(eq(schema.tasks.workspaceId, workspaceId)),
+      db
+        .select({ id: schema.clients.id, name: schema.clients.name })
+        .from(schema.clients)
+        .where(eq(schema.clients.workspaceId, workspaceId))
+        .orderBy(asc(schema.clients.name)),
+      db
+        .select({
+          id: schema.workspaceMembers.id,
+          userId: schema.workspaceMembers.userId,
+          role: schema.workspaceMembers.role,
+        })
+        .from(schema.workspaceMembers)
+        .where(eq(schema.workspaceMembers.workspaceId, workspaceId)),
+      db
+        .select({ id: schema.workspaceMembers.id })
+        .from(schema.workspaceMembers)
+        .where(
+          eq(schema.workspaceMembers.workspaceId, workspaceId),
+        )
+        .then((rows) => rows.find((r) => r)),
+    ]);
 
   const clientById = new Map(clientRows.map((c) => [c.id, c.name]));
+  // Membership options for the assignee dropdown. We don't have
+  // human names yet (auth.users.id → email lookup is expensive here)
+  // so list by short uuid. "You" is labeled when the current user
+  // matches. Portal contacts are never assignees.
+  const memberOptions = memberRows.map((m) => ({
+    id: m.id,
+    label:
+      m.userId === user.id
+        ? 'You'
+        : `${(m.userId ?? 'unknown').slice(0, 8)}… · ${m.role}`,
+  }));
 
+  // Filter rows.
   const filtered = taskRows.filter((t) => {
     if (departmentFilter && t.department !== departmentFilter) return false;
     if (statusFilter && t.status !== statusFilter) return false;
+    if (clientFilter) {
+      if (clientFilter === 'unassigned') {
+        if (t.clientId !== null) return false;
+      } else if (t.clientId !== clientFilter) return false;
+    }
+    if (assigneeFilter) {
+      if (assigneeFilter === 'unassigned') {
+        if (t.assigneeId !== null) return false;
+      } else if (t.assigneeId !== assigneeFilter) return false;
+    }
     return true;
   });
+
+  // Sort within each status group.
+  filtered.sort((a, b) => compare(a, b, sort));
 
   const byStatus: Record<TaskStatus, TaskRowModel[]> = {
     todo: [],
@@ -100,6 +168,14 @@ export default async function TasksPage({
     });
   }
 
+  const anyFilterOn =
+    departmentFilter !== null ||
+    statusFilter !== null ||
+    clientFilter !== null ||
+    assigneeFilter !== null;
+
+  void currentMembership; // reserved for future "assigned to me" shortcut
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
       <header className="mb-6 flex items-start justify-between gap-4">
@@ -122,14 +198,14 @@ export default async function TasksPage({
       <div className="mb-6 flex flex-wrap items-center gap-2 text-xs">
         <FilterPill
           href={`/${workspaceId}/tasks`}
-          active={!departmentFilter && !statusFilter}
+          active={!anyFilterOn && sort === 'priority'}
         >
           All
         </FilterPill>
         {DEPARTMENTS.map((d) => (
           <FilterPill
             key={d}
-            href={`/${workspaceId}/tasks?department=${d}`}
+            href={hrefWith({ department: d }, { workspaceId, sp })}
             active={departmentFilter === d}
           >
             <span className="capitalize">{d.replace('_', ' ')}</span>
@@ -139,7 +215,7 @@ export default async function TasksPage({
         {TASK_STATUSES.filter((s) => s !== 'archived').map((s) => (
           <FilterPill
             key={s}
-            href={`/${workspaceId}/tasks?status=${s}`}
+            href={hrefWith({ status: s }, { workspaceId, sp })}
             active={statusFilter === s}
           >
             <span className="capitalize">{s.replace('_', ' ')}</span>
@@ -147,12 +223,35 @@ export default async function TasksPage({
         ))}
       </div>
 
+      <TaskFilters
+        workspaceId={workspaceId}
+        searchParams={sp}
+        clients={clientRows.map((c) => ({ id: c.id, name: c.name }))}
+        members={memberOptions}
+        activeClient={clientFilter}
+        activeAssignee={assigneeFilter}
+        activeSort={sort}
+      />
+
       {taskRows.length === 0 ? (
         <EmptyState
           title="No tasks yet"
           description="Create your first task to track work across clients."
           action={
             <NewTaskDialog workspaceId={workspaceId} clients={clientRows} />
+          }
+        />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          title="No tasks match these filters"
+          description="Try clearing a filter or adjusting the sort."
+          action={
+            <Link
+              href={`/${workspaceId}/tasks`}
+              className="text-sm text-primary hover:underline"
+            >
+              Reset all filters
+            </Link>
           }
         />
       ) : (
@@ -214,4 +313,70 @@ function FilterPill({
       {children}
     </Link>
   );
+}
+
+/**
+ * Build an href that keeps the non-toggling search params and sets
+ * (or toggles off) the one the pill is for.
+ */
+function hrefWith(
+  update: { department?: string; status?: string },
+  ctx: { workspaceId: string; sp: SearchParams },
+): string {
+  const next = new URLSearchParams();
+  const base = { ...ctx.sp, ...update } as SearchParams;
+  // Toggle off when the pill is already active — caller handles
+  // that via `active` + this href; clicking the same pill goes
+  // back to "all of this dimension".
+  if (update.department !== undefined) {
+    if (ctx.sp.department === update.department) {
+      delete base.department;
+    }
+  }
+  if (update.status !== undefined) {
+    if (ctx.sp.status === update.status) {
+      delete base.status;
+    }
+  }
+  for (const [k, v] of Object.entries(base)) {
+    if (typeof v === 'string' && v.length > 0) next.set(k, v);
+  }
+  const qs = next.toString();
+  return qs
+    ? `/${ctx.workspaceId}/tasks?${qs}`
+    : `/${ctx.workspaceId}/tasks`;
+}
+
+// --- sorting ---------------------------------------------------------
+
+function compare(
+  a: { dueDate: Date | null; priority: string; createdAt: Date; updatedAt: Date },
+  b: { dueDate: Date | null; priority: string; createdAt: Date; updatedAt: Date },
+  sort: TaskSort,
+): number {
+  switch (sort) {
+    case 'priority': {
+      const diff =
+        PRIORITY_RANK[b.priority as TaskPriority] -
+        PRIORITY_RANK[a.priority as TaskPriority];
+      if (diff !== 0) return diff;
+      // tiebreaker: closest due date first, null dates last
+      return compareDueDate(a.dueDate, b.dueDate);
+    }
+    case 'due_soonest':
+      return compareDueDate(a.dueDate, b.dueDate);
+    case 'due_latest':
+      return -compareDueDate(a.dueDate, b.dueDate);
+    case 'recently_created':
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    case 'recently_updated':
+      return b.updatedAt.getTime() - a.updatedAt.getTime();
+  }
+}
+
+function compareDueDate(a: Date | null, b: Date | null): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1; // tasks with no due date sort last
+  if (b === null) return -1;
+  return a.getTime() - b.getTime();
 }

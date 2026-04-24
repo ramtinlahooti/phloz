@@ -28,6 +28,7 @@ import {
 import { buildAppMetadata } from '@/lib/metadata';
 
 import { ArchiveButton } from './archive-button';
+import { ClientOverviewForm } from './client-overview-form';
 import { ClientNotesEditor } from './notes-editor';
 import {
   ContactsPanel,
@@ -235,6 +236,18 @@ export default async function ClientDetailPage({
             </TabsList>
 
             <TabsContent value="overview" className="mt-6 space-y-6">
+              <ClientOverviewForm
+                workspaceId={workspaceId}
+                clientId={clientId}
+                initial={{
+                  name: client.name,
+                  businessName: client.businessName,
+                  businessEmail: client.businessEmail,
+                  businessPhone: client.businessPhone,
+                  websiteUrl: client.websiteUrl,
+                  industry: client.industry,
+                }}
+              />
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm font-medium text-muted-foreground">
