@@ -4,6 +4,61 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Daily digest email
+
+Retention infrastructure. Daily cron at 09:00 UTC sends the
+workspace owner a summary of what needs attention — overdue
+tasks, due-today tasks, pending client approvals, unreplied
+messages, and critical tracking-audit findings. Same data the
+dashboard shows, delivered to their inbox so they open the app
+with intent.
+
+### Scope (V1)
+
+- **Audience**: workspace owner only. Per-member digests +
+  per-user opt-out deferred to V2 (requires a settings column
+  + timezone plumbing). Email tells recipient to reply to opt
+  out — manual safety valve.
+- **Timezone**: UTC. Per-workspace TZ is a V2 refinement —
+  `workspaces.timezone` already exists in the schema.
+- **Skip empty**: if nothing's actionable anywhere in the
+  workspace, no email. Quiet mornings shouldn't generate
+  notifications.
+
+### Data mirrors the dashboard
+
+Same queries + heuristics as the "This week" widget + "Clients
+needing attention" + "Tracking audit" cards so the numbers in
+the inbox line up with what users see when they click through.
+Deep-links use `?task=<id>` and `?tab=audit` so clicks land
+right on the item.
+
+### Files
+
+- `packages/email/src/templates/daily-digest.tsx` — React Email
+  template with PreviewProps for dev preview.
+- `packages/email/src/send.ts` — new `sendDailyDigest(input)`
+  helper; caller owns the subject (formatted per-workspace).
+- `apps/app/inngest/functions/send-daily-digest.ts` — cron
+  function wired to `TZ=UTC 0 9 * * *` + manual trigger via
+  `digest/send-daily` event. Per-workspace loop runs inside
+  `step.run` for Inngest retries.
+- `apps/app/inngest/index.ts` — registered.
+- `apps/app/inngest/client.ts` — added `digest/send-daily`.
+
+### Dormant until Ramtin sets up
+
+- **Resend `RESEND_API_KEY`** — without it `sendDailyDigest`
+  no-ops with a log line, same as other Phloz emails in dev.
+- **Inngest `INNGEST_SIGNING_KEY`** — without it the cron never
+  fires; registering the function is still safe.
+
+Once both are set, the cron runs automatically at 9am UTC daily.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Tracking map `?node=<id>` scroll-focus
 
 Closes the loop on audit findings. When a user clicks "View node

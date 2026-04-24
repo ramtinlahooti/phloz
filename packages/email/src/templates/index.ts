@@ -8,3 +8,10 @@ export {
   PasswordResetEmail,
   type PasswordResetEmailProps,
 } from './password-reset';
+export {
+  DailyDigestEmail,
+  type DailyDigestEmailProps,
+  type DigestTaskItem,
+  type DigestMessageItem,
+  type DigestAuditItem,
+} from './daily-digest';

@@ -2,6 +2,8 @@ import * as React from 'react';
 import { EmailError } from './errors';
 import { defaultFromAddress, getResend, isResendConfigured } from './client';
 import {
+  DailyDigestEmail,
+  type DailyDigestEmailProps,
   InvitationEmail,
   type InvitationEmailProps,
   PasswordResetEmail,
@@ -95,6 +97,27 @@ export async function sendPortalMagicLink(
     subject: `Your ${templateProps.workspaceName} client portal`,
     react: React.createElement(PortalMagicLinkEmail, templateProps),
     tags: [{ name: 'category', value: 'portal_magic_link' }],
+  });
+}
+
+/**
+ * Send the daily-digest email. Caller owns the subject (lets the
+ * Inngest function format it with the workspace name + day,
+ * e.g. "Monday at Acme Agency"). `unsubscribeUrl` not wired yet —
+ * see the note at the bottom of the template about reply-to opt-out
+ * until we add the setting.
+ */
+export async function sendDailyDigest(
+  input: BaseSendInput & DailyDigestEmailProps & { subject: string },
+): Promise<SendResult> {
+  const { to, from, replyTo, subject, ...templateProps } = input;
+  return sendReactEmail({
+    to,
+    from: from ?? defaultFromAddress(),
+    replyTo,
+    subject,
+    react: React.createElement(DailyDigestEmail, templateProps),
+    tags: [{ name: 'category', value: 'daily_digest' }],
   });
 }
 

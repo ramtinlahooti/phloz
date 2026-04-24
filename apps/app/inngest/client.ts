@@ -16,6 +16,9 @@ export const INNGEST_EVENT_NAMES = [
   'billing/recompute-active-clients',
   'billing/trial-ending',
   'stripe/subscription-updated',
+  /** Fired on-demand to send a daily digest to one workspace's owner
+   *  (for testing) OR fired by the cron over every workspace. */
+  'digest/send-daily',
 ] as const;
 export type PhlozInngestEventName = (typeof INNGEST_EVENT_NAMES)[number];
 
