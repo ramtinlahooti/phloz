@@ -4,6 +4,43 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Onboarding checklist
+
+Replaces the static "Getting started" card with a stateful 6-step
+checklist derived from live DB presence probes. Critical for
+first-user activation: a new workspace owner now has an obvious,
+dopamine-paced path from "blank dashboard" to "product makes sense."
+
+### Steps (in order — each builds on the previous)
+
+1. **Add your first client** — gate to everything else.
+2. **Add a contact for that client** — unlocks messages + portal.
+3. **Create a task** — the core work surface.
+4. **Map one client's tracking setup** — highlighted as "the Phloz moat."
+5. **Send a client message** — kicks off the inbox loop.
+6. **Invite a teammate** — intentionally last; solo owners should
+   feel productive before collaborating.
+
+### Implementation
+
+- `apps/app/lib/onboarding-checklist.ts` — pure computation. Takes
+  already-fetched booleans/counts, returns `{ steps, doneCount,
+  nextStep, complete }`. No extra DB reads beyond the three
+  presence probes wired into the dashboard's `Promise.all` below.
+- Dashboard page adds three `LIMIT 1` probes for
+  client_contacts / tracking_nodes / messages (cheap — one row max
+  each). Existing count queries cover the other signals.
+- `OnboardingCard` component renders:
+  - Progress bar + `doneCount / totalCount` header
+  - Each step as a row: checkmark (done) or empty circle (pending)
+  - "Next up" row is highlighted (primary tint + arrow icon)
+  - When complete, the dashboard stops rendering the card entirely
+    — no stale congratulations widget forever.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Dashboard "This week" + client health scoring
 
 First-login impression was a blank-ish dashboard with three vanity

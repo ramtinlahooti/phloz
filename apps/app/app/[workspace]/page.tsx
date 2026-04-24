@@ -1,8 +1,10 @@
 import { and, count, desc, eq, gte, inArray, isNotNull, lt, lte, not } from 'drizzle-orm';
 import {
   AlertTriangle,
+  ArrowRight,
   CalendarClock,
   CheckCircle2,
+  Circle,
   FilePlus2,
   Hourglass,
   ListChecks,
@@ -33,6 +35,10 @@ import {
 } from '@phloz/ui';
 
 import { buildAppMetadata } from '@/lib/metadata';
+import {
+  computeOnboardingState,
+  type OnboardingStep,
+} from '@/lib/onboarding-checklist';
 
 export const metadata = buildAppMetadata({ title: 'Overview' });
 
@@ -77,6 +83,9 @@ export default async function WorkspaceOverviewPage({
     pendingApprovalTasks,
     allInboundMessages,
     allOutboundMessages,
+    contactProbe,
+    trackingNodeProbe,
+    messageProbe,
   ] = await Promise.all([
     db
       .select()
@@ -259,6 +268,23 @@ export default async function WorkspaceOverviewPage({
           not(eq(schema.messages.channel, 'internal_note')),
         ),
       ),
+    // Onboarding-checklist signals. Each is a presence probe (LIMIT 1)
+    // rather than a full count — we only care whether any row exists.
+    db
+      .select({ id: schema.clientContacts.id })
+      .from(schema.clientContacts)
+      .where(eq(schema.clientContacts.workspaceId, workspaceId))
+      .limit(1),
+    db
+      .select({ id: schema.trackingNodes.id })
+      .from(schema.trackingNodes)
+      .where(eq(schema.trackingNodes.workspaceId, workspaceId))
+      .limit(1),
+    db
+      .select({ id: schema.messages.id })
+      .from(schema.messages)
+      .where(eq(schema.messages.workspaceId, workspaceId))
+      .limit(1),
   ]);
 
   if (!workspace) return null;
@@ -304,6 +330,16 @@ export default async function WorkspaceOverviewPage({
   }
   unrepliedInbound.sort((a, b) => a.at.getTime() - b.at.getTime()); // oldest waiting first
   const topUnreplied = unrepliedInbound.slice(0, 5);
+
+  const onboarding = computeOnboardingState({
+    workspaceId,
+    clientCount: clientRows.length,
+    hasContact: contactProbe.length > 0,
+    hasTask: recentTasks.length > 0,
+    hasTrackingNode: trackingNodeProbe.length > 0,
+    hasMessage: messageProbe.length > 0,
+    memberCount,
+  });
 
   const feed: FeedItem[] = [];
 
@@ -567,53 +603,16 @@ export default async function WorkspaceOverviewPage({
           )}
         </div>
 
-        {/* Right rail — quick-start + plan */}
+        {/* Right rail — onboarding (while incomplete) + plan */}
         <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Getting started</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-3 text-sm">
-                <li className="flex items-center gap-2">
-                  <span
-                    className="inline-block size-1.5 rounded-full bg-primary"
-                    aria-hidden
-                  />
-                  <Link
-                    className="hover:text-primary"
-                    href={`/${workspaceId}/clients/new`}
-                  >
-                    Add your first client
-                  </Link>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span
-                    className="inline-block size-1.5 rounded-full bg-primary"
-                    aria-hidden
-                  />
-                  <Link
-                    className="hover:text-primary"
-                    href={`/${workspaceId}/team`}
-                  >
-                    Invite a teammate
-                  </Link>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span
-                    className="inline-block size-1.5 rounded-full bg-primary"
-                    aria-hidden
-                  />
-                  <Link
-                    className="hover:text-primary"
-                    href={`/${workspaceId}/settings`}
-                  >
-                    Customize your workspace
-                  </Link>
-                </li>
-              </ul>
-            </CardContent>
-          </Card>
+          {!onboarding.complete && (
+            <OnboardingCard
+              steps={onboarding.steps}
+              doneCount={onboarding.doneCount}
+              totalCount={onboarding.totalCount}
+              nextStep={onboarding.nextStep}
+            />
+          )}
           <Card>
             <CardHeader>
               <CardTitle>Your plan</CardTitle>
@@ -850,4 +849,97 @@ function daysUntil(d: Date): string {
   if (days === 1) return 'tomorrow';
   return `in ${days}d`;
 }
+
+// --- Onboarding checklist card ---------------------------------------
+
+function OnboardingCard({
+  steps,
+  doneCount,
+  totalCount,
+  nextStep,
+}: {
+  steps: OnboardingStep[];
+  doneCount: number;
+  totalCount: number;
+  nextStep: OnboardingStep | null;
+}) {
+  const pct = Math.round((doneCount / totalCount) * 100);
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle>Setup checklist</CardTitle>
+          <span className="text-xs font-medium text-muted-foreground">
+            {doneCount} / {totalCount}
+          </span>
+        </div>
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full bg-primary transition-all"
+            style={{ width: `${pct}%` }}
+            aria-hidden
+          />
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-1">
+        <ul className="space-y-1">
+          {steps.map((step) => {
+            const isNext = nextStep?.id === step.id;
+            return (
+              <li key={step.id}>
+                <Link
+                  href={step.href}
+                  className={`flex items-start gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted/50 ${
+                    isNext ? 'bg-primary/5' : ''
+                  }`}
+                >
+                  {step.done ? (
+                    <CheckCircle2
+                      className="mt-0.5 size-4 shrink-0 text-[var(--color-health-working)]"
+                      aria-hidden
+                    />
+                  ) : (
+                    <Circle
+                      className={`mt-0.5 size-4 shrink-0 ${
+                        isNext ? 'text-primary' : 'text-muted-foreground'
+                      }`}
+                      aria-hidden
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className={`flex items-center gap-2 ${
+                        step.done
+                          ? 'text-muted-foreground line-through'
+                          : 'text-foreground'
+                      }`}
+                    >
+                      <span>{step.title}</span>
+                      {isNext && (
+                        <ArrowRight className="size-3 text-primary" aria-hidden />
+                      )}
+                    </div>
+                    {!step.done && (
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {step.description}
+                      </div>
+                    )}
+                  </div>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+        {nextStep === null && (
+          // Reached only in the transient "just completed last step" window
+          // before the caller hides this card on next render. Stay friendly.
+          <p className="pt-2 text-xs text-muted-foreground">
+            You&apos;re set up. Nice work.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 
