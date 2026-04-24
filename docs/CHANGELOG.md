@@ -4,6 +4,44 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Shared portal files + approval email notifications
+
+### Shared files on the portal
+
+- DB: new `client_assets.client_visible boolean default false` with a
+  partial index on `= true`. Agency opts each asset in explicitly —
+  nothing leaks by default. Migration `client_assets_client_visible`
+  applied via MCP.
+- Agency Files tab — per-row Eye / EyeOff toggle
+  (`toggleAssetClientVisibleAction`) + "Shared with client" badge.
+- Portal signed-URL action (`getPortalAssetSignedUrlAction`) —
+  validates magic-link token, confirms `client_visible=true`, uses
+  the service-role Supabase client to mint a 5-minute URL (portal
+  users have no Supabase session, so the cookie client can't read
+  storage).
+- `PortalFiles` component — read-only list with type-icons +
+  Download buttons. Portal page Promise.all loads
+  `client_assets WHERE client_visible = true` and renders a
+  "Shared files" section below Conversations.
+
+### Approval email notifications
+
+`setClientApprovalAction` gained a fire-and-forget
+`notifyAgencyOfApproval` step: looks up the workspace owner's
+email via service-role admin, composes a plain-text email
+(`[{Agency}] {Client} approved|rejected|asked for changes on
+"{task title}"`), sends via `sendPlainEmail` with
+`category=portal_approval` + state tags. Failures are logged but
+don't block the approval. No-ops when Resend isn't configured or
+the owner has no email.
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `next build` (`apps/app`) — compiles cleanly.
+
+---
+
 ## 2026-04-23 — Client-bundle env fix + task templates
 
 ### Client-side env fix
