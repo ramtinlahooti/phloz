@@ -55,6 +55,12 @@ export async function generatePortalMagicLink(clientContactId: string): Promise<
 /**
  * Look up a magic link by token. Returns the row if valid and unexpired,
  * null otherwise. Touches last_used_at so we can expire idle sessions.
+ *
+ * The returned object is the magic-link row augmented with `firstUse`,
+ * a boolean that's `true` only on the very first consumption of the
+ * link (when `lastUsedAt` was still null). Callers can branch on it to
+ * emit one-shot analytics events like `portal_accessed` without
+ * double-firing on every subsequent portal page load.
  */
 export async function validatePortalMagicLink(token: string) {
   if (!token || token.length !== PORTAL_TOKEN_LENGTH) return null;
@@ -68,12 +74,14 @@ export async function validatePortalMagicLink(token: string) {
   if (!link) return null;
   if (link.expiresAt.getTime() < Date.now()) return null;
 
+  const firstUse = link.lastUsedAt === null;
+
   await db
     .update(schema.portalMagicLinks)
     .set({ lastUsedAt: new Date() })
     .where(eq(schema.portalMagicLinks.token, token));
 
-  return link;
+  return { ...link, firstUse };
 }
 
 /** Revoke a magic link (e.g. on explicit sign-out). */

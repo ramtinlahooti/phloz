@@ -129,13 +129,12 @@ product out substantially.
 - **Tests** — only the package-level ones ship. No Playwright
   smoke tests for the actual app flows. Add when there's a second
   developer.
-- **Analytics tracking wiring** — ✅ product + marketing shipped
-  2026-04-24. All events from ARCHITECTURE.md §11.2 that have a
-  natural home today are wired. Still to do:
-  `client_updated` + `workspace_settings_updated` (many scattered
-  edit paths), portal events (`portal_accessed` /
-  `portal_link_sent` / `message_received` — need care around
-  portal identity), `newsletter_signup` (no form exists yet).
+- **Analytics tracking wiring** — ✅ complete across auth,
+  workspace, team, clients, tasks, tracking map, messages,
+  billing/Stripe webhook, portal, marketing site, and all edit
+  paths. Remaining catalog entries: `newsletter_signup` (no form
+  exists yet; wire when it lands) and `page_view` (handled by
+  GA4's automatic config tag + PostHog's `$pageview` capture).
 - **Ownership transfer** — ✅ shipped 2026-04-24.
 - **Name resolution for teammates** — ✅ shipped 2026-04-24.
 - **Task assignee picker** — ✅ shipped 2026-04-24.

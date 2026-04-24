@@ -9,6 +9,7 @@ import { generatePortalMagicLink } from '@phloz/auth/portal';
 import { getDb, schema } from '@phloz/db/client';
 import { sendPortalMagicLink } from '@phloz/email';
 
+import { fireTrack, serverTrackContext } from '@/lib/analytics';
 import { getAppUrl } from '@/lib/app-url';
 
 const uuid = z.string().uuid();
@@ -156,8 +157,9 @@ export async function generatePortalLinkAction(input: {
   ) {
     return { ok: false, error: 'invalid_input' };
   }
+  let actor;
   try {
-    await requireRole(input.workspaceId, ['owner', 'admin', 'member']);
+    actor = await requireRole(input.workspaceId, ['owner', 'admin', 'member']);
   } catch {
     return { ok: false, error: 'forbidden' };
   }
@@ -201,6 +203,18 @@ export async function generatePortalLinkAction(input: {
           emailed = false;
         }
       }
+    }
+
+    // Fire `portal_link_sent` only when the agency actually emailed the
+    // link via Resend. Copy-to-clipboard (sendEmail=false) or a silent
+    // email-send failure don't count — the event is meant to measure
+    // agency-initiated portal outreach that actually reached the inbox.
+    if (emailed) {
+      fireTrack(
+        'portal_link_sent',
+        {},
+        serverTrackContext(actor.user.id, input.workspaceId),
+      );
     }
 
     revalidatePath(`/${input.workspaceId}/clients`);

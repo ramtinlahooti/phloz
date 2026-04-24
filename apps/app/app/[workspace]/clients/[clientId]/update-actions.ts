@@ -7,6 +7,8 @@ import { z } from 'zod';
 import { requireRole } from '@phloz/auth/roles';
 import { getDb, schema } from '@phloz/db/client';
 
+import { fireTrack, serverTrackContext } from '@/lib/analytics';
+
 const uuid = z.string().uuid();
 
 /**
@@ -26,14 +28,26 @@ const patchSchema = z.object({
   notes: z.string().max(10_000).nullable().optional(),
 });
 
+/** camelCase column name → snake_case analytics field_changed tag. */
+const FIELD_TO_ANALYTICS_KEY: Record<string, string> = {
+  name: 'name',
+  businessName: 'business_name',
+  businessEmail: 'business_email',
+  businessPhone: 'business_phone',
+  websiteUrl: 'website_url',
+  industry: 'industry',
+  notes: 'notes',
+};
+
 export async function updateClientAction(
   input: z.infer<typeof patchSchema>,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const parsed = patchSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.message };
 
+  let actor;
   try {
-    await requireRole(parsed.data.workspaceId, ['owner', 'admin', 'member']);
+    actor = await requireRole(parsed.data.workspaceId, ['owner', 'admin', 'member']);
   } catch {
     return { ok: false, error: 'forbidden' };
   }
@@ -61,6 +75,18 @@ export async function updateClientAction(
         eq(schema.clients.workspaceId, parsed.data.workspaceId),
       ),
     );
+
+  // One `client_updated` event per changed field. This gives PostHog
+  // the granularity to see which field people edit most (notes vs
+  // website_url vs etc.) at the cost of one extra event per save.
+  // Fire-and-forget — server-side PostHog/GA4 latency stays off the
+  // critical path for the user's save.
+  const ctx = serverTrackContext(actor.user.id, parsed.data.workspaceId);
+  for (const key of Object.keys(updates)) {
+    if (key === 'updatedAt') continue;
+    const analyticsKey = FIELD_TO_ANALYTICS_KEY[key] ?? key;
+    fireTrack('client_updated', { field_changed: analyticsKey }, ctx);
+  }
 
   revalidatePath(`/${parsed.data.workspaceId}/clients`);
   revalidatePath(

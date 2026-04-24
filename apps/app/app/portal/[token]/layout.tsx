@@ -5,6 +5,8 @@ import { validatePortalMagicLink } from '@phloz/auth/portal';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '@phloz/db/client';
 
+import { fireTrack, serverTrackContext } from '@/lib/analytics';
+
 type LayoutParams = { token: string };
 
 /**
@@ -32,6 +34,20 @@ export default async function PortalLayout({
     .then((rows) => rows[0]);
 
   if (!client) notFound();
+
+  // Fire `portal_accessed` only on the first consumption of this magic
+  // link. Subsequent portal pageloads within the 7-day window re-enter
+  // the layout, but `firstUse` is false — so we don't double-count.
+  // DistinctId: hashed client_contact_id. Portal users aren't in
+  // auth.users, so we namespace separately; workspace_id tag is still
+  // attached for segmentation.
+  if (link.firstUse) {
+    fireTrack(
+      'portal_accessed',
+      {},
+      serverTrackContext(link.clientContactId, link.workspaceId),
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-background">

@@ -12,6 +12,7 @@ import type { ApprovalState } from '@phloz/config';
 import { getDb, schema } from '@phloz/db/client';
 import { sendPlainEmail } from '@phloz/email';
 
+import { fireTrack, serverTrackContext } from '@/lib/analytics';
 import { getAppUrl } from '@/lib/app-url';
 
 /**
@@ -221,6 +222,15 @@ export async function sendPortalReplyAction(
     .returning({ id: schema.messages.id });
 
   if (!row) return { ok: false, error: 'insert_failed' };
+
+  // `message_received` fires from the agency's perspective — a portal
+  // reply is "inbound" to them, same as an email. distinctId is the
+  // hashed client_contact_id since the portal user is the actor.
+  fireTrack(
+    'message_received',
+    { channel: 'portal' },
+    serverTrackContext(link.clientContactId, link.workspaceId),
+  );
 
   revalidatePath(`/portal/${parsed.data.token}`);
   // Agency-side surfaces need re-rendering too.

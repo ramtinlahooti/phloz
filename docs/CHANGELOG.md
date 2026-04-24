@@ -4,6 +4,70 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Portal + client/workspace edit analytics
+
+Closes the remaining analytics gaps. The full event catalog from
+ARCHITECTURE.md §11.2 is now wired where it has a natural home —
+only `newsletter_signup` and `page_view` (handled by GA4/PH
+automatically) remain on the not-wired list, both justifiably so.
+
+### Portal events
+
+- **`portal_link_sent`** — `generatePortalLinkAction` in
+  `apps/app/app/[workspace]/clients/[clientId]/contacts/actions.ts`.
+  Fires only when the agency actually emailed the link via Resend
+  (`emailed === true`). Copy-to-clipboard and silent email-send
+  failures don't count — the event measures outreach that reached
+  the inbox.
+- **`portal_accessed`** — `apps/app/app/portal/[token]/layout.tsx`.
+  Fires exactly once per magic-link consumption (the first render
+  after the link is clicked). Subsequent portal navigations
+  within the 7-day window don't re-fire. distinctId is the hashed
+  `client_contact_id` (portal users aren't in `auth.users`; they
+  live in a separate PostHog identity namespace, tagged with
+  `workspace_id` for segmentation).
+  - Needed `validatePortalMagicLink` to expose whether this is
+    the first use. `packages/auth/src/portal.ts` now returns
+    `{ ...link, firstUse: boolean }` where `firstUse` captures
+    whether `lastUsedAt` was `null` before the touch. Existing
+    callers are backwards-compatible.
+
+### Message events
+
+- **`message_received` (channel: email)** — Resend inbound webhook
+  at `apps/app/app/api/webhooks/resend/inbound/route.ts`. distinctId
+  is the workspace owner (same pattern as the Stripe webhook —
+  no user session to attribute to). fireTrack no-ops if the owner
+  row is missing.
+- **`message_received` (channel: portal)** — `sendPortalReplyAction`
+  in `apps/app/app/portal/[token]/actions.ts`. distinctId is the
+  hashed `client_contact_id` — the portal user is the actor.
+
+### Edit events
+
+- **`client_updated`** — `updateClientAction`. Emits one event per
+  changed field (notes, name, business_name, business_email,
+  business_phone, website_url, industry) with a snake_case
+  `field_changed`. PostHog can then show which fields agencies
+  edit most often.
+- **`workspace_settings_updated`** — PATCH
+  `/api/workspaces/[workspaceId]`. Emits one event per changed
+  setting (name, description, website_url, timezone).
+
+### Files touched
+
+- `packages/auth/src/portal.ts` (firstUse flag)
+- `apps/app/app/[workspace]/clients/[clientId]/contacts/actions.ts`
+- `apps/app/app/portal/[token]/layout.tsx`
+- `apps/app/app/portal/[token]/actions.ts`
+- `apps/app/app/api/webhooks/resend/inbound/route.ts`
+- `apps/app/app/[workspace]/clients/[clientId]/update-actions.ts`
+- `apps/app/app/api/workspaces/[workspaceId]/route.ts`
+
+`pnpm check` 29/29 green. Both apps build clean locally.
+
+---
+
 ## 2026-04-24 — Marketing site analytics + @phloz/analytics server split
 
 ### @phloz/analytics server/client split (Vercel build fix)

@@ -6,6 +6,8 @@ import { NextResponse } from 'next/server';
 import { parseResendInbound, verifyResendSignature } from '@phloz/email';
 import { getDb, schema } from '@phloz/db/client';
 
+import { fireTrack, serverTrackContext } from '@/lib/analytics';
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -89,6 +91,24 @@ export async function POST(request: Request) {
       body: parsed.text,
       rawEmail: { html: parsed.html, references: parsed.references },
     });
+
+    // Attribute inbound-email events to the workspace owner — the
+    // webhook has no user session, same pattern as the Stripe webhook.
+    // A missing owner row just drops the event (fireTrack no-ops when
+    // distinctId is absent), never blocks the ingest.
+    const workspace = await db
+      .select({ ownerUserId: schema.workspaces.ownerUserId })
+      .from(schema.workspaces)
+      .where(eq(schema.workspaces.id, match.workspaceId))
+      .limit(1)
+      .then((rows) => rows[0]);
+    if (workspace?.ownerUserId) {
+      fireTrack(
+        'message_received',
+        { channel: 'email' },
+        serverTrackContext(workspace.ownerUserId, match.workspaceId),
+      );
+    }
 
     return NextResponse.json({ ok: true, routed: true });
   }

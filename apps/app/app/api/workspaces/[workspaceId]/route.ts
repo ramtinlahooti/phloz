@@ -5,6 +5,15 @@ import { z } from 'zod';
 import { requireAdminOrOwner } from '@phloz/auth/roles';
 import { getDb, schema } from '@phloz/db/client';
 
+import { fireTrack, serverTrackContext } from '@/lib/analytics';
+
+const SETTING_KEY: Record<string, string> = {
+  name: 'name',
+  description: 'description',
+  websiteUrl: 'website_url',
+  timezone: 'timezone',
+};
+
 const patchSchema = z.object({
   name: z.string().trim().min(2).max(60).optional(),
   description: z.string().max(1000).nullable().optional(),
@@ -29,8 +38,9 @@ export async function PATCH(
 ) {
   const { workspaceId } = await params;
 
+  let actor;
   try {
-    await requireAdminOrOwner(workspaceId);
+    actor = await requireAdminOrOwner(workspaceId);
   } catch {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
@@ -69,6 +79,17 @@ export async function PATCH(
     .update(schema.workspaces)
     .set({ ...updates, updatedAt: new Date() })
     .where(eq(schema.workspaces.id, workspaceId));
+
+  // One event per changed setting so dashboards can see which
+  // agency-profile fields get touched most often.
+  const ctx = serverTrackContext(actor.user.id, workspaceId);
+  for (const key of Object.keys(updates)) {
+    fireTrack(
+      'workspace_settings_updated',
+      { setting_key: SETTING_KEY[key] ?? key },
+      ctx,
+    );
+  }
 
   return NextResponse.json({ ok: true });
 }
