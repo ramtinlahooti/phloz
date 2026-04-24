@@ -12,6 +12,7 @@ import { Badge, Card, CardContent, EmptyState } from '@phloz/ui';
 
 import { buildAppMetadata } from '@/lib/metadata';
 
+import { PortalFiles, type PortalAsset } from './portal-files';
 import { PortalMessages, type PortalMessage } from './portal-messages';
 import { PortalTaskCard, type PortalTaskRow } from './portal-task-row';
 
@@ -39,7 +40,8 @@ export default async function PortalHomePage({
 
   const db = getDb();
 
-  const [client, visibleTasks, recentMessages] = await Promise.all([
+  const [client, visibleTasks, recentMessages, sharedAssets] =
+    await Promise.all([
     db
       .select({
         id: schema.clients.id,
@@ -93,6 +95,24 @@ export default async function PortalHomePage({
         ),
       )
       .orderBy(desc(schema.messages.createdAt))
+      .limit(50),
+    db
+      .select({
+        id: schema.clientAssets.id,
+        name: schema.clientAssets.name,
+        assetType: schema.clientAssets.assetType,
+        notes: schema.clientAssets.notes,
+        createdAt: schema.clientAssets.createdAt,
+      })
+      .from(schema.clientAssets)
+      .where(
+        and(
+          eq(schema.clientAssets.workspaceId, link.workspaceId),
+          eq(schema.clientAssets.clientId, link.clientId),
+          eq(schema.clientAssets.clientVisible, true),
+        ),
+      )
+      .orderBy(desc(schema.clientAssets.createdAt))
       .limit(50),
   ]);
 
@@ -171,6 +191,30 @@ export default async function PortalHomePage({
             })) satisfies PortalMessage[]}
           />
         )}
+      </section>
+
+      {/* Shared files */}
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Shared files
+          </h2>
+          {sharedAssets.length > 0 && (
+            <Badge variant="outline" className="text-xs">
+              {sharedAssets.length}
+            </Badge>
+          )}
+        </div>
+        <PortalFiles
+          token={token}
+          assets={sharedAssets.map((a) => ({
+            id: a.id,
+            name: a.name,
+            assetType: a.assetType,
+            notes: a.notes,
+            createdAt: a.createdAt,
+          })) satisfies PortalAsset[]}
+        />
       </section>
     </div>
   );

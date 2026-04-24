@@ -2,6 +2,8 @@
 
 import {
   Download,
+  Eye,
+  EyeOff,
   FileArchive,
   FileText,
   Film,
@@ -27,6 +29,7 @@ import {
 import {
   deleteAssetAction,
   getAssetSignedUrlAction,
+  toggleAssetClientVisibleAction,
   uploadAssetAction,
 } from './actions';
 
@@ -35,6 +38,7 @@ export type AssetRow = {
   name: string;
   assetType: AssetType;
   notes: string | null;
+  clientVisible: boolean;
   createdAt: Date;
 };
 
@@ -90,6 +94,24 @@ export function FilesPanel({
       toast.success('Deleted');
       router.refresh();
     });
+  }
+
+  async function toggleVisibility(id: string, next: boolean) {
+    const res = await toggleAssetClientVisibleAction({
+      workspaceId,
+      assetId: id,
+      clientVisible: next,
+    });
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    toast.success(
+      next
+        ? 'Shared with client — visible in the portal'
+        : 'Hidden from client',
+    );
+    router.refresh();
   }
 
   return (
@@ -166,6 +188,14 @@ export function FilesPanel({
                       <Badge variant="outline" className="text-[10px] capitalize">
                         {a.assetType}
                       </Badge>
+                      {a.clientVisible && (
+                        <Badge
+                          variant="outline"
+                          className="border-primary/40 text-[10px] text-primary"
+                        >
+                          Shared with client
+                        </Badge>
+                      )}
                     </div>
                     {a.notes && (
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -176,6 +206,23 @@ export function FilesPanel({
                       Added {a.createdAt.toLocaleDateString()}
                     </p>
                   </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => toggleVisibility(a.id, !a.clientVisible)}
+                    title={
+                      a.clientVisible
+                        ? 'Hide from client portal'
+                        : 'Share with client portal'
+                    }
+                  >
+                    {a.clientVisible ? (
+                      <EyeOff className="size-3.5" />
+                    ) : (
+                      <Eye className="size-3.5" />
+                    )}
+                  </Button>
                   <Button
                     type="button"
                     size="sm"

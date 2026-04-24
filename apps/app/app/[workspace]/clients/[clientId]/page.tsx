@@ -173,6 +173,7 @@ export default async function ClientDetailPage({
     name: a.name,
     assetType: a.assetType,
     notes: a.notes,
+    clientVisible: a.clientVisible,
     createdAt: a.createdAt,
   }));
 

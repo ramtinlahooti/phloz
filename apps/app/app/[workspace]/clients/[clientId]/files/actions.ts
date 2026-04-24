@@ -187,6 +187,51 @@ export async function getAssetSignedUrlAction(input: {
 }
 
 /**
+ * Toggle whether portal users can see + download this asset. Agency
+ * controls visibility explicitly per file; default is off so internal
+ * briefs don't leak by accident.
+ */
+export async function toggleAssetClientVisibleAction(input: {
+  workspaceId: string;
+  assetId: string;
+  clientVisible: boolean;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (
+    !uuid.safeParse(input.workspaceId).success ||
+    !uuid.safeParse(input.assetId).success
+  ) {
+    return { ok: false, error: 'invalid_input' };
+  }
+  try {
+    await requireRole(input.workspaceId, ['owner', 'admin', 'member']);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const db = getDb();
+  const asset = await db
+    .select({ clientId: schema.clientAssets.clientId })
+    .from(schema.clientAssets)
+    .where(
+      and(
+        eq(schema.clientAssets.id, input.assetId),
+        eq(schema.clientAssets.workspaceId, input.workspaceId),
+      ),
+    )
+    .limit(1)
+    .then((r) => r[0]);
+  if (!asset) return { ok: false, error: 'not_found' };
+
+  await db
+    .update(schema.clientAssets)
+    .set({ clientVisible: input.clientVisible })
+    .where(eq(schema.clientAssets.id, input.assetId));
+
+  revalidatePath(`/${input.workspaceId}/clients/${asset.clientId}`);
+  return { ok: true };
+}
+
+/**
  * Delete an asset — both the Storage object and the DB row. Role-gated
  * at owner/admin/member (viewers can only read).
  */
