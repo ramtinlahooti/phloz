@@ -1,20 +1,18 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { Mail } from 'lucide-react';
 
 import { validatePortalMagicLink } from '@phloz/auth/portal';
-import type { ApprovalState, TaskStatus } from '@phloz/config';
+import type {
+  ApprovalState,
+  MessageChannel,
+  MessageDirection,
+  TaskStatus,
+} from '@phloz/config';
 import { getDb, schema } from '@phloz/db/client';
-import {
-  Badge,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  EmptyState,
-} from '@phloz/ui';
+import { Badge, Card, CardContent, EmptyState } from '@phloz/ui';
 
 import { buildAppMetadata } from '@/lib/metadata';
 
+import { PortalMessages, type PortalMessage } from './portal-messages';
 import { PortalTaskCard, type PortalTaskRow } from './portal-task-row';
 
 export const metadata = buildAppMetadata({ title: 'Client portal' });
@@ -79,6 +77,7 @@ export default async function PortalHomePage({
         id: schema.messages.id,
         threadId: schema.messages.threadId,
         direction: schema.messages.direction,
+        channel: schema.messages.channel,
         subject: schema.messages.subject,
         body: schema.messages.body,
         createdAt: schema.messages.createdAt,
@@ -88,11 +87,13 @@ export default async function PortalHomePage({
         and(
           eq(schema.messages.workspaceId, link.workspaceId),
           eq(schema.messages.clientId, link.clientId),
-          eq(schema.messages.channel, 'email'),
+          // Portal sees agency email + the client's own portal replies.
+          // Internal notes are filtered out.
+          inArray(schema.messages.channel, ['email', 'portal']),
         ),
       )
       .orderBy(desc(schema.messages.createdAt))
-      .limit(20),
+      .limit(50),
   ]);
 
   if (!client) return null;
@@ -152,52 +153,25 @@ export default async function PortalHomePage({
       {/* Messages */}
       <section>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Recent messages
+          Conversations
         </h2>
         {recentMessages.length === 0 ? (
-          <EmptyState
-            title="No messages yet"
-            description="Updates from your agency will appear here once a conversation starts."
-          />
+          <PortalMessages token={token} messages={[]} />
         ) : (
-          <div className="space-y-3">
-            {recentMessages.map((m) => (
-              <Card key={m.id}>
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center justify-between text-sm font-medium">
-                    <span className="flex items-center gap-2">
-                      <Mail className="size-4 text-muted-foreground" />
-                      <span className="truncate">
-                        {m.subject ?? '(no subject)'}
-                      </span>
-                    </span>
-                    <time
-                      className="shrink-0 text-xs text-muted-foreground"
-                      dateTime={m.createdAt.toISOString()}
-                    >
-                      {m.createdAt.toLocaleDateString()}
-                    </time>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="line-clamp-6 whitespace-pre-wrap text-sm text-foreground/90">
-                    {m.body}
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <PortalMessages
+            token={token}
+            messages={recentMessages.map((m) => ({
+              id: m.id,
+              threadId: m.threadId,
+              direction: m.direction as MessageDirection,
+              channel: m.channel as MessageChannel,
+              subject: m.subject,
+              body: m.body,
+              createdAt: m.createdAt,
+            })) satisfies PortalMessage[]}
+          />
         )}
       </section>
-
-      <footer className="rounded-lg border border-border bg-card/30 p-6 text-sm">
-        <h3 className="font-semibold">Need something else?</h3>
-        <p className="mt-1 text-muted-foreground">
-          Reply to any email from your agency and it threads back into
-          this portal automatically. Or reach out to your account manager
-          directly.
-        </p>
-      </footer>
     </div>
   );
 }

@@ -1,5 +1,7 @@
 'use server';
 
+import { randomUUID } from 'node:crypto';
+
 import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -74,4 +76,55 @@ export async function setClientApprovalAction(
 
   revalidatePath(`/portal/${parsed.data.token}`);
   return { ok: true };
+}
+
+// --- portal reply (client → agency) -----------------------------------
+const replySchema = z.object({
+  token: z.string().min(10).max(80),
+  threadId: z.string().uuid().optional(),
+  body: z.string().trim().min(1).max(10_000),
+});
+
+/**
+ * Portal-session reply. Creates a `messages` row with:
+ *   direction = 'inbound'  (into the agency)
+ *   channel   = 'portal'   (distinct from email — agency can filter)
+ *   fromType  = 'contact'
+ *   threadId  = supplied (continues a thread) or fresh UUID.
+ *
+ * Subject is left null — the agency's unified inbox shows channel +
+ * client name, which is enough context for portal-originated messages.
+ */
+export async function sendPortalReplyAction(
+  input: z.infer<typeof replySchema>,
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const parsed = replySchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.message };
+
+  const link = await validatePortalMagicLink(parsed.data.token);
+  if (!link) return { ok: false, error: 'invalid_or_expired_token' };
+
+  const db = getDb();
+  const [row] = await db
+    .insert(schema.messages)
+    .values({
+      workspaceId: link.workspaceId,
+      clientId: link.clientId,
+      threadId: parsed.data.threadId ?? randomUUID(),
+      direction: 'inbound',
+      channel: 'portal',
+      fromType: 'contact',
+      fromId: link.clientContactId,
+      subject: null,
+      body: parsed.data.body,
+    })
+    .returning({ id: schema.messages.id });
+
+  if (!row) return { ok: false, error: 'insert_failed' };
+
+  revalidatePath(`/portal/${parsed.data.token}`);
+  // Agency-side surfaces need re-rendering too.
+  revalidatePath(`/${link.workspaceId}/clients/${link.clientId}`);
+  revalidatePath(`/${link.workspaceId}/messages`);
+  return { ok: true, id: row.id };
 }
