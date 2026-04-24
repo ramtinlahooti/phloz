@@ -1,89 +1,123 @@
-# Next Steps (as of 2026-04-23, post-file-uploads)
+# Next Steps (as of 2026-04-23, end of the intense feature session)
 
-Recent shipped (this session):
-- **env.local** created for both apps (gitignored).
-- **Dep upgrade** — Sentry 10, Drizzle 0.45, Inngest 4 (breaking API
-  migrated in-session).
-- **Map polish** — keyboard shortcuts, node search, JSON export,
-  200-node soft cap.
-- **Tasks module** — workspace view, per-client tab, filter pills.
-- **Messages module** — unified inbox, per-client thread UI, compose
-  pane with Email + Internal note tabs, `sendPlainEmail` helper.
-- **Portal dashboard** — client-visible tasks + email messages.
-- **Map edge polish** — edge-type picker, labels, JSON import.
-- **File uploads** — Supabase Storage bucket + RLS + Files tab.
+## Where Phloz stands
 
-`pnpm check` → 29/29 green. Everything committed.
+Phase 1 scaffold shipped in full (PROMPT_1 Steps 0–13). Prompt 2
+(tracking-map editor) shipped. Since then we've built the agency
+product out substantially.
 
----
+### Working end-to-end
 
-## Ramtin's actions (optional)
+- **Auth** — signup / login / magic link / password reset / OAuth
+  callback. Supabase JWT hook enabled. Email uses Supabase's
+  default sender until Resend SMTP is configured
+  (`docs/DEPLOYMENT.md` Step 6).
+- **Onboarding** — workspace creation, sets `active_workspace_id`,
+  fires `workspace/created` to Inngest.
+- **Dashboard shell** — sidebar nav, workspace switcher, user menu.
+- **Workspace overview** — 3 live count cards + an activity feed
+  merging tasks / messages / file uploads / approval outcomes with
+  deep links.
+- **Clients** — list with at-risk / inactive badges (driven by a
+  cached `last_activity_at` the nightly Inngest cron populates).
+  Create, archive / unarchive (tier-gated via `canUnarchiveClient`),
+  editable details on Overview, editable notes.
+- **Contacts** (on each client) — CRUD + grant portal access +
+  "Email link" (via Resend template) + "Copy link". **This is how
+  you create portal magic-links.**
+- **Tasks** — per-client tab + workspace-wide `/tasks` page.
+  Filters: department / status / client / assignee. Sort:
+  priority / due soonest / due latest / recently
+  updated / recently created. Optimistic status toggles. Detail
+  dialog with comments + full edit form. 5 built-in templates
+  (Apply template dropdown) instantiate N tasks at once with
+  staggered due dates.
+- **Comments** — polymorphic. Task comments thread in the detail
+  dialog with a "Client-visible" checkbox.
+- **Messages** — per-client thread UI + workspace unified inbox.
+  Compose Email (via Resend) or Internal note tabs. Per-client
+  inbound address surfaced at the top.
+- **Files** — Supabase Storage with RLS scoped by workspace path.
+  Upload (4 MB cap, MIME allowlist), signed-URL download (5 min),
+  delete, per-file "Share with client" toggle.
+- **Tracking map** — canvas, 21 node types with Zod metadata,
+  edge-type picker, keyboard shortcuts (`n`, `/`, `Esc`), node
+  search, JSON export + import, dagre auto-layout, 200-node soft
+  cap. Creating a node no longer validates against the strict
+  schema (filled in via the drawer).
+- **Team** — invite (Resend email), change role, remove member,
+  revoke pending invitation. Real-time refresh after invite send.
+- **Billing** — Stripe sandbox with 4 tiers × 3 prices; Checkout
+  + Customer Portal links, webhook reconciles tier + subscription.
+  SDK pinned to `2026-03-25.dahlia`.
+- **Portal** (magic-link authenticated):
+  - Client-visible tasks with approve / reject / needs-changes
+    buttons and optional comment. Emails the workspace owner on
+    any state change.
+  - Messages thread with inline reply + "start new conversation".
+  - Shared files (only assets the agency toggled visible).
+- **Settings** — user profile (name + read-only email) + agency
+  details (name, description, website, timezone).
+- **Inngest jobs** — `recomputeActiveClientCount` (nightly, also
+  refreshes `clients.last_activity_at`),
+  `sendTrialEndingReminder`, `onWorkspaceCreated`, `onClientAdded`.
+- **Observability** — Sentry (graceful no-op without DSN),
+  PostHog provider, pino logger in `@phloz/config/logger`.
+- **CI** — GitHub Actions: lint/typecheck/test, build matrix,
+  RLS-invariants on postgres:16, pgTAP.
 
-### Ship to Vercel
+### Remaining
 
-Deps are now aligned with what Vercel resolves. Push should build
-cleanly. Keep `installCommand: pnpm install --frozen-lockfile` in the
-project settings (already set via `vercel.json`).
+- **Tests** — only the package-level ones ship. No Playwright
+  smoke tests for the actual app flows. Add when there's a second
+  developer.
+- **Analytics tracking wiring** — `@phloz/analytics` `track()`
+  exists but nothing in `apps/app` calls it yet. Hook into the
+  key events (sign_up, add_client, upgrade_tier, etc.) once
+  PostHog keys are set.
+- **Ownership transfer** — promoting a member to `owner` is
+  blocked today. Needs a confirmation flow because it demotes
+  the current owner.
+- **Name resolution for teammates** — the Team page and task
+  assignee filter show short UUIDs for non-self members. Needs
+  either a Supabase Admin-API lookup or a cached
+  `workspace_members.display_name` column.
+- **Task assignee picker** — column exists + filter works, but
+  the NewTaskDialog + detail-dialog edit mode don't surface an
+  assignee Select yet.
 
-### Kick the tires
+## What Ramtin needs to do to go live
 
-1. `pnpm --filter @phloz/app dev` (env.local has public Supabase keys;
-   you supplied the two secrets).
-2. Open a client → **Tasks** tab → add a task → mark it client-visible.
-3. Open **Messages** tab → forward a client email to the inbound
-   address shown, or compose a reply. Internal note for team-only
-   thoughts.
-4. Open **Files** tab → drop a PDF / image / doc (<4MB). Download
-   opens a 5-minute signed URL.
-5. Open **Tracking map** → `n` to add, drag between nodes to connect,
-   pick edge type + label, click Save. Click an edge to edit. Export +
-   Import round-trip a snapshot.
-6. Open `/portal/<token>` — should show the client-visible task +
-   email messages, no internal notes.
+1. **Supabase SMTP** — so auth emails come from `phloz.com`, not
+   `noreply@mail.app.supabase.io`. Walkthrough in
+   `docs/DEPLOYMENT.md` Step 6. Pre-req: domain verified in Resend.
+2. **Set `NEXT_PUBLIC_APP_URL` in Vercel** to the real domain
+   once DNS is pointed. Otherwise the request-host fallback takes
+   over — still works, just less pretty in emails.
+3. **Stripe live-mode products** — still sandbox. Recreate when
+   ready to launch.
+4. **Inngest app** — register at `app.phloz.com/api/inngest`,
+   paste `INNGEST_SIGNING_KEY` into Vercel env.
 
----
+## Local dev
 
-## Features worth queueing
+```bash
+# Start
+pnpm --filter @phloz/app dev   # product app on :3001
+pnpm --filter @phloz/web dev   # marketing on :3000
 
-**G. Breadcrumbs + global ⌘K**
-- Breadcrumb chain (Workspace / Clients / Acme Corp / Tracking map)
-  in the dashboard shell.
-- Global ⌘K palette: switch workspace, jump to client, open a task,
-  add a node.
+# Before committing
+pnpm check                     # lint + typecheck + unit tests
+```
 
-**H. Approvals**
-- Extend `task.visibility = client_visible` with a Done / Rejected /
-  Needs-changes state so agencies can run creative review through
-  the portal. Email notifications on state changes.
-
-**I. Tests**
-- pgTAP for tracking-nodes / edges / client_assets / storage.objects
-  RLS.
-- Vitest for pure helpers (`autoLayout`, `formatLastVerified`,
-  per-descriptor Zod) and server actions (mocked DB).
-- Playwright smoke: signup → onboarding → add client → add task →
-  upload file → add map node → view in portal.
-
-**J. Reply-from-portal**
-- Portal is read-only today. Add a portal-session-aware action so
-  clients can reply, threading into `channel=portal, direction=inbound`
-  messages that show up alongside email in the client thread.
-
-**K. Task / map templates**
-- "New campaign launch" template → 8 tasks + 5 map nodes + 6 edges.
-  "Monthly report" template → 4 tasks. Per-agency customization.
-
-**L. Client status automations**
-- Client inactive for 30 days → `status = at_risk`, notify owner.
-  Plugs into the existing Inngest `recomputeActiveClientCount` cron.
-
----
+`apps/app/.env.local` + `apps/web/.env.local` are gitignored +
+pre-filled with public Supabase keys; only
+`SUPABASE_SERVICE_ROLE_KEY` + `DATABASE_URL` need real values.
 
 ## Accounts / provisioning
 
-- ✅ GitHub, Supabase (including Storage bucket now), GTM, Stripe
-  sandbox.
-- ⏳ Vercel (follow `docs/DEPLOYMENT.md`), Resend domain, Inngest
-  account, PostHog, Sentry, GA4.
-
-All ⏳ items are optional for local dev.
+- ✅ GitHub, Supabase (`tdvzhwhzxuskrsobdyrm`, 25 tables + RLS +
+  hook enabled), GTM (`GTM-W3MGZ8V7`), Stripe sandbox
+  (`acct_1RXbVlPomvpsIeGO`, 4 products + 12 prices wired).
+- ⏳ Vercel deploy, Resend domain, Inngest app, PostHog, Sentry,
+  GA4 — optional for local dev.

@@ -4,6 +4,48 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Invite refresh + DNS fix + task-client bug + rich settings
+
+### Fixes
+
+1. **Pending invitation appears in real-time.** InviteMemberCard
+   called `form.reset()` but never `router.refresh()` — the new
+   pending row only showed after a manual reload. Added the refresh.
+2. **Accept-invite + portal links no longer dead-end at
+   `app.phloz.com`.** Every URL-building site hardcoded
+   `NEXT_PUBLIC_APP_URL ?? 'https://app.phloz.com'`. When the env var
+   wasn't set, emails embedded a domain that isn't DNS-wired yet.
+   New `lib/app-url.ts` helper exposes `getAppUrl()` (server actions,
+   via `headers()`) and `getAppUrlFromRequest(request)` (route
+   handlers) — prefers the env var, falls back to the request host +
+   `x-forwarded-proto`. Wired through invitations route, contacts
+   portal-link action, portal-approval notifications, Stripe
+   checkout / billing-portal return URLs. Vercel preview URLs work
+   out of the box.
+3. **Tasks created from /tasks attach to the selected client.** The
+   NewTaskDialog tracked `selectedClientId` in a loose `useState`
+   next to react-hook-form state — stale-state window on submit.
+   Moved it into the form schema as a `clientId` field with a
+   proper `FormField` controller and explicit reset.
+
+### Settings expanded
+
+- **Your profile** section — editable Name (writes to
+  `auth.users.user_metadata.full_name` via Supabase `updateUser`) +
+  read-only Email. New `updateUserProfileAction`.
+- **Agency / Workspace** section — Name, Description (up to
+  1,000 chars), Website URL, Timezone (IANA). Three new nullable
+  columns on `workspaces` (`description`, `website_url`, `timezone`)
+  via the `workspaces_description` migration. PATCH endpoint
+  accepts all four.
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `next build` (`apps/app`) — compiles cleanly.
+
+---
+
 ## 2026-04-23 — Node-create bug + client edit + task filters + team mgmt
 
 ### Fix: tracking-map "Add node" blew up with Zod errors
