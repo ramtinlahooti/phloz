@@ -4,6 +4,50 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Client-bundle env fix + task templates
+
+### Client-side env fix
+
+`createBrowserSupabase()` was calling
+`requireEnv('NEXT_PUBLIC_SUPABASE_URL')` — works on the server,
+throws on the browser. Next.js only inlines `NEXT_PUBLIC_*` env
+vars when they're referenced as `process.env.LITERAL_NAME` in
+source; dynamic reads through a helper lose them. Clicking "Sign
+in" / "Create account" hit the bug.
+
+Fix: `packages/auth/src/client.ts` reads
+`process.env.NEXT_PUBLIC_SUPABASE_URL` + `_ANON_KEY` directly as
+literals. Inline comment explains why. Error message now tells you
+to set the var *and* restart `next dev` — Next inlines at build,
+not at request time.
+
+### Task templates
+
+Five built-in templates for workflows agencies repeat:
+- **New campaign launch** (PPC) — 6 tasks, media plan → post-launch.
+- **Monthly client report** (reporting) — 4 tasks.
+- **Tracking infrastructure audit** (onboarding) — 4 tasks.
+- **SEO onboarding** — 4 tasks.
+- **Social content — one month** — 5 tasks with approval gate.
+
+Each item carries title / description / priority / department /
+visibility / `dueInDays` (relative to apply time). Templates in
+code at `apps/app/app/[workspace]/tasks/templates.ts` — zero admin
+UI, changes ship via PR. Per-workspace customisation is V2.
+
+- `applyTaskTemplateAction` — role-gated, batch-inserts with
+  `dueDate = now + dueInDays * day`. Revalidates /tasks + client
+  detail.
+- `ApplyTemplateButton` dropdown on the client Tasks tab next to
+  "New task". Grouped by category with name + summary + task count.
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `next build` (`apps/app`) — compiles cleanly.
+
+---
+
 ## 2026-04-23 — Contacts + portal link generator + archive
 
 ### Contacts tab on the client detail page
