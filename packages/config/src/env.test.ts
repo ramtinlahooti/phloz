@@ -25,4 +25,42 @@ describe('envSchema', () => {
     const result = envSchema.safeParse({});
     expect(result.success).toBe(true);
   });
+
+  // Regression: empty-string values are common in .env.local templates
+  // (e.g. `NEXT_PUBLIC_SENTRY_DSN=`). They must be treated as absent
+  // so optional URL fields don't trip the `.url()` parser.
+  it('treats empty-string URL fields as undefined', () => {
+    const result = envSchema.safeParse({
+      NEXT_PUBLIC_SENTRY_DSN: '',
+      SENTRY_DSN: '',
+      NEXT_PUBLIC_SUPABASE_URL: '',
+      DATABASE_URL: '',
+      NEXT_PUBLIC_POSTHOG_HOST: '',
+      NEXT_PUBLIC_APP_URL: '',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.NEXT_PUBLIC_SENTRY_DSN).toBeUndefined();
+      expect(result.data.DATABASE_URL).toBeUndefined();
+      // Empty-string fields with defaults fall back to the default.
+      expect(result.data.NEXT_PUBLIC_POSTHOG_HOST).toBe(
+        'https://us.i.posthog.com',
+      );
+      expect(result.data.NEXT_PUBLIC_APP_URL).toBe('http://localhost:3001');
+    }
+  });
+
+  it('treats empty-string text fields as undefined when optional', () => {
+    const result = envSchema.safeParse({
+      STRIPE_SECRET_KEY: '',
+      RESEND_API_KEY: '',
+      INNGEST_EVENT_KEY: '',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.STRIPE_SECRET_KEY).toBeUndefined();
+      expect(result.data.RESEND_API_KEY).toBeUndefined();
+      expect(result.data.INNGEST_EVENT_KEY).toBeUndefined();
+    }
+  });
 });

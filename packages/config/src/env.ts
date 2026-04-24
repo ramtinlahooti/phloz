@@ -10,7 +10,21 @@ import { z } from 'zod';
  *
  * When a new service is added, update this file and `.env.example` together.
  */
-export const envSchema = z.object({
+/**
+ * Top-level preprocess: treat empty strings as "not provided" so that
+ * empty-but-present env vars (common in `.env.local` templates and
+ * Vercel projects) pass `.optional()` fields without tripping
+ * `.url()` / `.email()` parsers. Keys that omit the value in `.env`
+ * also come through as empty strings — same treatment.
+ */
+const emptyStringsToUndefined = z.preprocess((raw) => {
+  if (raw === null || typeof raw !== 'object') return raw;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    out[k] = v === '' ? undefined : v;
+  }
+  return out;
+}, z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
   // Supabase
@@ -49,8 +63,9 @@ export const envSchema = z.object({
   // App URLs
   NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3001'),
   NEXT_PUBLIC_MARKETING_URL: z.string().url().default('http://localhost:3000'),
-});
+}));
 
+export const envSchema = emptyStringsToUndefined;
 export type Env = z.infer<typeof envSchema>;
 
 let cached: Env | null = null;
