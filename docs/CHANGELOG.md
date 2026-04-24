@@ -4,6 +4,55 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Proxy fix + reply-from-portal + client status
+
+### Proxy runtime fix
+
+Next 16's edge proxy rejects any non-`Response` return. The app's
+`proxy.ts` was returning `updateSession`'s `{ response, user }`
+object directly. Destructured `.response` before returning — the
+ergonomic `{ response, user }` shape from `@phloz/auth/middleware`
+stays intact for future middleware-layer auth checks.
+
+### Reply-from-portal
+
+- `sendPortalReplyAction` in `apps/app/app/portal/[token]/actions.ts`
+  — authenticates via magic-link token, inserts a `messages` row
+  with `direction=inbound`, `channel=portal`, `fromType=contact`,
+  `fromId=link.clientContactId`. Threads on the supplied `threadId`
+  when continuing a conversation.
+- Portal UI — new `PortalMessages` + `ThreadCard` + `ReplyForm`.
+  Groups messages by `threadId`, newest thread first, chronological
+  within. Each thread has an inline Reply button; a "Start a new
+  conversation" card at the bottom starts fresh threads.
+- Portal page query now selects `channel` and filters via
+  `inArray(['email','portal'])` so clients see both agency email
+  and their own portal replies. Internal notes stay hidden.
+- Agency-side is channel-aware via `MessageThread`'s `ChannelIcon`
+  fallback — portal messages show with a MessageSquare icon and
+  `inbound` badge in the client Messages tab without any extra work.
+
+### Client status — at-risk / inactive badges
+
+- Schema: new `clients.last_activity_at timestamptz` column with
+  index. Migration `clients_last_activity_at` applied via MCP and
+  seeded from `created_at`.
+- Inngest `recomputeActiveClientCount` cron extended: after the
+  existing tier-cap checks it runs one UPDATE per workspace that
+  recomputes `last_activity_at` as the greatest of
+  `created_at` + `max(updated_at)` across tasks / messages /
+  tracking_nodes / tracking_edges / client_assets.
+- UI: clients list renders amber **At risk · Nd** for 30 ≤ days <
+  60, red **Inactive · Nd** for ≥ 60. Right column shows
+  last-active date instead of updated-at when available.
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `next build` (`apps/app`) — compiles cleanly.
+
+---
+
 ## 2026-04-23 — Env-var fix + approvals + breadcrumbs
 
 ### `@phloz/config` env.ts fix
