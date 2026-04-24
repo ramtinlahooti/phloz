@@ -27,6 +27,10 @@ import {
 
 import { buildAppMetadata } from '@/lib/metadata';
 
+import {
+  ContactsPanel,
+  type ContactRow,
+} from './contacts/contacts-panel';
 import { FilesPanel, type AssetRow } from './files/files-panel';
 import {
   MessageThread,
@@ -53,6 +57,7 @@ export default async function ClientDetailPage({
     clientMessages,
     inboundAddressRow,
     clientAssets,
+    clientContactRows,
   ] = await Promise.all([
       db
         .select()
@@ -108,6 +113,23 @@ export default async function ClientDetailPage({
         )
         .orderBy(desc(schema.clientAssets.createdAt))
         .limit(200),
+      db
+        .select({
+          id: schema.clientContacts.id,
+          name: schema.clientContacts.name,
+          email: schema.clientContacts.email,
+          phone: schema.clientContacts.phone,
+          role: schema.clientContacts.role,
+          portalAccess: schema.clientContacts.portalAccess,
+        })
+        .from(schema.clientContacts)
+        .where(
+          and(
+            eq(schema.clientContacts.workspaceId, workspaceId),
+            eq(schema.clientContacts.clientId, clientId),
+          ),
+        )
+        .orderBy(asc(schema.clientContacts.name)),
     ]);
 
   if (!client) notFound();
@@ -152,6 +174,15 @@ export default async function ClientDetailPage({
     createdAt: a.createdAt,
   }));
 
+  const contactRows: ContactRow[] = clientContactRows.map((c) => ({
+    id: c.id,
+    name: c.name,
+    email: c.email,
+    phone: c.phone,
+    role: c.role,
+    portalAccess: c.portalAccess,
+  }));
+
   return (
     <div className="flex h-full flex-col">
       <header className="border-b border-border/60 bg-card/30 px-6 py-5">
@@ -185,6 +216,7 @@ export default async function ClientDetailPage({
           <Tabs defaultValue="overview" className="p-6">
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="contacts">Contacts</TabsTrigger>
               <TabsTrigger value="tasks">Tasks</TabsTrigger>
               <TabsTrigger value="messages">Messages</TabsTrigger>
               <TabsTrigger value="map">Tracking map</TabsTrigger>
@@ -206,6 +238,14 @@ export default async function ClientDetailPage({
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="contacts" className="mt-6">
+              <ContactsPanel
+                workspaceId={workspaceId}
+                clientId={clientId}
+                contacts={contactRows}
+              />
             </TabsContent>
 
             <TabsContent value="tasks" className="mt-6 space-y-4">
