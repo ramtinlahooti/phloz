@@ -154,19 +154,42 @@ export default async function ClientDetailPage({
 
   if (!client) notFound();
 
-  const tasksAsRows: TaskRowModel[] = clientTasks.map((t) => ({
-    id: t.id,
-    title: t.title,
-    status: t.status as TaskStatus,
-    priority: t.priority as TaskPriority,
-    department: t.department as Department,
-    visibility: t.visibility as TaskVisibility,
-    dueDate: t.dueDate,
-    clientId: t.clientId,
-    clientName: client.name,
-    approvalState: t.approvalState as ApprovalState,
-    assigneeMembershipId: t.assigneeId,
-  }));
+  // Assignee lookup: membership id → display label. Mirrors the
+  // Tasks-page builder so task rows look identical on either page.
+  const assigneeDetails = new Map<
+    string,
+    { label: string; isSelf: boolean }
+  >();
+  for (const m of memberRows) {
+    const isSelf = m.userId === user.id;
+    assigneeDetails.set(m.id, {
+      label: isSelf
+        ? 'You'
+        : (m.displayName?.trim() ||
+           m.email?.trim() ||
+           `${(m.userId ?? 'unknown').slice(0, 8)}…`),
+      isSelf,
+    });
+  }
+
+  const tasksAsRows: TaskRowModel[] = clientTasks.map((t) => {
+    const assignee = t.assigneeId ? assigneeDetails.get(t.assigneeId) : null;
+    return {
+      id: t.id,
+      title: t.title,
+      status: t.status as TaskStatus,
+      priority: t.priority as TaskPriority,
+      department: t.department as Department,
+      visibility: t.visibility as TaskVisibility,
+      dueDate: t.dueDate,
+      clientId: t.clientId,
+      clientName: client.name,
+      approvalState: t.approvalState as ApprovalState,
+      assigneeMembershipId: t.assigneeId,
+      assigneeLabel: assignee?.label ?? null,
+      assigneeIsSelf: assignee?.isSelf ?? false,
+    };
+  });
 
   // Build assignee options with the same label precedence as the
   // workspace-wide Tasks page. See `/tasks/page.tsx` for the ordering

@@ -85,7 +85,7 @@ export default async function TasksPage({
   const db = getDb();
   const user = await requireUser();
 
-  const [taskRows, clientRows, memberRows, currentMembership] =
+  const [taskRows, clientRows, memberRows] =
     await Promise.all([
       db
         .select()
@@ -106,14 +106,13 @@ export default async function TasksPage({
         })
         .from(schema.workspaceMembers)
         .where(eq(schema.workspaceMembers.workspaceId, workspaceId)),
-      db
-        .select({ id: schema.workspaceMembers.id })
-        .from(schema.workspaceMembers)
-        .where(
-          eq(schema.workspaceMembers.workspaceId, workspaceId),
-        )
-        .then((rows) => rows.find((r) => r)),
     ]);
+
+  // Current user's membership — used by the "Mine" quick-filter pill.
+  // Previously this was a separate query that fetched the *first*
+  // member (bug), now we just find it in the rows we already fetched.
+  const currentMembershipId =
+    memberRows.find((m) => m.userId === user.id)?.id ?? null;
 
   const clientById = new Map(clientRows.map((c) => [c.id, c.name]));
   // Membership options for the assignee filter + dialog pickers.
@@ -166,7 +165,28 @@ export default async function TasksPage({
     done: [],
     archived: [],
   };
+  // Build a lookup from membership id → { label, isSelf } so each task
+  // row can render its assignee without refetching. Labels mirror the
+  // precedence used by the assignee filter/picker (You → display_name
+  // → email → UUID prefix).
+  const assigneeDetails = new Map<
+    string,
+    { label: string; isSelf: boolean }
+  >();
+  for (const m of memberRows) {
+    const isSelf = m.userId === user.id;
+    assigneeDetails.set(m.id, {
+      label: isSelf
+        ? 'You'
+        : (m.displayName?.trim() ||
+           m.email?.trim() ||
+           `${(m.userId ?? 'unknown').slice(0, 8)}…`),
+      isSelf,
+    });
+  }
+
   for (const t of filtered) {
+    const assignee = t.assigneeId ? assigneeDetails.get(t.assigneeId) : null;
     byStatus[t.status].push({
       id: t.id,
       title: t.title,
@@ -179,6 +199,8 @@ export default async function TasksPage({
       clientName: t.clientId ? clientById.get(t.clientId) ?? null : null,
       approvalState: t.approvalState as ApprovalState,
       assigneeMembershipId: t.assigneeId,
+      assigneeLabel: assignee?.label ?? null,
+      assigneeIsSelf: assignee?.isSelf ?? false,
     });
   }
 
@@ -188,7 +210,14 @@ export default async function TasksPage({
     clientFilter !== null ||
     assigneeFilter !== null;
 
-  void currentMembership; // reserved for future "assigned to me" shortcut
+  const mineActive =
+    currentMembershipId !== null && assigneeFilter === currentMembershipId;
+  const mineHref = currentMembershipId
+    ? hrefWithAssignee(
+        mineActive ? null : currentMembershipId,
+        { workspaceId, sp },
+      )
+    : `/${workspaceId}/tasks`;
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
@@ -220,6 +249,12 @@ export default async function TasksPage({
         >
           All
         </FilterPill>
+        {currentMembershipId && (
+          <FilterPill href={mineHref} active={mineActive}>
+            Mine
+          </FilterPill>
+        )}
+        <span className="mx-1 h-4 w-px bg-border" aria-hidden />
         {DEPARTMENTS.map((d) => (
           <FilterPill
             key={d}
@@ -336,6 +371,27 @@ function FilterPill({
       {children}
     </Link>
   );
+}
+
+/**
+ * Build an href that targets a specific assignee (or clears it when
+ * `assigneeId` is null). Keeps the other search params intact. Used
+ * by the "Mine" quick-filter pill.
+ */
+function hrefWithAssignee(
+  assigneeId: string | null,
+  ctx: { workspaceId: string; sp: SearchParams },
+): string {
+  const next = new URLSearchParams();
+  for (const [k, v] of Object.entries(ctx.sp)) {
+    if (k === 'assignee') continue;
+    if (typeof v === 'string' && v.length > 0) next.set(k, v);
+  }
+  if (assigneeId) next.set('assignee', assigneeId);
+  const qs = next.toString();
+  return qs
+    ? `/${ctx.workspaceId}/tasks?${qs}`
+    : `/${ctx.workspaceId}/tasks`;
 }
 
 /**

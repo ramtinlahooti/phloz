@@ -44,6 +44,15 @@ export type TaskRowModel = {
   approvalState: ApprovalState;
   /** Membership id of the current assignee, if any. */
   assigneeMembershipId: string | null;
+  /**
+   * Display name of the assignee for the row (e.g. "Sarah", "You").
+   * Derived server-side by the page builder so TaskRow doesn't need
+   * to re-fetch names. `null` = unassigned.
+   */
+  assigneeLabel: string | null;
+  /** `true` when the assignee is the current viewer. Used to render a
+   *  primary-tinted pill rather than a neutral avatar. */
+  assigneeIsSelf: boolean;
 };
 
 /** Lightweight member option for assignee pickers. Built in the server
@@ -82,6 +91,14 @@ const PRIORITY_TONE: Record<TaskPriority, string> = {
   high: 'text-amber-400',
   urgent: 'text-red-400',
 };
+
+/** Single-character initial for the assignee avatar. "You" and UUID
+ *  prefixes are handled by taking the first non-whitespace char. */
+function assigneeInitial(label: string): string {
+  const trimmed = label.trim();
+  if (!trimmed) return '?';
+  return trimmed[0]?.toUpperCase() ?? '?';
+}
 
 export function TaskRow({
   workspaceId,
@@ -257,6 +274,31 @@ export function TaskRow({
               <span className="inline-flex items-center gap-1">
                 <Clock className="size-3" />
                 {task.dueDate.toLocaleDateString()}
+              </span>
+            </>
+          )}
+          {task.assigneeLabel && (
+            <>
+              <span>·</span>
+              <span
+                className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] ${
+                  task.assigneeIsSelf
+                    ? 'border-primary/40 text-primary'
+                    : 'border-border text-muted-foreground'
+                }`}
+                title={`Assigned to ${task.assigneeLabel}`}
+              >
+                <span
+                  className={`inline-flex size-3 items-center justify-center rounded-full text-[8px] font-semibold ${
+                    task.assigneeIsSelf
+                      ? 'bg-primary/20 text-primary'
+                      : 'bg-muted text-muted-foreground'
+                  }`}
+                  aria-hidden
+                >
+                  {assigneeInitial(task.assigneeLabel)}
+                </span>
+                {task.assigneeLabel}
               </span>
             </>
           )}

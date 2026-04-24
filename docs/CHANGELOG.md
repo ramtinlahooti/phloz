@@ -4,6 +4,47 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Task assignee visible on rows + "Mine" filter
+
+The assignee picker (shipped previously) was invisible on task rows
+— you had to open the detail dialog to see who owned a task. Fixed:
+
+### Task rows now show the assignee
+
+- `TaskRowModel` extended with `assigneeLabel` (e.g. "Sarah",
+  "You") and `assigneeIsSelf` (boolean). Both are derived
+  server-side by the pages that build the rows so `TaskRow` stays
+  purely presentational.
+- Pill on each row: initial-circle avatar + name. Rows for tasks
+  assigned to the current user get a primary tint; everyone else
+  is neutral. Unassigned tasks show nothing (clean).
+- Both call sites populate the fields: workspace `/tasks` page and
+  the client detail page. A single assignee-label builder keeps
+  the precedence (You → display_name → email → UUID prefix)
+  consistent.
+
+### "Mine" quick-filter pill
+
+- Added next to the existing "All" pill on the `/tasks` filter
+  bar. One-click jump to "tasks assigned to me."
+- Clicking again toggles it off (same pattern as the other pills).
+- Only renders if the current user has a `workspace_members` row —
+  no-op for anonymous or phantom sessions.
+- Bug fix along the way: the `/tasks` page used to fetch "the
+  first member" as `currentMembership` — a placeholder that
+  was unused but wrong. Replaced with a proper lookup in the
+  already-fetched `memberRows`.
+
+### New helper
+
+- `hrefWithAssignee(assigneeId, ctx)` — sibling of the existing
+  `hrefWith`. Builds a filter-toggle href that targets the
+  assignee param specifically.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Onboarding checklist
 
 Replaces the static "Getting started" card with a stateful 6-step
