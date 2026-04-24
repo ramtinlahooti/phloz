@@ -4,6 +4,55 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Three production fixes + editable notes + activity feed
+
+### Three production-QA fixes
+
+1. **Sentry: `/favicon.ico` crashed `/[workspace]`**. Browsers
+   requesting the favicon matched the dynamic workspace segment
+   and fed `"favicon.ico"` to Supabase as a UUID. Layout now
+   guards with a strict RFC-4122 regex and calls `notFound()`
+   before hitting the DB. Added a real favicon via Next's
+   `icon.tsx` convention (edge `ImageResponse` renders a 32×32
+   "P" on the primary accent; works in both apps, no binary asset).
+2. **Buttons rendered as plain text**. Tailwind v4 auto-detects
+   content from the project's own files but doesn't follow
+   workspace imports into `packages/*`. Added `@source` directives
+   to both apps' `globals.css` so Tailwind scans `@phloz/ui` and
+   `@phloz/tracking-map` — Button / Badge / Card / Sheet / Dialog
+   styles now make it into the bundle.
+3. **Supabase auth emails came from `noreply@mail.app.supabase.io`**.
+   Documented the two-minute SMTP config in `docs/DEPLOYMENT.md`
+   Step 6 (Resend as the custom SMTP provider in Supabase
+   dashboard). No code change — one-time dashboard setting.
+
+### Editable client notes
+
+- Generic `updateClientAction` server action accepts an optional
+  subset of { name, businessName, businessEmail, businessPhone,
+  websiteUrl, industry, notes } and PATCH-updates only the fields
+  passed.
+- `ClientNotesEditor` — inline read-only view with a Pencil button
+  that swaps to a textarea. Save / Cancel, toast on success.
+  Replaces the static "No notes yet." block on the Overview tab.
+
+### Activity feed on workspace overview
+
+Replaced the right-rail two-card grid with:
+- **Recent activity** (2/3 width): merges tasks (new + completed),
+  messages (inbound / outbound / internal notes / portal), file
+  uploads, and approval outcomes into a chronological stream with
+  icons + colour-coded badges. Each row deep-links to the client.
+  Approval comments show inline.
+- Right rail keeps Getting-started + Your-plan cards.
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `next build` (both apps) — compile cleanly.
+
+---
+
 ## 2026-04-23 — Shared portal files + approval email notifications
 
 ### Shared files on the portal
