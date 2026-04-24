@@ -10,6 +10,7 @@ import {
   EmptyState,
 } from '@phloz/ui';
 
+import { SearchInput } from '@/components/search-input';
 import {
   HEALTH_COLORS,
   computeClientHealth,
@@ -20,13 +21,18 @@ import { buildAppMetadata } from '@/lib/metadata';
 export const metadata = buildAppMetadata({ title: 'Clients' });
 
 type RouteParams = { workspace: string };
+type ClientsSearchParams = { q?: string };
 
 export default async function ClientsListPage({
   params,
+  searchParams,
 }: {
   params: Promise<RouteParams>;
+  searchParams: Promise<ClientsSearchParams>;
 }) {
   const { workspace: workspaceId } = await params;
+  const sp = await searchParams;
+  const searchQuery = (sp.q ?? '').trim().toLowerCase();
   const db = getDb();
 
   const now = new Date();
@@ -155,21 +161,55 @@ export default async function ClientsListPage({
   const active = clients.filter((c) => c.archivedAt === null);
   const archived = clients.filter((c) => c.archivedAt !== null);
 
+  // Text search — matches on name, business_name, industry, and website.
+  // Case-insensitive substring. Runs on the full client list (not just
+  // active) so a search can surface archived matches too.
+  const filteredClients = searchQuery
+    ? clients.filter((c) => {
+        const hay = [
+          c.name,
+          c.businessName,
+          c.industry,
+          c.websiteUrl,
+          c.businessEmail,
+        ]
+          .filter((x): x is string => typeof x === 'string' && x.length > 0)
+          .join(' ')
+          .toLowerCase();
+        return hay.includes(searchQuery);
+      })
+    : clients;
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
-      <header className="mb-6 flex items-start justify-between gap-4">
+      <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Clients</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {active.length} active · {archived.length} archived
+            {searchQuery && (
+              <>
+                {' · '}
+                <span className="text-foreground">
+                  {filteredClients.length} match
+                  {filteredClients.length === 1 ? '' : 'es'}
+                </span>
+              </>
+            )}
           </p>
         </div>
-        <Link
-          href={`/${workspaceId}/clients/new`}
-          className={buttonVariants({ size: 'sm' })}
-        >
-          Add client
-        </Link>
+        <div className="flex items-center gap-2 sm:flex-shrink-0">
+          <SearchInput
+            placeholder="Search clients…"
+            className="w-full sm:w-56"
+          />
+          <Link
+            href={`/${workspaceId}/clients/new`}
+            className={buttonVariants({ size: 'sm' })}
+          >
+            Add client
+          </Link>
+        </div>
       </header>
 
       {clients.length === 0 ? (
@@ -185,11 +225,24 @@ export default async function ClientsListPage({
             </Link>
           }
         />
+      ) : filteredClients.length === 0 ? (
+        <EmptyState
+          title={`No clients match "${searchQuery}"`}
+          description="Try a shorter search, or clear it to see all clients."
+          action={
+            <Link
+              href={`/${workspaceId}/clients`}
+              className={`${buttonVariants({ size: 'sm', variant: 'outline' })}`}
+            >
+              Clear search
+            </Link>
+          }
+        />
       ) : (
         <Card>
           <CardContent className="p-0">
             <ul className="divide-y divide-border/60">
-              {clients.map((client) => {
+              {filteredClients.map((client) => {
                 const health = healthById.get(client.id)!;
                 const colors = HEALTH_COLORS[health.tier];
                 const tooltip = health.reasons.join(' · ') || 'All signals good';

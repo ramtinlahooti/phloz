@@ -20,6 +20,7 @@ import {
   EmptyState,
 } from '@phloz/ui';
 
+import { SearchInput } from '@/components/search-input';
 import { buildAppMetadata } from '@/lib/metadata';
 
 import { NewTaskDialog } from './new-task-dialog';
@@ -35,6 +36,8 @@ type SearchParams = {
   client?: string;
   assignee?: string;
   sort?: string;
+  /** Free-text search across task titles. */
+  q?: string;
 };
 
 const DISPLAY_GROUPS: TaskStatus[] = [
@@ -80,6 +83,7 @@ export default async function TasksPage({
     : null;
   const clientFilter = sp.client ?? null;
   const assigneeFilter = sp.assignee ?? null;
+  const searchQuery = (sp.q ?? '').trim().toLowerCase();
   const sort: TaskSort = isSort(sp.sort) ? sp.sort : 'priority';
 
   const db = getDb();
@@ -152,6 +156,9 @@ export default async function TasksPage({
         if (t.assigneeId !== null) return false;
       } else if (t.assigneeId !== assigneeFilter) return false;
     }
+    if (searchQuery && !t.title.toLowerCase().includes(searchQuery)) {
+      return false;
+    }
     return true;
   });
 
@@ -208,7 +215,8 @@ export default async function TasksPage({
     departmentFilter !== null ||
     statusFilter !== null ||
     clientFilter !== null ||
-    assigneeFilter !== null;
+    assigneeFilter !== null ||
+    searchQuery !== '';
 
   const mineActive =
     currentMembershipId !== null && assigneeFilter === currentMembershipId;
@@ -221,7 +229,7 @@ export default async function TasksPage({
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
-      <header className="mb-6 flex items-start justify-between gap-4">
+      <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Tasks</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -232,13 +240,28 @@ export default async function TasksPage({
               ).length
             }{' '}
             open
+            {searchQuery && (
+              <>
+                {' · '}
+                <span className="text-foreground">
+                  {filtered.length} match
+                  {filtered.length === 1 ? '' : 'es'}
+                </span>
+              </>
+            )}
           </p>
         </div>
-        <NewTaskDialog
-          workspaceId={workspaceId}
-          clients={clientRows}
-          members={memberOptions}
-        />
+        <div className="flex items-center gap-2 sm:flex-shrink-0">
+          <SearchInput
+            placeholder="Search tasks…"
+            className="w-full sm:w-56"
+          />
+          <NewTaskDialog
+            workspaceId={workspaceId}
+            clients={clientRows}
+            members={memberOptions}
+          />
+        </div>
       </header>
 
       {/* Filters */}

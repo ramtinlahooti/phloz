@@ -4,6 +4,36 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Text search on clients + tasks lists
+
+Real usability gap once a workspace has more than 20 rows.
+
+- **`apps/app/components/search-input.tsx`** (new, shared). URL-
+  param-backed (`?q=…`), 250 ms debounced, preserves other query
+  params when writing. Uses `router.replace` (not push) so search
+  typing doesn't pile up back-button history.
+- **Tasks list** (`/tasks`): `q` filters task titles (case-
+  insensitive substring). Live match count appears under the
+  header. The search is one of the filter dimensions now, so
+  "Reset all filters" clears it.
+- **Clients list** (`/clients`): `q` matches on name,
+  business_name, industry, website_url, and business_email.
+  Includes archived clients in the search (they disappear from
+  the default view but remain findable). Match count + a
+  dedicated "no matches" empty state with a clear-search CTA.
+
+### Performance note
+
+Both pages filter in-memory over the rows already fetched for the
+list. Fine while list sizes are small; when a workspace has
+multiple thousand tasks this should move into a SQL `WHERE title
+ILIKE '%…%'` (or a GIN `pg_trgm` index). The SearchInput is
+URL-compatible either way, so the swap is local to the page.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Task assignee visible on rows + "Mine" filter
 
 The assignee picker (shipped previously) was invisible on task rows
