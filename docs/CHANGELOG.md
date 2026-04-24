@@ -4,6 +4,56 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Command palette (⌘K)
+
+Global keyboard-driven navigation. Opens on ⌘K / Ctrl+K from
+anywhere under the authenticated workspace layout. Biggest polish
+feature — makes the app feel premium and unlocks multiple
+navigation flows from a single shortcut.
+
+### Sections
+
+- **Shortcuts** — New client, Invite teammate (navigates to the
+  pages that already host those forms).
+- **Pages** — Overview, Clients, Tasks, Messages, Team, Billing,
+  Settings.
+- **Clients** — up to 100 recent active clients, lazy-fetched on
+  first open.
+- **Tasks** — up to 200 recent parent tasks (subtasks excluded).
+  Clicking navigates to the client page or
+  `/tasks?q=<title>` for unassigned ones.
+
+### Interaction
+
+- ↑↓ navigate across groups. ↵ activates. Esc closes.
+- Substring filter on label + subtitle.
+- Hover also moves the cursor so mouse + keyboard compose.
+- Footer hint inside the dialog shows the bindings.
+
+### Files
+
+- `app/[workspace]/command-palette-actions.ts` — read-only
+  `listCommandPaletteItemsAction`. Viewers allowed — the palette
+  is navigation, not mutation.
+- `components/command-palette.tsx` — the dialog. Lazy-fetches
+  on first open, caches for subsequent opens.
+- `components/command-palette-trigger.tsx` — sidebar
+  "Search… ⌘K" button. Click dispatches a synthetic ⌘K keydown
+  so the palette's internal open-state stays single-source.
+- Mounted in `/[workspace]/layout.tsx`.
+
+### Intentional scope
+
+- No recents history, no fuzzy match. Plain substring.
+- Task activation navigates with a prefilled search rather than
+  auto-opening the detail dialog — upgrade when the tasks page
+  learns a `?task=<id>` deep-link.
+- No "Sign out" action (UserMenu still has it).
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Inbox: text search + "Needs reply" filter
 
 The messages inbox had filter pills for direction/channel but no

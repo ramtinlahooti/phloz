@@ -11,6 +11,7 @@ import {
 
 import type { Role, TierName } from '@phloz/config';
 
+import { CommandPaletteTrigger } from './command-palette-trigger';
 import { UserMenu } from './user-menu';
 import { WorkspaceSwitcher } from './workspace-switcher';
 
@@ -54,6 +55,9 @@ export function DashboardShell({
             currentId={workspace.id}
             workspaces={allWorkspaces}
           />
+        </div>
+        <div className="px-3 pt-3">
+          <CommandPaletteTrigger />
         </div>
         <nav className="flex-1 space-y-1 p-3">
           {filteredNav.map((item) => (
