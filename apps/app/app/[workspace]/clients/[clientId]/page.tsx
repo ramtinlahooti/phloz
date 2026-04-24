@@ -26,6 +26,10 @@ import {
   TabsTrigger,
 } from '@phloz/ui';
 
+import {
+  HEALTH_COLORS,
+  computeClientHealth,
+} from '@/lib/client-health';
 import { buildAppMetadata } from '@/lib/metadata';
 
 import { ArchiveButton } from './archive-button';
@@ -66,6 +70,7 @@ export default async function ClientDetailPage({
     clientContactRows,
     memberRows,
     subtaskRollupRows,
+    nodeHealthRows,
   ] = await Promise.all([
       db
         .select()
@@ -166,6 +171,17 @@ export default async function ClientDetailPage({
             eq(schema.tasks.workspaceId, workspaceId),
             eq(schema.tasks.clientId, clientId),
             isNotNull(schema.tasks.parentTaskId),
+          ),
+        ),
+      // Tracking nodes for this client — feeds the health score + the
+      // "12 nodes (1 broken)" chip in the header.
+      db
+        .select({ healthStatus: schema.trackingNodes.healthStatus })
+        .from(schema.trackingNodes)
+        .where(
+          and(
+            eq(schema.trackingNodes.workspaceId, workspaceId),
+            eq(schema.trackingNodes.clientId, clientId),
           ),
         ),
     ]);
@@ -276,6 +292,57 @@ export default async function ClientDetailPage({
     portalAccess: c.portalAccess,
   }));
 
+  // --- Header stats ---------------------------------------------------
+  //
+  // Compute the same signals the /clients list uses, scoped to this
+  // client. Keeps the health badge identical on the list + detail
+  // page so numbers don't mysteriously disagree.
+  const now = Date.now();
+  const overdueCount = clientTasks.filter(
+    (t) =>
+      t.parentTaskId === null &&
+      ['todo', 'in_progress', 'blocked'].includes(t.status) &&
+      t.dueDate !== null &&
+      t.dueDate.getTime() < now,
+  ).length;
+
+  // Unreplied inbound: count of inbound messages newer than the last
+  // outbound, excluding internal notes. Same definition as /clients +
+  // /messages.
+  let lastOutboundAt: Date | null = null;
+  for (const m of clientMessages) {
+    if (m.direction === 'outbound' && m.channel !== 'internal_note') {
+      if (!lastOutboundAt || m.createdAt > lastOutboundAt) {
+        lastOutboundAt = m.createdAt;
+      }
+    }
+  }
+  const unrepliedCount = clientMessages.filter(
+    (m) =>
+      m.direction === 'inbound' &&
+      m.channel !== 'internal_note' &&
+      (lastOutboundAt === null || m.createdAt > lastOutboundAt),
+  ).length;
+
+  const brokenNodeCount = nodeHealthRows.filter(
+    (n) => n.healthStatus === 'broken',
+  ).length;
+  const missingNodeCount = nodeHealthRows.filter(
+    (n) => n.healthStatus === 'missing',
+  ).length;
+
+  const health = computeClientHealth({
+    archived: client.archivedAt !== null,
+    lastActivityAt: client.lastActivityAt,
+    overdueTaskCount: overdueCount,
+    unrepliedInboundCount: unrepliedCount,
+    brokenNodeCount,
+    missingNodeCount,
+  });
+  const healthColors = HEALTH_COLORS[health.tier];
+
+  const portalContactsCount = contactRows.filter((c) => c.portalAccess).length;
+
   return (
     <div className="flex h-full flex-col">
       <header className="border-b border-border/60 bg-card/30 px-6 py-5">
@@ -308,6 +375,80 @@ export default async function ClientDetailPage({
             />
           </div>
         </div>
+
+        {/* At-a-glance stats. Only rendered for non-archived clients
+            since health scoring short-circuits to 0 on archived, which
+            would misleadingly show a red badge. */}
+        {!client.archivedAt && (
+          <div className="mt-4 flex flex-wrap items-center gap-3 text-xs">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${healthColors.badge}`}
+              title={health.reasons.join(' · ') || 'All signals good'}
+            >
+              <span
+                className={`inline-block size-1.5 rounded-full ${healthColors.dot}`}
+                aria-hidden
+              />
+              {healthColors.label} · {health.score}
+            </span>
+            <StatChip
+              label={
+                openTasks.length === 1
+                  ? '1 open task'
+                  : `${openTasks.length} open tasks`
+              }
+              sub={
+                overdueCount > 0
+                  ? `${overdueCount} overdue`
+                  : undefined
+              }
+              tone={overdueCount > 0 ? 'red' : 'default'}
+            />
+            {unrepliedCount > 0 && (
+              <StatChip
+                label={
+                  unrepliedCount === 1
+                    ? '1 unreplied message'
+                    : `${unrepliedCount} unreplied messages`
+                }
+                tone="amber"
+              />
+            )}
+            <StatChip
+              label={
+                nodeHealthRows.length === 1
+                  ? '1 tracking node'
+                  : `${nodeHealthRows.length} tracking nodes`
+              }
+              sub={
+                brokenNodeCount + missingNodeCount > 0
+                  ? `${brokenNodeCount + missingNodeCount} need attention`
+                  : undefined
+              }
+              tone={
+                brokenNodeCount > 0
+                  ? 'red'
+                  : missingNodeCount > 0
+                    ? 'amber'
+                    : 'default'
+              }
+            />
+            {contactRows.length > 0 && (
+              <StatChip
+                label={
+                  contactRows.length === 1
+                    ? '1 contact'
+                    : `${contactRows.length} contacts`
+                }
+                sub={
+                  portalContactsCount > 0
+                    ? `${portalContactsCount} with portal access`
+                    : undefined
+                }
+              />
+            )}
+          </div>
+        )}
       </header>
 
       <div className="flex flex-1 min-h-0">
@@ -485,5 +626,33 @@ export default async function ClientDetailPage({
         </aside>
       </div>
     </div>
+  );
+}
+
+/** Small pill used in the client-header stats strip. `sub` appears
+ *  as a dimmer tail inside the same chip. Tones shade the border +
+ *  text to indicate urgency without shouting. */
+function StatChip({
+  label,
+  sub,
+  tone = 'default',
+}: {
+  label: string;
+  sub?: string;
+  tone?: 'default' | 'red' | 'amber';
+}) {
+  const toneClass =
+    tone === 'red'
+      ? 'border-red-400/50 text-red-400'
+      : tone === 'amber'
+        ? 'border-amber-400/50 text-amber-400'
+        : 'border-border text-muted-foreground';
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${toneClass}`}
+    >
+      <span className="text-foreground/90">{label}</span>
+      {sub && <span className="opacity-70">· {sub}</span>}
+    </span>
   );
 }

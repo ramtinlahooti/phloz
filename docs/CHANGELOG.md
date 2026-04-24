@@ -4,6 +4,54 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Client detail header — stats strip + health badge
+
+The client detail page landed straight into a bare `<h1>` with no
+context: how many open tasks, how many unreplied messages, is the
+tracking setup healthy? Fixed.
+
+### What's new
+
+Horizontal strip of stat chips under the client name, only for
+non-archived clients:
+
+- **Health badge** — same scoring + colour as `/clients` (reuses
+  `computeClientHealth`). Tooltip lists the reasons; score shown
+  inline as "At risk · 55" etc.
+- **Open tasks** — with sub-tail "N overdue" in red when any are
+  overdue.
+- **Unreplied messages** — amber chip, only rendered when > 0.
+  Uses the same inbound-newer-than-last-outbound definition as
+  the inbox + the dashboard.
+- **Tracking nodes** — total count with sub-tail showing broken +
+  missing count when > 0 (red / amber based on severity).
+- **Contacts** — with sub-tail "N with portal access" if any.
+
+### Implementation
+
+- Added a per-client tracking-node health query
+  (`SELECT health_status WHERE client_id = ?`) to the existing
+  `Promise.all`.
+- Computes overdue / unreplied / node counts in JS from data
+  already fetched on the page — no extra queries beyond the node
+  one.
+- Feeds a single `computeClientHealth` call; HEALTH_COLORS picks
+  the badge tone.
+- `StatChip` lives at the bottom of the same file — tight scope,
+  no shared module needed yet.
+
+### Noted follow-ups
+
+- The chips aren't clickable yet. Making them jump to the right
+  tab (e.g. unreplied chip → Messages tab, overdue chip → Tasks
+  tab filtered) is a nice follow-up.
+- Archived clients don't render the strip at all. They could
+  instead show an "Archived — reason" chip; deferred.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Task deep-links (?task=&lt;id&gt;)
 
 Tasks were previously only openable by clicking their row —
