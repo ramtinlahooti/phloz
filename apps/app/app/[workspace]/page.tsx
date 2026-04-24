@@ -587,9 +587,11 @@ export default async function WorkspaceOverviewPage({
                         : ''
                     }`
                   : undefined,
+              // Deep-link via ?task=<id> so the detail dialog opens
+              // directly on the destination page.
               href: t.clientId
-                ? `/${workspaceId}/clients/${t.clientId}`
-                : `/${workspaceId}/tasks`,
+                ? `/${workspaceId}/clients/${t.clientId}?task=${t.id}`
+                : `/${workspaceId}/tasks?task=${t.id}`,
             }))}
             ctaHref={`/${workspaceId}/tasks?status=todo`}
             ctaLabel="See all tasks"
@@ -611,9 +613,11 @@ export default async function WorkspaceOverviewPage({
                         : ''
                     }`
                   : undefined,
+              // Deep-link via ?task=<id> so the detail dialog opens
+              // directly on the destination page.
               href: t.clientId
-                ? `/${workspaceId}/clients/${t.clientId}`
-                : `/${workspaceId}/tasks`,
+                ? `/${workspaceId}/clients/${t.clientId}?task=${t.id}`
+                : `/${workspaceId}/tasks?task=${t.id}`,
             }))}
             ctaHref={`/${workspaceId}/tasks?sort=due_soonest`}
             ctaLabel="Sort by due"
@@ -630,9 +634,11 @@ export default async function WorkspaceOverviewPage({
               subtitle: t.clientId
                 ? (nameFor(t.clientId) ?? undefined)
                 : undefined,
+              // Deep-link via ?task=<id> so the detail dialog opens
+              // directly on the destination page.
               href: t.clientId
-                ? `/${workspaceId}/clients/${t.clientId}`
-                : `/${workspaceId}/tasks`,
+                ? `/${workspaceId}/clients/${t.clientId}?task=${t.id}`
+                : `/${workspaceId}/tasks?task=${t.id}`,
             }))}
             ctaHref={`/${workspaceId}/tasks`}
             ctaLabel="View approvals"

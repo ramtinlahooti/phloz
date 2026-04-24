@@ -214,14 +214,16 @@ export function CommandPalette({ workspaceId }: { workspaceId: string }) {
         label: t.title,
         subtitle: t.clientName ?? undefined,
         icon: ListChecks,
-        // Prefilled-search navigation highlights the row in the
-        // tasks list without the palette needing its own deep-link
-        // to open the detail dialog.
+        // Deep-link via `?task=<id>` — TaskRow instances on the
+        // destination page auto-open the detail dialog when their
+        // id matches. Client-scoped tasks land on the client page
+        // (richer context: approval, map, files) rather than the
+        // workspace list.
         onActivate: () =>
           go(
             t.clientId
-              ? `${base}/clients/${t.clientId}`
-              : `${base}/tasks?q=${encodeURIComponent(t.title)}`,
+              ? `${base}/clients/${t.clientId}?task=${t.id}`
+              : `${base}/tasks?task=${t.id}`,
           ),
       });
     }

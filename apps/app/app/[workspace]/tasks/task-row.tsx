@@ -2,8 +2,8 @@
 
 import { AlertCircle, CheckCircle2, Circle, CircleDashed, Clock, ListTodo } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState, useTransition } from 'react';
 
 import {
   Badge,
@@ -117,10 +117,36 @@ export function TaskRow({
   members?: MemberOption[];
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const urlParams = useSearchParams();
+  const deepLinkedTaskId = urlParams?.get('task') ?? null;
   const [, startTransition] = useTransition();
   const [optimisticStatus, setOptimisticStatus] = useState<TaskStatus>(task.status);
   const [detailOpen, setDetailOpen] = useState(false);
   const StatusIcon = STATUS_ICONS[optimisticStatus];
+
+  // Deep-link support: when `?task=<id>` matches this row, auto-open
+  // the detail dialog. Clearing the param on close keeps the URL
+  // tidy when the user dismisses via the X or Escape. `router.replace`
+  // avoids piling up back-button history as users browse tasks.
+  useEffect(() => {
+    if (deepLinkedTaskId === task.id) {
+      setDetailOpen(true);
+    }
+  }, [deepLinkedTaskId, task.id]);
+
+  function handleOpenChange(next: boolean) {
+    setDetailOpen(next);
+    // Only clear `?task=` when we were the deep-linked target — don't
+    // strip someone else's param if this row's dialog was opened via
+    // a direct click instead of the URL.
+    if (!next && deepLinkedTaskId === task.id) {
+      const params = new URLSearchParams(urlParams?.toString() ?? '');
+      params.delete('task');
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }
+  }
 
   async function changeStatus(next: TaskStatus) {
     setOptimisticStatus(next);
@@ -332,7 +358,7 @@ export function TaskRow({
       task={task}
       members={members}
       open={detailOpen}
-      onOpenChange={setDetailOpen}
+      onOpenChange={handleOpenChange}
     />
     </>
   );

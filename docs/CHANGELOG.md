@@ -4,6 +4,42 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Task deep-links (?task=&lt;id&gt;)
+
+Tasks were previously only openable by clicking their row —
+no way to share a link to a specific task. Fixed.
+
+- **`TaskRow`** now reads `?task=<id>` from `useSearchParams` on
+  mount; when the id matches its task, the detail dialog opens
+  automatically. Closing the dialog clears the param via
+  `router.replace` (history-neutral).
+- **Command palette** task activation upgraded from
+  `?q=<title>` to `?task=<id>`:
+  - Workspace tasks → `/tasks?task=<id>`
+  - Client-scoped tasks → `/clients/<clientId>?task=<id>` (lands
+    on the richer client-detail context: approval, map, files,
+    messages).
+- Only clears the `task` param when the row that was deep-linked
+  was the one closing — prevents stripping the param if a user
+  opens + closes a different task's dialog manually.
+
+### Dashboard widgets upgraded
+
+- **Overdue** / **Due this week** / **Pending approval** cards
+  on the dashboard now include `?task=<id>` in their row links,
+  so clicking an item opens the task directly instead of just
+  navigating to its client page. Unchanged visually — but the
+  "click → see the thing" flow drops one click.
+
+### Shareable URLs
+
+- Paste a `/tasks?task=…` link in Slack/email and it opens the
+  detail dialog for the recipient (assuming they have access).
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Bulk task actions
 
 Real agency workflow unlock: weekly reviews, "mark all done",
