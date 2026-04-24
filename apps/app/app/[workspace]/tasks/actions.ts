@@ -1,6 +1,6 @@
 'use server';
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -300,6 +300,87 @@ export async function deleteTaskAction(input: {
 
   revalidatePath(`/${input.workspaceId}/tasks`);
   return { ok: true };
+}
+
+// --- bulk task actions -------------------------------------------------
+
+/**
+ * Apply the same mutation to many tasks in one server roundtrip.
+ * Shape of the action lives here rather than generalising
+ * `updateTaskAction` because bulk ops are a different intent:
+ *   - no per-task analytics fan-out (would spam PostHog)
+ *   - no approval-state side effects
+ *   - no prior-row fetch (used only for status-changed events today)
+ *
+ * For V1 the allowed mutations are `status` and `delete`. Both are
+ * the operations agencies actually want for weekly-review workflows:
+ * "mark these done", "clear out done tasks from last quarter".
+ * Adding assignee/priority/department bulk later is a one-line
+ * extension to the update schema.
+ */
+const bulkUpdateSchema = z.object({
+  workspaceId: uuid,
+  taskIds: z.array(uuid).min(1).max(200),
+  action: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('status'), status: z.enum(TASK_STATUSES) }),
+    z.object({ kind: z.literal('delete') }),
+  ]),
+});
+
+export async function bulkUpdateTasksAction(
+  input: z.infer<typeof bulkUpdateSchema>,
+): Promise<
+  | { ok: true; affected: number }
+  | { ok: false; error: string }
+> {
+  const parsed = bulkUpdateSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'invalid_input' };
+
+  try {
+    await requireRole(parsed.data.workspaceId, ['owner', 'admin', 'member']);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const db = getDb();
+  const wsId = parsed.data.workspaceId;
+  const ids = parsed.data.taskIds;
+
+  if (parsed.data.action.kind === 'delete') {
+    // parent_task_id cascades, so deleting parents also drops their
+    // subtasks. Bulk deletes of mixed parent/subtask ids are allowed
+    // but rare — the UI only surfaces top-level rows.
+    await db
+      .delete(schema.tasks)
+      .where(
+        and(
+          eq(schema.tasks.workspaceId, wsId),
+          inArray(schema.tasks.id, ids),
+        ),
+      );
+  } else {
+    const nextStatus = parsed.data.action.status;
+    await db
+      .update(schema.tasks)
+      .set({
+        status: nextStatus,
+        completedAt: nextStatus === 'done' ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.tasks.workspaceId, wsId),
+          inArray(schema.tasks.id, ids),
+        ),
+      );
+  }
+
+  revalidatePath(`/${wsId}/tasks`);
+  // The client detail page lists tasks per-client; revalidate there too
+  // even though we don't know which clients were touched (worst case
+  // an over-revalidation of an empty path, which is a no-op).
+  revalidatePath(`/${wsId}/clients`, 'layout');
+  return { ok: true, affected: ids.length };
 }
 
 // --- subtasks ----------------------------------------------------------

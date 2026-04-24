@@ -11,21 +11,15 @@ import type {
   TaskVisibility,
 } from '@phloz/config';
 import { DEPARTMENTS, TASK_STATUSES } from '@phloz/config';
-import {
-  Badge,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  EmptyState,
-} from '@phloz/ui';
+import { EmptyState } from '@phloz/ui';
 
 import { ExportButton } from '@/components/export-button';
 import { SearchInput } from '@/components/search-input';
 import { buildAppMetadata } from '@/lib/metadata';
 
 import { NewTaskDialog } from './new-task-dialog';
-import { TaskRow, type TaskRowModel } from './task-row';
+import { TaskListWithSelection } from './task-list-with-selection';
+import { type TaskRowModel } from './task-row';
 import { TaskFilters, type TaskSort } from './task-filters';
 
 export const metadata = buildAppMetadata({ title: 'Tasks' });
@@ -373,39 +367,16 @@ export default async function TasksPage({
           }
         />
       ) : (
-        <div className="space-y-4">
-          {DISPLAY_GROUPS.map((group) => {
+        <TaskListWithSelection
+          workspaceId={workspaceId}
+          members={memberOptions}
+          groups={DISPLAY_GROUPS.flatMap((group) => {
             const rows = byStatus[group];
-            if (statusFilter && group !== statusFilter) return null;
-            if (rows.length === 0) return null;
-            return (
-              <Card key={group}>
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center justify-between text-sm font-medium">
-                    <span className="capitalize">
-                      {group.replace('_', ' ')}
-                    </span>
-                    <Badge variant="outline" className="text-xs">
-                      {rows.length}
-                    </Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <ul className="divide-y divide-border/60">
-                    {rows.map((task) => (
-                      <TaskRow
-                        key={task.id}
-                        workspaceId={workspaceId}
-                        task={task}
-                        members={memberOptions}
-                      />
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-            );
+            if (statusFilter && group !== statusFilter) return [];
+            if (rows.length === 0) return [];
+            return [{ status: group, tasks: rows }];
           })}
-        </div>
+        />
       )}
     </div>
   );

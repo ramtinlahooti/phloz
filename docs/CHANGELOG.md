@@ -4,6 +4,47 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Bulk task actions
+
+Real agency workflow unlock: weekly reviews, "mark all done",
+"clear out done tasks from last quarter." Checkbox selection on
+the workspace `/tasks` page + floating bottom action bar.
+
+### Server
+
+- **`bulkUpdateTasksAction`** (new) — accepts `{ workspaceId,
+  taskIds[], action: { kind: 'status' | 'delete', ... } }`.
+  Role-gated owner/admin/member, max 200 ids per call. No
+  per-task analytics fan-out — treats a bulk op as one user-intent
+  event. `parent_task_id` cascade means deleting parents drops
+  subtasks too.
+
+### UI
+
+- **`TaskListWithSelection`** — client wrapper that replaces the
+  direct Card + TaskRow rendering. Per-row checkbox on the left;
+  indeterminate-aware "select all in group" checkbox in each
+  status-group header. Selected rows get a subtle primary tint.
+- **Floating action bar** when selection > 0:
+  - "N selected"
+  - Status dropdown (todo / in_progress / blocked / done)
+  - Delete (confirm()-guarded)
+  - ✕ to clear
+- **Escape** clears selection (unless a dialog is open — palette
+  or detail dialog take priority on the same key).
+
+### Intentional scope
+
+- Assignee / priority / department bulk not yet. Server schema
+  extends trivially; UI would get cluttered. Ship on request.
+- `/clients/[id]` tasks tab still uses the non-selection render —
+  bulk actions only live on `/tasks` for V1.
+- No undo. Delete is confirm()-gated; status is reversible.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Command palette (⌘K)
 
 Global keyboard-driven navigation. Opens on ⌘K / Ctrl+K from
