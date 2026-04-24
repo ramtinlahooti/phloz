@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, lt, not } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt, not } from 'drizzle-orm';
 import Link from 'next/link';
 
 import { getDb, schema } from '@phloz/db/client';
@@ -50,7 +50,8 @@ export default async function ClientsListPage({
       .from(schema.clients)
       .where(eq(schema.clients.workspaceId, workspaceId))
       .orderBy(desc(schema.clients.updatedAt)),
-    // Overdue tasks with a client_id — count per client.
+    // Overdue tasks with a client_id — count per client. Excludes
+    // subtasks so a task with 5 overdue subtasks doesn't double-count.
     db
       .select({ clientId: schema.tasks.clientId })
       .from(schema.tasks)
@@ -61,6 +62,7 @@ export default async function ClientsListPage({
           isNotNull(schema.tasks.clientId),
           isNotNull(schema.tasks.dueDate),
           lt(schema.tasks.dueDate, now),
+          isNull(schema.tasks.parentTaskId),
         ),
       ),
     // Last 60 days of inbound messages (excluding internal notes)

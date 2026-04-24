@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 
 import { validatePortalMagicLink } from '@phloz/auth/portal';
 import type {
@@ -70,6 +70,8 @@ export default async function PortalHomePage({
           eq(schema.tasks.clientId, link.clientId),
           eq(schema.tasks.visibility, 'client_visible'),
           inArray(schema.tasks.status, ['todo', 'in_progress', 'blocked']),
+          // Clients never see subtasks — agency-internal granularity.
+          isNull(schema.tasks.parentTaskId),
         ),
       )
       .orderBy(desc(schema.tasks.priority))

@@ -41,6 +41,13 @@ const createTaskSchema = z.object({
   visibility: z.enum(TASK_VISIBILITIES).default('internal'),
   dueDate: z.string().datetime().optional().nullable(),
   assigneeMembershipId: uuid.optional().nullable(),
+  /**
+   * When set, this task is a subtask of the parent task. The server
+   * enforces a one-level rule: the parent task must itself have no
+   * parent. Subtasks inherit the parent's `client_id` (whatever is
+   * passed in `clientId` is ignored when `parentTaskId` is set).
+   */
+  parentTaskId: uuid.optional().nullable(),
 });
 
 export async function createTaskAction(
@@ -58,11 +65,46 @@ export async function createTaskAction(
   const user = await requireUser();
   const db = getDb();
 
+  // Subtask mode: enforce one-level nesting + inherit client from
+  // parent. The DB doesn't self-enforce depth (per tasks.ts comment),
+  // so we do it here. Also scope the parent fetch to the same
+  // workspace — belt and braces against cross-tenant trickery.
+  let resolvedClientId: string | null = parsed.data.clientId;
+  if (parsed.data.parentTaskId) {
+    const parent = await db
+      .select({
+        id: schema.tasks.id,
+        parentTaskId: schema.tasks.parentTaskId,
+        clientId: schema.tasks.clientId,
+      })
+      .from(schema.tasks)
+      .where(
+        and(
+          eq(schema.tasks.id, parsed.data.parentTaskId),
+          eq(schema.tasks.workspaceId, parsed.data.workspaceId),
+        ),
+      )
+      .limit(1)
+      .then((r) => r[0]);
+    if (!parent) {
+      return { ok: false, error: 'parent_task_not_found' };
+    }
+    if (parent.parentTaskId !== null) {
+      return {
+        ok: false,
+        error: 'Subtasks cannot have subtasks — only one level of nesting.',
+      };
+    }
+    // Subtasks always share their parent's client.
+    resolvedClientId = parent.clientId;
+  }
+
   const [row] = await db
     .insert(schema.tasks)
     .values({
       workspaceId: parsed.data.workspaceId,
-      clientId: parsed.data.clientId,
+      clientId: resolvedClientId,
+      parentTaskId: parsed.data.parentTaskId ?? null,
       title: parsed.data.title,
       description: parsed.data.description ?? null,
       status: parsed.data.status,
@@ -245,6 +287,8 @@ export async function deleteTaskAction(input: {
   }
 
   const db = getDb();
+  // parent_task_id has ON DELETE CASCADE, so deleting a parent task
+  // also removes its subtasks — no dangling rows.
   await db
     .delete(schema.tasks)
     .where(
@@ -255,6 +299,111 @@ export async function deleteTaskAction(input: {
     );
 
   revalidatePath(`/${input.workspaceId}/tasks`);
+  return { ok: true };
+}
+
+// --- subtasks ----------------------------------------------------------
+
+/**
+ * List the subtasks of a given parent task, oldest first (creation
+ * order). Called from the task-detail dialog when it opens. Lightweight
+ * payload — just what the checklist needs.
+ */
+const listSubtasksSchema = z.object({
+  workspaceId: uuid,
+  parentTaskId: uuid,
+});
+
+export type SubtaskView = {
+  id: string;
+  title: string;
+  status: TaskStatus;
+};
+
+export async function listSubtasksAction(
+  input: z.infer<typeof listSubtasksSchema>,
+): Promise<{ ok: true; subtasks: SubtaskView[] } | { ok: false; error: string }> {
+  const parsed = listSubtasksSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'invalid_input' };
+
+  try {
+    await requireRole(parsed.data.workspaceId, [
+      'owner',
+      'admin',
+      'member',
+      'viewer',
+    ]);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: schema.tasks.id,
+      title: schema.tasks.title,
+      status: schema.tasks.status,
+    })
+    .from(schema.tasks)
+    .where(
+      and(
+        eq(schema.tasks.workspaceId, parsed.data.workspaceId),
+        eq(schema.tasks.parentTaskId, parsed.data.parentTaskId),
+      ),
+    )
+    .orderBy(schema.tasks.createdAt);
+
+  return {
+    ok: true,
+    subtasks: rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      status: r.status as TaskStatus,
+    })),
+  };
+}
+
+/**
+ * Quick-toggle a subtask's status between `todo` and `done`. This is
+ * its own action (rather than going through `updateTaskAction`) so
+ * the dialog can fire-and-forget a single-purpose call with minimal
+ * payload — no analytics chaining, no approval-state side effects.
+ */
+const toggleSubtaskSchema = z.object({
+  workspaceId: uuid,
+  subtaskId: uuid,
+  done: z.boolean(),
+});
+
+export async function toggleSubtaskAction(
+  input: z.infer<typeof toggleSubtaskSchema>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = toggleSubtaskSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'invalid_input' };
+
+  try {
+    await requireRole(parsed.data.workspaceId, ['owner', 'admin', 'member']);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const db = getDb();
+  const nextStatus: TaskStatus = parsed.data.done ? 'done' : 'todo';
+  await db
+    .update(schema.tasks)
+    .set({
+      status: nextStatus,
+      completedAt: parsed.data.done ? new Date() : null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(schema.tasks.id, parsed.data.subtaskId),
+        eq(schema.tasks.workspaceId, parsed.data.workspaceId),
+      ),
+    );
+
+  revalidatePath(`/${parsed.data.workspaceId}/tasks`);
   return { ok: true };
 }
 

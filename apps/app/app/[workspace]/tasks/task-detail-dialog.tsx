@@ -40,6 +40,7 @@ import {
   type CommentView,
 } from './comments-actions';
 import { updateTaskAction } from './actions';
+import { SubtaskList } from './subtask-list';
 import type { MemberOption, TaskRowModel } from './task-row';
 
 const UNASSIGNED = '__unassigned__';
@@ -394,6 +395,8 @@ export function TaskDetailDialog({
             </DialogFooter>
           </section>
         )}
+
+        <SubtaskList workspaceId={workspaceId} parentTaskId={task.id} />
 
         <section className="space-y-3">
           <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

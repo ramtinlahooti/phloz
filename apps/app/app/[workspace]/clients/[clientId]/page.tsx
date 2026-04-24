@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull } from 'drizzle-orm';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -65,6 +65,7 @@ export default async function ClientDetailPage({
     clientAssets,
     clientContactRows,
     memberRows,
+    subtaskRollupRows,
   ] = await Promise.all([
       db
         .select()
@@ -84,6 +85,8 @@ export default async function ClientDetailPage({
           and(
             eq(schema.tasks.workspaceId, workspaceId),
             eq(schema.tasks.clientId, clientId),
+            // Subtasks only appear inside their parent's detail dialog.
+            isNull(schema.tasks.parentTaskId),
           ),
         )
         .orderBy(desc(schema.tasks.priority), asc(schema.tasks.dueDate)),
@@ -150,6 +153,21 @@ export default async function ClientDetailPage({
         })
         .from(schema.workspaceMembers)
         .where(eq(schema.workspaceMembers.workspaceId, workspaceId)),
+      // Subtasks under this client's tasks — aggregated in JS to a
+      // per-parent progress pill on each row.
+      db
+        .select({
+          parentTaskId: schema.tasks.parentTaskId,
+          status: schema.tasks.status,
+        })
+        .from(schema.tasks)
+        .where(
+          and(
+            eq(schema.tasks.workspaceId, workspaceId),
+            eq(schema.tasks.clientId, clientId),
+            isNotNull(schema.tasks.parentTaskId),
+          ),
+        ),
     ]);
 
   if (!client) notFound();
@@ -172,6 +190,15 @@ export default async function ClientDetailPage({
     });
   }
 
+  const subtaskStats = new Map<string, { total: number; done: number }>();
+  for (const row of subtaskRollupRows) {
+    if (!row.parentTaskId) continue;
+    const stats = subtaskStats.get(row.parentTaskId) ?? { total: 0, done: 0 };
+    stats.total += 1;
+    if (row.status === 'done') stats.done += 1;
+    subtaskStats.set(row.parentTaskId, stats);
+  }
+
   const tasksAsRows: TaskRowModel[] = clientTasks.map((t) => {
     const assignee = t.assigneeId ? assigneeDetails.get(t.assigneeId) : null;
     return {
@@ -188,6 +215,7 @@ export default async function ClientDetailPage({
       assigneeMembershipId: t.assigneeId,
       assigneeLabel: assignee?.label ?? null,
       assigneeIsSelf: assignee?.isSelf ?? false,
+      subtaskStats: subtaskStats.get(t.id),
     };
   });
 

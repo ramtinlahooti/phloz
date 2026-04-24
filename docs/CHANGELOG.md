@@ -4,6 +4,74 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Task subtasks (checklist inside the detail dialog)
+
+The `tasks.parent_task_id` column has been in the schema since day
+one (ARCHITECTURE.md §5.1), but the UI never exposed it. Shipped:
+task rows can now have a checklist of subtasks, with one-level
+nesting enforced server-side.
+
+### Server
+
+- **`createTaskAction`** extended with `parentTaskId?: string`. When
+  set:
+  - Fetches the parent row (same workspace, belt-and-braces against
+    cross-tenant trickery).
+  - Rejects if the parent itself has a parent — one level only.
+  - Inherits `client_id` from the parent, ignoring whatever the
+    caller passed.
+- **`listSubtasksAction({ workspaceId, parentTaskId })`** — new.
+  Returns `{ id, title, status }` sorted by createdAt. Viewers
+  can read.
+- **`toggleSubtaskAction({ workspaceId, subtaskId, done })`** —
+  new. Single-purpose status flip (todo ↔ done). Separate from
+  `updateTaskAction` to avoid analytics chaining / approval-state
+  side effects for the high-frequency checkbox interaction.
+- Parent-task `ON DELETE CASCADE` on `parent_task_id` means
+  deleting a parent also deletes its subtasks.
+
+### Top-level queries filtered
+
+Every query that lists tasks at the top level now adds
+`parent_task_id IS NULL`:
+- Workspace `/tasks` page
+- Client detail page tasks tab
+- Portal page (clients never see subtasks)
+- CSV export route
+- Dashboard: openTaskCount, recentTasks, recentApprovals,
+  overdueTasks, dueThisWeekTasks, pendingApprovalTasks,
+  overdueTaskClientRows
+- Clients list: overdue count for the health scorer
+
+Otherwise a task with 5 subtasks would count as 6 open items.
+
+### UI
+
+- **`SubtaskList`** (new) — client component rendered in
+  `TaskDetailDialog` above the comments section. Lazy-loads on
+  first render, optimistic checkbox flips, inline "Add subtask"
+  form, per-row delete icon on hover.
+- **Progress pill on `TaskRow`** — when a task has subtasks, the
+  row shows `2/5` (checklist icon + done/total). Turns green
+  when all done. Hidden when a task has no subtasks.
+- `TaskRowModel` extended with `subtaskStats?: { total, done }`.
+  Both pages that build rows (`/tasks`, `/clients/[id]`) now
+  fetch a parent_task_id rollup and attach stats per parent.
+
+### Intentional scope
+
+- Subtasks don't have their own priority / department / due date /
+  assignee / visibility / approval state in the UI — they're
+  checklist items, not mini-tasks. The underlying columns still
+  exist (subtasks inherit the `tasks` table).
+- Subtasks are excluded from the CSV export. If someone needs a
+  flat report, follow-up.
+- No reordering of subtasks yet. Add DnD when a user asks.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — "Clients needing attention" card on the dashboard
 
 Makes the client-health scoring I shipped earlier discoverable on

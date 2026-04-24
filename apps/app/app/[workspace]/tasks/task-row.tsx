@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertCircle, CheckCircle2, Circle, CircleDashed, Clock } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Circle, CircleDashed, Clock, ListTodo } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
@@ -53,6 +53,11 @@ export type TaskRowModel = {
   /** `true` when the assignee is the current viewer. Used to render a
    *  primary-tinted pill rather than a neutral avatar. */
   assigneeIsSelf: boolean;
+  /**
+   * Subtask rollup. `undefined` / `total === 0` means no subtasks — the
+   * pill doesn't render. Aggregated server-side by the page builder.
+   */
+  subtaskStats?: { total: number; done: number };
 };
 
 /** Lightweight member option for assignee pickers. Built in the server
@@ -274,6 +279,22 @@ export function TaskRow({
               <span className="inline-flex items-center gap-1">
                 <Clock className="size-3" />
                 {task.dueDate.toLocaleDateString()}
+              </span>
+            </>
+          )}
+          {task.subtaskStats && task.subtaskStats.total > 0 && (
+            <>
+              <span>·</span>
+              <span
+                className={`inline-flex items-center gap-1 ${
+                  task.subtaskStats.done === task.subtaskStats.total
+                    ? 'text-[var(--color-health-working)]'
+                    : ''
+                }`}
+                title={`${task.subtaskStats.done} of ${task.subtaskStats.total} subtasks done`}
+              >
+                <ListTodo className="size-3" />
+                {task.subtaskStats.done}/{task.subtaskStats.total}
               </span>
             </>
           )}

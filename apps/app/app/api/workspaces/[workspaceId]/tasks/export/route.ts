@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { requireRole } from '@phloz/auth/roles';
@@ -62,7 +62,14 @@ export async function GET(
     db
       .select()
       .from(schema.tasks)
-      .where(eq(schema.tasks.workspaceId, workspaceId)),
+      .where(
+        and(
+          eq(schema.tasks.workspaceId, workspaceId),
+          // Subtasks are checklist items under their parent — they
+          // shouldn't show up as separate rows in the export.
+          isNull(schema.tasks.parentTaskId),
+        ),
+      ),
     db
       .select({ id: schema.clients.id, name: schema.clients.name })
       .from(schema.clients)

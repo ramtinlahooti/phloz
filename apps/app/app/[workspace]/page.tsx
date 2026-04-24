@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, inArray, isNotNull, lt, lte, not } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, not } from 'drizzle-orm';
 import {
   AlertTriangle,
   ArrowRight,
@@ -108,6 +108,10 @@ export default async function WorkspaceOverviewPage({
         and(
           eq(schema.tasks.workspaceId, workspaceId),
           inArray(schema.tasks.status, ['todo', 'in_progress', 'blocked']),
+          // Exclude subtasks — a task with 5 subtasks shouldn't count
+          // as 6 open items. Same rule applies to every top-level
+          // task query in this file.
+          isNull(schema.tasks.parentTaskId),
         ),
       )
       .then((rows) => rows[0]?.c ?? 0),
@@ -126,7 +130,12 @@ export default async function WorkspaceOverviewPage({
         clientId: schema.tasks.clientId,
       })
       .from(schema.tasks)
-      .where(eq(schema.tasks.workspaceId, workspaceId))
+      .where(
+        and(
+          eq(schema.tasks.workspaceId, workspaceId),
+          isNull(schema.tasks.parentTaskId),
+        ),
+      )
       .orderBy(desc(schema.tasks.updatedAt))
       .limit(FEED_LIMIT),
     db
@@ -172,6 +181,7 @@ export default async function WorkspaceOverviewPage({
             'rejected',
             'needs_changes',
           ]),
+          isNull(schema.tasks.parentTaskId),
         ),
       )
       .orderBy(desc(schema.tasks.approvalUpdatedAt))
@@ -202,6 +212,7 @@ export default async function WorkspaceOverviewPage({
           inArray(schema.tasks.status, ['todo', 'in_progress', 'blocked']),
           isNotNull(schema.tasks.dueDate),
           lt(schema.tasks.dueDate, now),
+          isNull(schema.tasks.parentTaskId),
         ),
       )
       .orderBy(schema.tasks.dueDate)
@@ -222,6 +233,7 @@ export default async function WorkspaceOverviewPage({
           isNotNull(schema.tasks.dueDate),
           gte(schema.tasks.dueDate, now),
           lte(schema.tasks.dueDate, weekFromNow),
+          isNull(schema.tasks.parentTaskId),
         ),
       )
       .orderBy(schema.tasks.dueDate)
@@ -239,6 +251,7 @@ export default async function WorkspaceOverviewPage({
         and(
           eq(schema.tasks.workspaceId, workspaceId),
           eq(schema.tasks.approvalState, 'pending'),
+          isNull(schema.tasks.parentTaskId),
         ),
       )
       .orderBy(desc(schema.tasks.approvalUpdatedAt))
@@ -311,6 +324,7 @@ export default async function WorkspaceOverviewPage({
           inArray(schema.tasks.status, ['todo', 'in_progress', 'blocked']),
           isNotNull(schema.tasks.dueDate),
           lt(schema.tasks.dueDate, now),
+          isNull(schema.tasks.parentTaskId),
         ),
       ),
     // Tracking-node health rollup per client.

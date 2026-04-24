@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull } from 'drizzle-orm';
 import Link from 'next/link';
 
 import { requireUser } from '@phloz/auth/session';
@@ -90,12 +90,19 @@ export default async function TasksPage({
   const db = getDb();
   const user = await requireUser();
 
-  const [taskRows, clientRows, memberRows] =
+  const [taskRows, clientRows, memberRows, subtaskRollupRows] =
     await Promise.all([
       db
         .select()
         .from(schema.tasks)
-        .where(eq(schema.tasks.workspaceId, workspaceId)),
+        .where(
+          and(
+            eq(schema.tasks.workspaceId, workspaceId),
+            // Subtasks live under their parent's detail dialog — they
+            // shouldn't clutter the main task list.
+            isNull(schema.tasks.parentTaskId),
+          ),
+        ),
       db
         .select({ id: schema.clients.id, name: schema.clients.name })
         .from(schema.clients)
@@ -111,7 +118,32 @@ export default async function TasksPage({
         })
         .from(schema.workspaceMembers)
         .where(eq(schema.workspaceMembers.workspaceId, workspaceId)),
+      // Subtask rollup per parent: one row per subtask with its parent
+      // id + status, aggregated in JS. Small volumes at launch; swap
+      // to a GROUP BY when a workspace has thousands of subtasks.
+      db
+        .select({
+          parentTaskId: schema.tasks.parentTaskId,
+          status: schema.tasks.status,
+        })
+        .from(schema.tasks)
+        .where(
+          and(
+            eq(schema.tasks.workspaceId, workspaceId),
+            isNotNull(schema.tasks.parentTaskId),
+          ),
+        ),
     ]);
+
+  // Aggregate subtask totals per parent.
+  const subtaskStats = new Map<string, { total: number; done: number }>();
+  for (const row of subtaskRollupRows) {
+    if (!row.parentTaskId) continue;
+    const stats = subtaskStats.get(row.parentTaskId) ?? { total: 0, done: 0 };
+    stats.total += 1;
+    if (row.status === 'done') stats.done += 1;
+    subtaskStats.set(row.parentTaskId, stats);
+  }
 
   // Current user's membership — used by the "Mine" quick-filter pill.
   // Previously this was a separate query that fetched the *first*
@@ -195,6 +227,7 @@ export default async function TasksPage({
 
   for (const t of filtered) {
     const assignee = t.assigneeId ? assigneeDetails.get(t.assigneeId) : null;
+    const stats = subtaskStats.get(t.id);
     byStatus[t.status].push({
       id: t.id,
       title: t.title,
@@ -209,6 +242,7 @@ export default async function TasksPage({
       assigneeMembershipId: t.assigneeId,
       assigneeLabel: assignee?.label ?? null,
       assigneeIsSelf: assignee?.isSelf ?? false,
+      subtaskStats: stats,
     });
   }
 
