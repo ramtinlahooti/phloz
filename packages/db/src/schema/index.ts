@@ -20,6 +20,7 @@ export * from './portal-magic-links';
 export * from './invitations';
 export * from './audit-log';
 export * from './billing-events';
+export * from './newsletter-subscribers';
 
 // --- V2 tables (scaffolded stubs; see ARCHITECTURE.md §5.4) ---
 export * from './ad-platform-accounts';

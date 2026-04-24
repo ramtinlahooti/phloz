@@ -129,13 +129,15 @@ product out substantially.
 - **Tests** — only the package-level ones ship. No Playwright
   smoke tests for the actual app flows. Add when there's a second
   developer.
-- **Analytics tracking wiring** — ✅ complete across auth,
-  workspace, team, clients, tasks, tracking map, messages,
-  billing/Stripe webhook, portal, marketing site, and all edit
-  paths. Remaining catalog entries: `newsletter_signup` (no form
-  exists yet; wire when it lands) and `page_view` (handled by
-  GA4's automatic config tag + PostHog's `$pageview` capture).
+- **Analytics tracking wiring** — ✅ complete. Every event in
+  ARCHITECTURE.md §11.2 is wired. `page_view` is handled by GA4's
+  automatic config tag + PostHog's `$pageview` capture (not a
+  manual event).
 - **Ownership transfer** — ✅ shipped 2026-04-24.
+- **Newsletter signup** — ✅ shipped 2026-04-24 (homepage +
+  blog post footer). ⚠ Apply migration
+  `packages/db/migrations/0002_glamorous_susan_delgado.sql` in
+  Supabase before the endpoint works.
 - **Name resolution for teammates** — ✅ shipped 2026-04-24.
 - **Task assignee picker** — ✅ shipped 2026-04-24.
 - **Email change sync to `workspace_members.email`** — users

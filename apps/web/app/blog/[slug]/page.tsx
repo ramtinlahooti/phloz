@@ -6,6 +6,7 @@ import rehypeSlug from 'rehype-slug';
 import remarkGfm from 'remark-gfm';
 
 import { TrackOnMount } from '@/components/analytics/track-on-mount';
+import { NewsletterForm } from '@/components/newsletter-form';
 import { getAllPosts, getPostBySlug } from '@/lib/blog';
 import { buildMetadata } from '@/lib/metadata';
 import { SITE_CONFIG } from '@/lib/site-config';
@@ -116,6 +117,19 @@ export default async function BlogPostPage({
           }}
         />
       </div>
+
+      <aside className="mt-16 rounded-xl border border-border/60 bg-card/30 p-6 sm:p-8">
+        <h2 className="text-lg font-semibold text-foreground">
+          More like this?
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Short, practical essays on agency ops + tracking infrastructure.
+          Two a month.
+        </p>
+        <div className="mt-4">
+          <NewsletterForm source={`blog_${post.category}`} />
+        </div>
+      </aside>
     </article>
   );
 }

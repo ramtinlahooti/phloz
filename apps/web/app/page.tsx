@@ -1,6 +1,7 @@
 import { Badge, buttonVariants } from '@phloz/ui';
 
 import { TrackedCtaLink } from '@/components/analytics/tracked-cta-link';
+import { NewsletterForm } from '@/components/newsletter-form';
 import { buildMetadata, softwareApplicationJsonLd } from '@/lib/metadata';
 import { SITE_CONFIG } from '@/lib/site-config';
 
@@ -153,6 +154,25 @@ export default function HomePage() {
             >
               View pricing →
             </TrackedCtaLink>
+          </div>
+        </div>
+      </section>
+
+      {/* Newsletter */}
+      <section className="border-t border-border/60">
+        <div className="mx-auto max-w-2xl px-4 py-16 text-center sm:px-6 lg:px-8">
+          <h2 className="text-xl font-semibold tracking-tight text-foreground">
+            Agency operations, twice a month.
+          </h2>
+          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+            Short, practical essays on tracking infrastructure, client
+            operations, and what's changing in paid media. No spam.
+          </p>
+          <div className="mx-auto mt-6 max-w-md">
+            <NewsletterForm
+              source="homepage_bottom"
+              submitLabel="Subscribe"
+            />
           </div>
         </div>
       </section>
