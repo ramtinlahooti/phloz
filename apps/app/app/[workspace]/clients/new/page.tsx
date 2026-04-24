@@ -1,7 +1,12 @@
 import Link from 'next/link';
 
 import { canAddClient } from '@phloz/billing';
-import { buttonVariants, Card, CardContent } from '@phloz/ui';
+import {
+  Breadcrumbs,
+  buttonVariants,
+  Card,
+  CardContent,
+} from '@phloz/ui';
 
 import { buildAppMetadata } from '@/lib/metadata';
 
@@ -21,14 +26,13 @@ export default async function NewClientPage({
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-10">
-      <nav className="mb-6 text-sm">
-        <Link
-          href={`/${workspaceId}/clients`}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          ← Clients
-        </Link>
-      </nav>
+      <Breadcrumbs
+        className="mb-6"
+        items={[
+          { label: 'Clients', href: `/${workspaceId}/clients` },
+          { label: 'Add client' },
+        ]}
+      />
 
       <header className="mb-6">
         <h1 className="text-3xl font-semibold tracking-tight">Add a client</h1>

@@ -1,9 +1,9 @@
 import { and, asc, eq } from 'drizzle-orm';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { getDb, schema } from '@phloz/db/client';
 import type { TrackingMapSnapshot } from '@phloz/tracking-map';
+import { Breadcrumbs } from '@phloz/ui';
 
 import { buildAppMetadata } from '@/lib/metadata';
 
@@ -86,14 +86,16 @@ export default async function ClientMapPage({
     <div className="flex h-[calc(100vh-56px)] flex-col">
       <header className="flex items-center justify-between border-b border-border/60 bg-card/30 px-6 py-3">
         <div className="min-w-0">
-          <nav className="text-xs">
-            <Link
-              href={`/${workspaceId}/clients/${clientId}`}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              ← {client.name}
-            </Link>
-          </nav>
+          <Breadcrumbs
+            items={[
+              { label: 'Clients', href: `/${workspaceId}/clients` },
+              {
+                label: client.name,
+                href: `/${workspaceId}/clients/${clientId}`,
+              },
+              { label: 'Tracking map' },
+            ]}
+          />
           <h1 className="mt-0.5 truncate text-lg font-semibold tracking-tight">
             Tracking map
           </h1>

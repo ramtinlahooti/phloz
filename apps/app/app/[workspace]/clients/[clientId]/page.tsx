@@ -14,6 +14,7 @@ import type {
 import { getDb, schema } from '@phloz/db/client';
 import {
   Badge,
+  Breadcrumbs,
   Card,
   CardContent,
   CardHeader,
@@ -154,14 +155,13 @@ export default async function ClientDetailPage({
   return (
     <div className="flex h-full flex-col">
       <header className="border-b border-border/60 bg-card/30 px-6 py-5">
-        <nav className="mb-2 text-xs">
-          <Link
-            href={`/${workspaceId}/clients`}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            ← Clients
-          </Link>
-        </nav>
+        <Breadcrumbs
+          className="mb-2"
+          items={[
+            { label: 'Clients', href: `/${workspaceId}/clients` },
+            { label: client.name },
+          ]}
+        />
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
