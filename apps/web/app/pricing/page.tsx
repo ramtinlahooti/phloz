@@ -1,10 +1,10 @@
-import Link from 'next/link';
-
 import { annualMonthlyEquivalent, publicTiers, type TierConfig } from '@phloz/billing';
 import { Badge, buttonVariants } from '@phloz/ui';
 
 import { buildMetadata } from '@/lib/metadata';
 import { SITE_CONFIG } from '@/lib/site-config';
+
+import { PricingTierCta } from './tier-cta';
 
 export const metadata = buildMetadata({
   title: 'Pricing',
@@ -122,7 +122,8 @@ export default function PricingPage() {
                 {tier.name === 'enterprise' && <li>Custom SSO + SLA</li>}
               </ul>
 
-              <Link
+              <PricingTierCta
+                tier={tier.name}
                 href={
                   tier.name === 'enterprise'
                     ? '/contact'
@@ -132,13 +133,14 @@ export default function PricingPage() {
                   variant: isFeatured ? 'default' : 'outline',
                   size: 'md',
                 })} mt-8 w-full`}
-              >
-                {tier.name === 'starter'
-                  ? 'Start free'
-                  : tier.name === 'enterprise'
-                    ? 'Contact sales'
-                    : 'Start free trial'}
-              </Link>
+                label={
+                  tier.name === 'starter'
+                    ? 'Start free'
+                    : tier.name === 'enterprise'
+                      ? 'Contact sales'
+                      : 'Start free trial'
+                }
+              />
             </article>
           );
         })}

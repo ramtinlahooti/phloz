@@ -129,15 +129,13 @@ product out substantially.
 - **Tests** — only the package-level ones ship. No Playwright
   smoke tests for the actual app flows. Add when there's a second
   developer.
-- **Analytics tracking wiring** — ✅ product-surface shipped
-  2026-04-24 (auth, workspace, team, clients, tasks, tracking
-  map, messages, billing checkout, Stripe webhook). Still to
-  do: `client_updated` + `workspace_settings_updated` (many
+- **Analytics tracking wiring** — ✅ product + marketing shipped
+  2026-04-24. All events from ARCHITECTURE.md §11.2 that have a
+  natural home today are wired. Still to do:
+  `client_updated` + `workspace_settings_updated` (many scattered
   edit paths), portal events (`portal_accessed` /
-  `portal_link_sent` / `message_received`), and **marketing
-  site events** on `apps/web` (`cta_click`,
-  `pricing_page_view_tier`, `blog_post_view`,
-  `newsletter_signup`, `compare_page_view`, `page_view`).
+  `portal_link_sent` / `message_received` — need care around
+  portal identity), `newsletter_signup` (no form exists yet).
 - **Ownership transfer** — ✅ shipped 2026-04-24.
 - **Name resolution for teammates** — ✅ shipped 2026-04-24.
 - **Task assignee picker** — ✅ shipped 2026-04-24.

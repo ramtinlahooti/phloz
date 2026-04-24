@@ -4,6 +4,88 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Marketing site analytics + @phloz/analytics server split
+
+### @phloz/analytics server/client split (Vercel build fix)
+
+Commit `0aeb3d0` broke the Vercel build with Turbopack error
+`"the chunking context (unknown) does not support external modules
+(request: node:fs)"`. Root cause: the main `@phloz/analytics`
+barrel re-exported server-only helpers that statically imported
+`posthog-node` → `node:fs`. A client component doing
+`import { track } from '@phloz/analytics'` pulled the whole module
+graph, Node built-ins included.
+
+Two fixes:
+1. `track.ts` now lazy-loads server modules via `await import()`
+   inside the `!isBrowser()` branch. Client bundles never include
+   `posthog-node`.
+2. The main barrel is now **client-safe only**. Server helpers
+   (`hashAuthUidServer`, `captureServer`, `sendGa4ServerEvent`,
+   `isPostHogServerConfigured`, `isGa4ServerConfigured`,
+   `shutdownPostHogServer`) moved to a new
+   `@phloz/analytics/server` subpath. Callers that need them
+   (`apps/app/lib/analytics.ts`, `apps/app/app/onboarding/actions.ts`)
+   updated.
+
+Local `pnpm --filter @phloz/app build` now succeeds end-to-end. Shipped
+in `3f4bd29`.
+
+### Marketing site analytics (apps/web)
+
+All five marketing events from ARCHITECTURE.md §11.2 wired up.
+
+- **`TrackOnMount`** (`apps/web/components/analytics/track-on-mount.tsx`).
+  Client component. Fires a single `track()` call when it mounts;
+  double-fire guarded via a ref sentinel (survives React Strict
+  Mode). Used on server-rendered pages that want to emit a
+  one-shot view event.
+- **`TrackedCtaLink`** (`apps/web/components/analytics/tracked-cta-link.tsx`).
+  Drop-in replacement for `next/link` `<Link>`. Fires `cta_click`
+  with `{cta_location, cta_label, destination}` then lets the
+  native navigation proceed. Keeps the event taxonomy consistent
+  across the site.
+
+**Events wired:**
+
+- `blog_post_view` — `apps/web/app/blog/[slug]/page.tsx` mounts
+  `TrackOnMount` with `{post_slug, post_category}`.
+- `compare_page_view` — `apps/web/app/compare/[competitor]/page.tsx`
+  mounts `TrackOnMount` with `{competitor}`. Bottom CTA
+  ("Try Phloz free") also swapped to `TrackedCtaLink` with
+  per-competitor location label.
+- `pricing_page_view_tier` + `cta_click` — new
+  `apps/web/app/pricing/tier-cta.tsx` client component. On click
+  it fires `pricing_page_view_tier` with the tier slug plus
+  `cta_click` with a tier-specific label. We fire on click (not
+  mount) because mounting the pricing page would emit N events
+  per pageview which is noise; click = real engagement.
+- `cta_click` (homepage hero × 2) — "Start free — no credit card"
+  and "See every feature", location `homepage_hero`.
+- `cta_click` (homepage bottom × 2) — "Start your free trial"
+  and "View pricing →", location `homepage_bottom`.
+- `cta_click` (site header × 2) — "Sign in" and "Start free",
+  location `site_header`. Appears on every marketing page.
+- `cta_click` (compare bottom) — "Try Phloz free", location
+  `compare_{competitor}_bottom`.
+
+**Not wired (newsletter_signup):** no newsletter form exists yet.
+Deferred until there's a form to instrument.
+
+### Files touched
+
+- `packages/analytics/src/{index,track,server}.ts` + `package.json`
+- `apps/app/lib/analytics.ts`, `apps/app/app/onboarding/actions.ts`
+- `apps/web/components/analytics/{track-on-mount,tracked-cta-link}.tsx` (new)
+- `apps/web/app/pricing/tier-cta.tsx` (new)
+- `apps/web/app/{page,blog/[slug]/page,compare/[competitor]/page,pricing/page}.tsx`
+- `apps/web/components/site-header.tsx`
+
+`pnpm check` 29/29 green. `pnpm --filter @phloz/app build` +
+`pnpm --filter @phloz/web build` both clean locally.
+
+---
+
 ## 2026-04-24 — Billing + map analytics + ownership transfer
 
 ### Stripe webhook analytics

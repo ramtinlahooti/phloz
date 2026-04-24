@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { buttonVariants } from '@phloz/ui';
 
+import { TrackedCtaLink } from '@/components/analytics/tracked-cta-link';
 import { PRIMARY_NAV, SITE_CONFIG } from '@/lib/site-config';
 
 /**
@@ -33,18 +34,22 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <Link
+          <TrackedCtaLink
             href={`${SITE_CONFIG.appUrl}/login`}
             className="hidden text-sm text-muted-foreground transition-colors hover:text-foreground sm:inline-block"
+            ctaLocation="site_header"
+            ctaLabel="signin"
           >
             Sign in
-          </Link>
-          <Link
+          </TrackedCtaLink>
+          <TrackedCtaLink
             href={`${SITE_CONFIG.appUrl}/signup`}
             className={buttonVariants({ size: 'sm' })}
+            ctaLocation="site_header"
+            ctaLabel="signup"
           >
             Start free
-          </Link>
+          </TrackedCtaLink>
         </div>
       </div>
     </header>

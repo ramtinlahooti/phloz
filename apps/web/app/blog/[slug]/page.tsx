@@ -5,6 +5,7 @@ import rehypeAutolinkHeadings from 'rehype-autolink-headings';
 import rehypeSlug from 'rehype-slug';
 import remarkGfm from 'remark-gfm';
 
+import { TrackOnMount } from '@/components/analytics/track-on-mount';
 import { getAllPosts, getPostBySlug } from '@/lib/blog';
 import { buildMetadata } from '@/lib/metadata';
 import { SITE_CONFIG } from '@/lib/site-config';
@@ -63,6 +64,10 @@ export default async function BlogPostPage({
 
   return (
     <article className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+      <TrackOnMount
+        event="blog_post_view"
+        params={{ post_slug: post.slug, post_category: post.category }}
+      />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}

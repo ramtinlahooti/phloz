@@ -1,8 +1,9 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { buttonVariants } from '@phloz/ui';
 
+import { TrackOnMount } from '@/components/analytics/track-on-mount';
+import { TrackedCtaLink } from '@/components/analytics/tracked-cta-link';
 import { buildMetadata } from '@/lib/metadata';
 import { COMPETITORS, SITE_CONFIG, type CompetitorSlug } from '@/lib/site-config';
 
@@ -137,6 +138,10 @@ export default async function ComparePage({
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+      <TrackOnMount
+        event="compare_page_view"
+        params={{ competitor: match.slug }}
+      />
       <header className="mb-12">
         <p className="text-sm font-semibold uppercase tracking-wide text-primary">
           Compare
@@ -178,12 +183,14 @@ export default async function ComparePage({
       </section>
 
       <div className="mt-16 text-center">
-        <Link
+        <TrackedCtaLink
           href={`${SITE_CONFIG.appUrl}/signup`}
           className={buttonVariants({ size: 'lg' })}
+          ctaLocation={`compare_${match.slug}_bottom`}
+          ctaLabel="try_phloz_free"
         >
           Try Phloz free
-        </Link>
+        </TrackedCtaLink>
         <p className="mt-3 text-xs text-muted-foreground">
           14 days free · No credit card · Starter tier free forever
         </p>

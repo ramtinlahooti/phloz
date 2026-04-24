@@ -1,7 +1,6 @@
-import Link from 'next/link';
-
 import { Badge, buttonVariants } from '@phloz/ui';
 
+import { TrackedCtaLink } from '@/components/analytics/tracked-cta-link';
 import { buildMetadata, softwareApplicationJsonLd } from '@/lib/metadata';
 import { SITE_CONFIG } from '@/lib/site-config';
 
@@ -72,18 +71,22 @@ export default function HomePage() {
               active clients, not per seat.
             </p>
             <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Link
+              <TrackedCtaLink
                 href={`${SITE_CONFIG.appUrl}/signup`}
                 className={buttonVariants({ size: 'lg' })}
+                ctaLocation="homepage_hero"
+                ctaLabel="start_free_no_cc"
               >
                 Start free — no credit card
-              </Link>
-              <Link
+              </TrackedCtaLink>
+              <TrackedCtaLink
                 href="/features"
                 className={buttonVariants({ variant: 'outline', size: 'lg' })}
+                ctaLocation="homepage_hero"
+                ctaLabel="see_every_feature"
               >
                 See every feature
-              </Link>
+              </TrackedCtaLink>
             </div>
             <ul className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
               {SOCIAL_PROOF_POINTS.map((p) => (
@@ -134,18 +137,22 @@ export default function HomePage() {
             your existing tools — we integrate with the ones that matter.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link
+            <TrackedCtaLink
               href={`${SITE_CONFIG.appUrl}/signup`}
               className={buttonVariants({ size: 'lg' })}
+              ctaLocation="homepage_bottom"
+              ctaLabel="start_free_trial"
             >
               Start your free trial
-            </Link>
-            <Link
+            </TrackedCtaLink>
+            <TrackedCtaLink
               href="/pricing"
               className={buttonVariants({ variant: 'ghost', size: 'lg' })}
+              ctaLocation="homepage_bottom"
+              ctaLabel="view_pricing"
             >
               View pricing →
-            </Link>
+            </TrackedCtaLink>
           </div>
         </div>
       </section>
