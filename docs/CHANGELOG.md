@@ -4,6 +4,46 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Contacts + portal link generator + archive
+
+### Contacts tab on the client detail page
+
+Previously `client_contacts` and `portal_magic_links` had schema +
+helpers but no UI — which is why `portal_magic_links` stayed empty
+in normal use. New **Contacts** tab closes that gap.
+
+- Server actions (`contacts/actions.ts`):
+  - `createContactAction`, `togglePortalAccessAction`,
+    `deleteContactAction` — role-gated, Zod-validated.
+  - `generatePortalLinkAction` — calls `generatePortalMagicLink()`,
+    builds the full `/portal/<token>` URL. With `sendEmail=true` +
+    a contact email, also calls `sendPortalMagicLink` via Resend.
+    Graceful fallback: if Resend isn't configured (dev), still
+    returns the URL so the agency can copy + paste.
+- `ContactsPanel` client component — new-contact dialog (name,
+  email, phone, role, portal-access toggle). Per-row actions:
+  Grant/Revoke portal access, Email link, Copy link, Remove.
+- Client detail page loads contacts alongside other tab data;
+  "Contacts" tab trigger sits between Overview and Tasks.
+
+### Archive / unarchive clients
+
+- `archiveClientAction` — flips `archivedAt` to now + optional
+  reason; revalidates list + detail + overview.
+- `unarchiveClientAction` — delegates to
+  `@phloz/billing.canUnarchiveClient` which enforces the tier cap
+  and the unarchive throttle.
+- `ArchiveButton` — dialog with optional-reason input when
+  archiving, direct action when unarchiving. Mounted in the client
+  detail header next to the Archived badge.
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `next build` (`apps/app`) — compiles cleanly.
+
+---
+
 ## 2026-04-23 — Proxy fix + reply-from-portal + client status
 
 ### Proxy runtime fix
