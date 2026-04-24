@@ -19,6 +19,7 @@ export * from './inbound-email-addresses';
 export * from './portal-magic-links';
 export * from './invitations';
 export * from './audit-log';
+export * from './audit-suppressions';
 export * from './billing-events';
 export * from './newsletter-subscribers';
 

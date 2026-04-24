@@ -26,6 +26,7 @@ export const RLS_FILES = [
   'portal-magic-links.sql',
   'invitations.sql',
   'audit-log.sql',
+  'audit-suppressions.sql',
   'billing-events.sql',
   '_v2-tables.sql',
 ] as const;
@@ -51,6 +52,7 @@ export const TENANT_TABLES = [
   'portal_magic_links',
   'invitations',
   'audit_log',
+  'audit_suppressions',
   'billing_events',
   'ad_platform_accounts',
   'ad_campaigns',

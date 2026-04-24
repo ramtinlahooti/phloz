@@ -4,6 +4,55 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Audit rule suppression (per-client snooze)
+
+Without snooze the audit engine becomes annoying the moment a
+client has a legitimate exception ("we don't use Meta CAPI here").
+Shipped per-client suppression so the engine stays useful.
+
+### Schema
+
+- `audit_suppressions` table — `(workspace_id, client_id, rule_id)`
+  unique, optional `reason`, `created_by`. RLS enabled with
+  workspace-scoped SELECT policy; writes go through server
+  actions (service-role bypass).
+- Migration `0003_wet_lake.sql` — includes the RLS enable +
+  policy inline, so applying the SQL is one paste.
+- `packages/db/src/rls/audit-suppressions.sql` mirrors the
+  inline migration for fresh databases via `db:apply-rls`.
+- Added to `TENANT_TABLES` so CI invariant check covers it.
+
+### Server actions
+
+- `suppressAuditFindingAction` — owner/admin/member only.
+  Validates `ruleId` against the engine's `AUDIT_RULE_IDS` enum.
+  Re-snoozing is silent (`onConflictDoNothing`).
+- `unsuppressAuditFindingAction` — accepts either `suppressionId`
+  or `clientId + ruleId` for caller ergonomics.
+
+### UI
+
+- Per-finding **"Snooze"** button on each audit finding. Triggers
+  a `window.prompt` for an optional reason (low-stakes action,
+  not worth a dialog), then revalidates.
+- **"Suppressed rules" footer section** with rule id + reason +
+  snoozed-date + "Un-snooze" link.
+- **All-clear-with-suppressions** state — when 0 active findings
+  but ≥ 1 suppressed, panel shows "All clear" + hint about the
+  list below.
+- Suppressed rules filter out **before** render, so the
+  Audit-tab badge count, the criticalCount, and the dashboard
+  rollup card all respect them automatically.
+
+### ⚠ Manual action
+
+Apply migration `packages/db/migrations/0003_wet_lake.sql` in
+Supabase SQL editor when ready. Includes RLS inline.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Seed starter tracking nodes (one-click kit)
 
 Turns a blank tracking map into a working demo in one click.

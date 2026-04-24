@@ -46,6 +46,10 @@ import {
   ContactsPanel,
   type ContactRow,
 } from './contacts/contacts-panel';
+import {
+  AuditSnoozeButton,
+  AuditUnsnoozeButton,
+} from './audit-snooze-button';
 import { FilesPanel, type AssetRow } from './files/files-panel';
 import { SeedStarterNodesButton } from './map/seed-starter-button';
 import { ApplyTemplateButton } from '../../tasks/apply-template-button';
@@ -103,6 +107,7 @@ export default async function ClientDetailPage({
     subtaskRollupRows,
     trackingNodeRows,
     trackingEdgeRows,
+    auditSuppressionRows,
   ] = await Promise.all([
       db
         .select()
@@ -227,6 +232,18 @@ export default async function ClientDetailPage({
           and(
             eq(schema.trackingEdges.workspaceId, workspaceId),
             eq(schema.trackingEdges.clientId, clientId),
+          ),
+        ),
+      // Audit suppressions for this client — filtered out before
+      // rendering, and listed at the bottom of the Audit tab so
+      // users can un-snooze.
+      db
+        .select()
+        .from(schema.auditSuppressions)
+        .where(
+          and(
+            eq(schema.auditSuppressions.workspaceId, workspaceId),
+            eq(schema.auditSuppressions.clientId, clientId),
           ),
         ),
     ]);
@@ -411,10 +428,19 @@ export default async function ClientDetailPage({
     label: e.label,
     metadata: (e.metadata as Record<string, unknown>) ?? {},
   }));
-  const auditFindings: Finding[] = auditMap({
+  // Run the audit, then drop any finding whose ruleId has been
+  // suppressed for this client. Suppressed-rules section below the
+  // findings lets the user un-snooze.
+  const suppressedRuleIds = new Set(
+    auditSuppressionRows.map((s) => s.ruleId),
+  );
+  const allFindings: Finding[] = auditMap({
     nodes: auditNodeDtos,
     edges: auditEdgeDtos,
   });
+  const auditFindings: Finding[] = allFindings.filter(
+    (f) => !suppressedRuleIds.has(f.ruleId),
+  );
   const criticalCount = auditFindings.filter(
     (f) => f.severity === 'critical',
   ).length;
@@ -684,6 +710,12 @@ export default async function ClientDetailPage({
             <TabsContent value="audit" className="mt-6">
               <AuditPanel
                 findings={auditFindings}
+                suppressions={auditSuppressionRows.map((s) => ({
+                  id: s.id,
+                  ruleId: s.ruleId,
+                  reason: s.reason,
+                  createdAt: s.createdAt,
+                }))}
                 workspaceId={workspaceId}
                 clientId={clientId}
               />
@@ -747,19 +779,33 @@ export default async function ClientDetailPage({
   );
 }
 
+type SuppressionView = {
+  id: string;
+  ruleId: string;
+  reason: string | null;
+  createdAt: Date;
+};
+
 /** Renders the audit-engine findings as a triaged list. Critical
  *  first, then warning, then info. Empty state congratulates the
- *  user rather than showing a blank card. */
+ *  user rather than showing a blank card. Suppressed rules appear
+ *  in a separate footer section so users can un-snooze. */
 function AuditPanel({
   findings,
+  suppressions,
   workspaceId,
   clientId,
 }: {
   findings: Finding[];
+  suppressions: SuppressionView[];
   workspaceId: string;
   clientId: string;
 }) {
-  if (findings.length === 0) {
+  const criticals = findings.filter((f) => f.severity === 'critical');
+  const warnings = findings.filter((f) => f.severity === 'warning');
+  const infos = findings.filter((f) => f.severity === 'info');
+
+  if (findings.length === 0 && suppressions.length === 0) {
     return (
       <Card>
         <CardContent className="space-y-2 p-8 text-center">
@@ -776,9 +822,6 @@ function AuditPanel({
     );
   }
 
-  const criticals = findings.filter((f) => f.severity === 'critical');
-  const warnings = findings.filter((f) => f.severity === 'warning');
-  const infos = findings.filter((f) => f.severity === 'info');
   const summary = [
     criticals.length > 0 && `${criticals.length} critical`,
     warnings.length > 0 && `${warnings.length} warning${warnings.length === 1 ? '' : 's'}`,
@@ -789,9 +832,28 @@ function AuditPanel({
 
   return (
     <div className="space-y-6">
-      <p className="text-xs text-muted-foreground">
-        {findings.length} finding{findings.length === 1 ? '' : 's'} · {summary}
-      </p>
+      {findings.length > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {findings.length} active finding{findings.length === 1 ? '' : 's'} ·{' '}
+          {summary}
+          {suppressions.length > 0 && (
+            <> · {suppressions.length} suppressed</>
+          )}
+        </p>
+      ) : (
+        <Card>
+          <CardContent className="space-y-2 p-6 text-center">
+            <p className="text-sm font-medium text-[var(--color-health-working)]">
+              All clear.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {suppressions.length} suppressed rule
+              {suppressions.length === 1 ? '' : 's'} below — un-snooze any
+              to bring it back.
+            </p>
+          </CardContent>
+        </Card>
+      )}
       {criticals.length > 0 && (
         <FindingGroup
           title="Critical"
@@ -816,7 +878,53 @@ function AuditPanel({
           clientId={clientId}
         />
       )}
+      {suppressions.length > 0 && (
+        <SuppressedRulesSection
+          suppressions={suppressions}
+          workspaceId={workspaceId}
+        />
+      )}
     </div>
+  );
+}
+
+function SuppressedRulesSection({
+  suppressions,
+  workspaceId,
+}: {
+  suppressions: SuppressionView[];
+  workspaceId: string;
+}) {
+  return (
+    <section>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Suppressed rules
+      </h3>
+      <ul className="space-y-2">
+        {suppressions.map((s) => (
+          <li
+            key={s.id}
+            className="flex items-start justify-between gap-3 rounded-md border border-border/60 bg-card/30 p-3 text-xs"
+          >
+            <div className="min-w-0">
+              <p className="font-mono font-medium text-foreground/80">
+                {s.ruleId}
+              </p>
+              {s.reason && (
+                <p className="mt-1 text-muted-foreground">{s.reason}</p>
+              )}
+              <p className="mt-1 text-muted-foreground">
+                Snoozed {new Date(s.createdAt).toLocaleDateString()}
+              </p>
+            </div>
+            <AuditUnsnoozeButton
+              workspaceId={workspaceId}
+              suppressionId={s.id}
+            />
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -870,14 +978,21 @@ function FindingGroup({
                     </p>
                   )}
                 </div>
-                {f.nodeId && (
-                  <Link
-                    href={`/${workspaceId}/clients/${clientId}/map?node=${f.nodeId}`}
-                    className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    View node →
-                  </Link>
-                )}
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  {f.nodeId && (
+                    <Link
+                      href={`/${workspaceId}/clients/${clientId}/map?node=${f.nodeId}`}
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      View node →
+                    </Link>
+                  )}
+                  <AuditSnoozeButton
+                    workspaceId={workspaceId}
+                    clientId={clientId}
+                    ruleId={f.ruleId}
+                  />
+                </div>
               </div>
             </li>
           );
