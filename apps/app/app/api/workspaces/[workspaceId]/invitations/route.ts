@@ -7,7 +7,7 @@ import { sendInvitation } from '@phloz/email';
 import { canInviteMember } from '@phloz/billing';
 import { getDb, schema } from '@phloz/db/client';
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.phloz.com';
+import { getAppUrlFromRequest } from '@/lib/app-url';
 
 const bodySchema = z.object({
   email: z.string().email(),
@@ -77,7 +77,7 @@ export async function POST(
     inviterName,
     role: parsed.data.role,
     workspaceName: workspace?.name ?? 'your new workspace',
-    acceptUrl: `${APP_URL}/accept-invite?token=${token}`,
+    acceptUrl: `${getAppUrlFromRequest(request)}/accept-invite?token=${token}`,
   });
 
   return NextResponse.json({ ok: true }, { status: 201 });

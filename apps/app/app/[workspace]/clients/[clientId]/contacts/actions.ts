@@ -9,7 +9,8 @@ import { generatePortalMagicLink } from '@phloz/auth/portal';
 import { getDb, schema } from '@phloz/db/client';
 import { sendPortalMagicLink } from '@phloz/email';
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3001';
+import { getAppUrl } from '@/lib/app-url';
+
 const uuid = z.string().uuid();
 
 // --- create contact ----------------------------------------------------
@@ -163,7 +164,8 @@ export async function generatePortalLinkAction(input: {
 
   try {
     const session = await generatePortalMagicLink(input.contactId);
-    const fullUrl = `${APP_URL}/portal/${session.token}`;
+    const appUrl = await getAppUrl();
+    const fullUrl = `${appUrl}/portal/${session.token}`;
 
     let emailed = false;
     if (input.sendEmail !== false) {

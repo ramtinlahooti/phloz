@@ -1,6 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -31,6 +32,7 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 export function InviteMemberCard({ workspaceId }: { workspaceId: string }) {
+  const router = useRouter();
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: { email: '', role: 'member' },
@@ -52,6 +54,9 @@ export function InviteMemberCard({ workspaceId }: { workspaceId: string }) {
     }
     toast.success('Invitation sent');
     form.reset();
+    // Refresh so the pending-invites section shows the new row
+    // without a manual reload.
+    router.refresh();
   }
 
   return (

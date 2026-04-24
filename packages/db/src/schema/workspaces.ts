@@ -25,6 +25,12 @@ export const workspaces = pgTable(
     tier: text('tier').$type<TierName>().notNull().default('starter'),
     subscriptionStatus: text('subscription_status').$type<SubscriptionStatus | null>(),
     settings: jsonb('settings').$type<WorkspaceSettings>().notNull().default({}),
+    /** Short public description — agency tagline / what they do. */
+    description: text('description'),
+    /** Primary agency website. Shown on the workspace settings page + future portal branding. */
+    websiteUrl: text('website_url'),
+    /** IANA tz (e.g. America/Vancouver). Formatting helpers default here when rendering dates. */
+    timezone: text('timezone'),
     ...timestamps,
   },
   (table) => ({

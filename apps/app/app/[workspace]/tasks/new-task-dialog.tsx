@@ -44,6 +44,12 @@ const schema = z.object({
   department: z.enum(DEPARTMENTS).default('other'),
   visibility: z.enum(TASK_VISIBILITIES).default('internal'),
   dueDate: z.string().optional(),
+  /**
+   * `__none__` = workspace-level (no client). Any other string is a
+   * client id. Kept inside the form so `form.reset()` clears it too
+   * and there's no stale-state window on submit.
+   */
+  clientId: z.string().default('__none__'),
 });
 
 type Values = z.infer<typeof schema>;
@@ -59,9 +65,6 @@ type Props = {
 export function NewTaskDialog({ workspaceId, clientId, clients, trigger }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(
-    clientId ?? null,
-  );
 
   const form = useForm<Values>({
     resolver: zodResolver(schema),
@@ -72,13 +75,20 @@ export function NewTaskDialog({ workspaceId, clientId, clients, trigger }: Props
       department: 'other',
       visibility: 'internal',
       dueDate: '',
+      clientId: clientId ?? '__none__',
     },
   });
 
   async function onSubmit(values: Values) {
+    const effectiveClientId =
+      clientId ?? // scoped dialog — always attach
+      (values.clientId && values.clientId !== '__none__'
+        ? values.clientId
+        : null);
+
     const res = await createTaskAction({
       workspaceId,
-      clientId: selectedClientId ?? null,
+      clientId: effectiveClientId,
       title: values.title,
       description: values.description || null,
       priority: values.priority,
@@ -95,7 +105,15 @@ export function NewTaskDialog({ workspaceId, clientId, clients, trigger }: Props
     }
     toast.success('Task created');
     setOpen(false);
-    form.reset();
+    form.reset({
+      title: '',
+      description: '',
+      priority: 'medium',
+      department: 'other',
+      visibility: 'internal',
+      dueDate: '',
+      clientId: clientId ?? '__none__',
+    });
     router.refresh();
   }
 
@@ -245,27 +263,33 @@ export function NewTaskDialog({ workspaceId, clientId, clients, trigger }: Props
                 )}
               />
               {!clientId && clients && clients.length > 0 && (
-                <FormItem>
-                  <FormLabel>Client (optional)</FormLabel>
-                  <Select
-                    value={selectedClientId ?? '__none__'}
-                    onValueChange={(v) =>
-                      setSelectedClientId(v === '__none__' ? null : v)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">No client</SelectItem>
-                      {clients.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </FormItem>
+                <FormField
+                  control={form.control}
+                  name="clientId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Client (optional)</FormLabel>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="__none__">No client</SelectItem>
+                          {clients.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
               )}
             </div>
 

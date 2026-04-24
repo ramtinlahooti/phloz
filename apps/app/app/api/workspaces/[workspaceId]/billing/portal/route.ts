@@ -5,10 +5,10 @@ import { requireAdminOrOwner } from '@phloz/auth/roles';
 import { createBillingPortalLink, isStripeConfigured } from '@phloz/billing';
 import { getDb, schema } from '@phloz/db/client';
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.phloz.com';
+import { getAppUrlFromRequest } from '@/lib/app-url';
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ workspaceId: string }> },
 ) {
   const { workspaceId } = await params;
@@ -43,7 +43,7 @@ export async function POST(
 
   const portal = await createBillingPortalLink({
     customerId: workspace.stripeCustomerId,
-    returnUrl: `${APP_URL}/${workspaceId}/billing`,
+    returnUrl: `${getAppUrlFromRequest(request)}/${workspaceId}/billing`,
   });
 
   return NextResponse.json({ url: portal.url });

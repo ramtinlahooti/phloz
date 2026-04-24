@@ -11,7 +11,7 @@ import {
 } from '@phloz/billing';
 import { getDb, schema } from '@phloz/db/client';
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.phloz.com';
+import { getAppUrlFromRequest } from '@/lib/app-url';
 
 const bodySchema = z.object({
   tier: z.enum(['pro', 'growth', 'business', 'scale']),
@@ -88,8 +88,8 @@ export async function POST(
     customerId,
     priceId,
     workspaceId,
-    successUrl: `${APP_URL}/${workspaceId}/billing?session_id={CHECKOUT_SESSION_ID}`,
-    cancelUrl: `${APP_URL}/${workspaceId}/billing?canceled=1`,
+    successUrl: `${getAppUrlFromRequest(request)}/${workspaceId}/billing?session_id={CHECKOUT_SESSION_ID}`,
+    cancelUrl: `${getAppUrlFromRequest(request)}/${workspaceId}/billing?canceled=1`,
   });
 
   if (!session.url) {

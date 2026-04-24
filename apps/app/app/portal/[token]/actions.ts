@@ -12,7 +12,7 @@ import type { ApprovalState } from '@phloz/config';
 import { getDb, schema } from '@phloz/db/client';
 import { sendPlainEmail } from '@phloz/email';
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3001';
+import { getAppUrl } from '@/lib/app-url';
 
 /**
  * Portal-session-aware approval action. Unlike agency actions which
@@ -159,7 +159,8 @@ async function notifyAgencyOfApproval(input: {
   const commentLine = input.comment
     ? `\n\nTheir comment:\n"${input.comment}"`
     : '';
-  const taskUrl = `${APP_URL}/${workspace.id}/clients/${input.clientId}`;
+  const appUrl = await getAppUrl();
+  const taskUrl = `${appUrl}/${workspace.id}/clients/${input.clientId}`;
   const text = [
     `${client.name} just ${stateLabel} the task "${task.title}" in the portal.${commentLine}`,
     '',
