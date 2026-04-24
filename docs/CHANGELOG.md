@@ -4,6 +4,44 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — "Clients needing attention" card on the dashboard
+
+Makes the client-health scoring I shipped earlier discoverable on
+the most-visited page. Reuses `computeClientHealth` directly, so
+the numbers + weights on the dashboard line up exactly with the
+/clients list.
+
+### What it does
+
+- New right-rail card that only renders when at least one non-
+  archived client has a non-healthy health tier.
+- Shows up to 5 entries, worst first (needs_attention beats at_risk;
+  within a tier, lower score wins). Each row: coloured dot + client
+  name + score + top 2 reasons.
+- Click-through goes straight to the client detail page. Hover
+  tooltip shows the full reason list.
+- Footer link "See all clients →" for the user who wants to triage
+  them all.
+
+### Implementation
+
+- Two new queries in the dashboard's `Promise.all`:
+  - All overdue open tasks (client_id only) — for the per-client
+    count the scorer wants.
+  - All tracking-node (client_id, health_status) pairs — for the
+    broken/missing-node counts.
+- Expanded the existing clients query to include `archived_at` +
+  `last_activity_at` (the scorer uses both).
+- Per-client aggregation + `computeClientHealth` loop inline on the
+  page. Output is sorted + truncated to top 5.
+- `AttentionClientsCard` component lives at the bottom of
+  `apps/app/app/[workspace]/page.tsx` alongside `OnboardingCard`
+  and `AttentionCard` (the This-Week widget card).
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — CSV export for clients + tasks
 
 Agencies live in spreadsheets. Not having export is table stakes

@@ -34,6 +34,11 @@ import {
   EmptyState,
 } from '@phloz/ui';
 
+import {
+  HEALTH_COLORS,
+  computeClientHealth,
+  type HealthResult,
+} from '@/lib/client-health';
 import { buildAppMetadata } from '@/lib/metadata';
 import {
   computeOnboardingState,
@@ -86,6 +91,8 @@ export default async function WorkspaceOverviewPage({
     contactProbe,
     trackingNodeProbe,
     messageProbe,
+    overdueTaskClientRows,
+    trackingNodeHealthRows,
   ] = await Promise.all([
     db
       .select()
@@ -169,8 +176,15 @@ export default async function WorkspaceOverviewPage({
       )
       .orderBy(desc(schema.tasks.approvalUpdatedAt))
       .limit(FEED_LIMIT),
+    // Clients: full rows needed so the health scorer has
+    // last_activity_at + archived_at per client.
     db
-      .select({ id: schema.clients.id, name: schema.clients.name })
+      .select({
+        id: schema.clients.id,
+        name: schema.clients.name,
+        archivedAt: schema.clients.archivedAt,
+        lastActivityAt: schema.clients.lastActivityAt,
+      })
       .from(schema.clients)
       .where(eq(schema.clients.workspaceId, workspaceId)),
     // Overdue: open tasks with a due_date in the past.
@@ -285,6 +299,28 @@ export default async function WorkspaceOverviewPage({
       .from(schema.messages)
       .where(eq(schema.messages.workspaceId, workspaceId))
       .limit(1),
+    // All overdue open tasks (client_id only). We already fetch the
+    // top-5 for the widget above, but the health scorer needs the
+    // full count per client.
+    db
+      .select({ clientId: schema.tasks.clientId })
+      .from(schema.tasks)
+      .where(
+        and(
+          eq(schema.tasks.workspaceId, workspaceId),
+          inArray(schema.tasks.status, ['todo', 'in_progress', 'blocked']),
+          isNotNull(schema.tasks.dueDate),
+          lt(schema.tasks.dueDate, now),
+        ),
+      ),
+    // Tracking-node health rollup per client.
+    db
+      .select({
+        clientId: schema.trackingNodes.clientId,
+        healthStatus: schema.trackingNodes.healthStatus,
+      })
+      .from(schema.trackingNodes)
+      .where(eq(schema.trackingNodes.workspaceId, workspaceId)),
   ]);
 
   if (!workspace) return null;
@@ -340,6 +376,70 @@ export default async function WorkspaceOverviewPage({
     hasMessage: messageProbe.length > 0,
     memberCount,
   });
+
+  // Per-client health aggregation for the "Needs attention" card.
+  // Uses the same scorer + weights as /clients so the numbers line up
+  // across pages.
+  const overdueCountByClient = new Map<string, number>();
+  for (const t of overdueTaskClientRows) {
+    if (!t.clientId) continue;
+    overdueCountByClient.set(
+      t.clientId,
+      (overdueCountByClient.get(t.clientId) ?? 0) + 1,
+    );
+  }
+  const unrepliedCountByClient = new Map<string, number>();
+  for (const u of unrepliedInbound) {
+    unrepliedCountByClient.set(
+      u.clientId,
+      (unrepliedCountByClient.get(u.clientId) ?? 0) + 1,
+    );
+  }
+  const brokenNodeCountByClient = new Map<string, number>();
+  const missingNodeCountByClient = new Map<string, number>();
+  for (const n of trackingNodeHealthRows) {
+    if (!n.clientId) continue;
+    if (n.healthStatus === 'broken') {
+      brokenNodeCountByClient.set(
+        n.clientId,
+        (brokenNodeCountByClient.get(n.clientId) ?? 0) + 1,
+      );
+    } else if (n.healthStatus === 'missing') {
+      missingNodeCountByClient.set(
+        n.clientId,
+        (missingNodeCountByClient.get(n.clientId) ?? 0) + 1,
+      );
+    }
+  }
+
+  type AttentionEntry = {
+    id: string;
+    name: string;
+    health: HealthResult;
+  };
+  const nonHealthy: AttentionEntry[] = [];
+  for (const c of clientRows) {
+    if (c.archivedAt !== null) continue;
+    const health = computeClientHealth({
+      archived: false,
+      lastActivityAt: c.lastActivityAt,
+      overdueTaskCount: overdueCountByClient.get(c.id) ?? 0,
+      unrepliedInboundCount: unrepliedCountByClient.get(c.id) ?? 0,
+      brokenNodeCount: brokenNodeCountByClient.get(c.id) ?? 0,
+      missingNodeCount: missingNodeCountByClient.get(c.id) ?? 0,
+    });
+    if (health.tier === 'healthy') continue;
+    nonHealthy.push({ id: c.id, name: c.name, health });
+  }
+  // Worst first. `needs_attention` beats `at_risk` on tier; within a
+  // tier, lower score wins.
+  nonHealthy.sort((a, b) => {
+    if (a.health.tier !== b.health.tier) {
+      return a.health.tier === 'needs_attention' ? -1 : 1;
+    }
+    return a.health.score - b.health.score;
+  });
+  const attentionClients = nonHealthy.slice(0, 5);
 
   const feed: FeedItem[] = [];
 
@@ -603,7 +703,8 @@ export default async function WorkspaceOverviewPage({
           )}
         </div>
 
-        {/* Right rail — onboarding (while incomplete) + plan */}
+        {/* Right rail — onboarding (while incomplete) + attention +
+            plan */}
         <div className="space-y-6">
           {!onboarding.complete && (
             <OnboardingCard
@@ -611,6 +712,12 @@ export default async function WorkspaceOverviewPage({
               doneCount={onboarding.doneCount}
               totalCount={onboarding.totalCount}
               nextStep={onboarding.nextStep}
+            />
+          )}
+          {attentionClients.length > 0 && (
+            <AttentionClientsCard
+              clients={attentionClients}
+              workspaceId={workspaceId}
             />
           )}
           <Card>
@@ -851,6 +958,69 @@ function daysUntil(d: Date): string {
 }
 
 // --- Onboarding checklist card ---------------------------------------
+
+function AttentionClientsCard({
+  clients,
+  workspaceId,
+}: {
+  clients: { id: string; name: string; health: HealthResult }[];
+  workspaceId: string;
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm">Clients needing attention</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 pt-0">
+        <ul className="space-y-1.5">
+          {clients.map(({ id, name, health }) => {
+            const colors = HEALTH_COLORS[health.tier];
+            const reasons = health.reasons.slice(0, 2).join(' · ');
+            return (
+              <li key={id}>
+                <Link
+                  href={`/${workspaceId}/clients/${id}`}
+                  className="flex items-start gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/50"
+                  title={health.reasons.join(' · ')}
+                >
+                  <span
+                    className={`mt-1.5 inline-block size-2 shrink-0 rounded-full ${colors.dot}`}
+                    aria-hidden
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-medium">
+                        {name}
+                      </span>
+                      <span
+                        className={`shrink-0 text-[10px] ${colors.badge.replace('border-', '').replace('/50', '')}`}
+                      >
+                        {health.score}
+                      </span>
+                    </div>
+                    {reasons && (
+                      <div className="line-clamp-1 text-xs text-muted-foreground">
+                        {reasons}
+                      </div>
+                    )}
+                  </div>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="pt-1 text-xs">
+          <Link
+            href={`/${workspaceId}/clients`}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            See all clients →
+          </Link>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function OnboardingCard({
   steps,
