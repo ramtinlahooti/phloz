@@ -28,6 +28,7 @@ import {
 import { buildAppMetadata } from '@/lib/metadata';
 
 import { ArchiveButton } from './archive-button';
+import { ClientNotesEditor } from './notes-editor';
 import {
   ContactsPanel,
   type ContactRow,
@@ -241,11 +242,11 @@ export default async function ClientDetailPage({
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="text-sm">
-                  {client.notes ?? (
-                    <span className="text-muted-foreground">
-                      No notes yet.
-                    </span>
-                  )}
+                  <ClientNotesEditor
+                    workspaceId={workspaceId}
+                    clientId={clientId}
+                    initialNotes={client.notes ?? null}
+                  />
                 </CardContent>
               </Card>
             </TabsContent>
