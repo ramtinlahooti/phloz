@@ -10,6 +10,7 @@ import {
   EmptyState,
 } from '@phloz/ui';
 
+import { ExportButton } from '@/components/export-button';
 import { SearchInput } from '@/components/search-input';
 import {
   HEALTH_COLORS,
@@ -202,6 +203,10 @@ export default async function ClientsListPage({
           <SearchInput
             placeholder="Search clients…"
             className="w-full sm:w-56"
+          />
+          <ExportButton
+            route={`/api/workspaces/${workspaceId}/clients/export`}
+            extraParams={{ includeArchived: 'true' }}
           />
           <Link
             href={`/${workspaceId}/clients/new`}

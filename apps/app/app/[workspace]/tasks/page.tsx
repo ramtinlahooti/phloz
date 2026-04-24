@@ -20,6 +20,7 @@ import {
   EmptyState,
 } from '@phloz/ui';
 
+import { ExportButton } from '@/components/export-button';
 import { SearchInput } from '@/components/search-input';
 import { buildAppMetadata } from '@/lib/metadata';
 
@@ -255,6 +256,9 @@ export default async function TasksPage({
           <SearchInput
             placeholder="Search tasks…"
             className="w-full sm:w-56"
+          />
+          <ExportButton
+            route={`/api/workspaces/${workspaceId}/tasks/export`}
           />
           <NewTaskDialog
             workspaceId={workspaceId}

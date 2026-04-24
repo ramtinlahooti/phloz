@@ -4,6 +4,59 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — CSV export for clients + tasks
+
+Agencies live in spreadsheets. Not having export is table stakes
+missing. Shipped one-click CSV download that respects the current
+search/filter state, so "Export" always exports exactly what the
+user is looking at.
+
+### What's new
+
+- **`apps/app/lib/csv.ts`** — minimal RFC 4180-ish serialiser.
+  Handles commas/newlines/quotes, null→empty, Date→ISO 8601,
+  booleans. Returns the CSV string + `csvResponseHeaders()` helper
+  for the route handlers.
+- **`GET /api/workspaces/[id]/clients/export`** — owner/admin/
+  member only. Accepts `?q=` (substring across name/business_
+  name/industry/website/email) and `?includeArchived=true`.
+  Columns: id, name, business_*, website, industry, size, budget,
+  target_cpa, notes, archived, archived_at, last_activity_at,
+  created_at, updated_at. Omits JSONB blobs deliberately.
+- **`GET /api/workspaces/[id]/tasks/export`** — same role gate.
+  Mirrors the `/tasks` page's filter surface: `?q`, `?department`,
+  `?status`, `?client`, `?assignee`. Columns: id, title, status,
+  priority, department, visibility, approval_state, client (name),
+  assignee (display label), due_date, completed_at, created_at,
+  updated_at, description.
+- **`apps/app/components/export-button.tsx`** — shared button.
+  Inherits the current URL's query params so the export is
+  filter-respecting by default. Extra params (e.g.
+  `includeArchived=true` for clients) merge on top.
+
+### Mounted in the UI
+
+- Clients list header → "Export CSV" button next to Search +
+  Add client. `includeArchived=true` is set via `extraParams`
+  because the export makes more sense as "give me everything" by
+  default.
+- Tasks list header → "Export CSV" next to Search + New task.
+
+### Noted follow-ups
+
+- **No rate limiting yet.** If someone abuses the export endpoint
+  we'll notice in Vercel logs; add an Upstash Redis counter then.
+- **No UTF-8 BOM prefix.** Most spreadsheets handle UTF-8 fine,
+  but Excel on Windows occasionally misreads. If a user reports
+  mojibake, prepend `\uFEFF` to the CSV string.
+- **No JSONB columns** (settings, geo_targeting, custom_fields).
+  If an agency needs that, recommend Supabase SQL Editor — a
+  cleaner channel than CSV for structured data.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Text search on clients + tasks lists
 
 Real usability gap once a workspace has more than 20 rows.
