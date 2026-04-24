@@ -4,6 +4,52 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-23 — Task comments + task edit dialog
+
+### Task comments
+
+The `comments` table + RLS shipped with Phase 1 but had no UI —
+threads were invisible. Now every task row opens a detail dialog
+with an inline comments thread.
+
+Server actions (`comments-actions.ts`):
+- `listCommentsAction` — all four roles can read. Batched author
+  lookups (member → "You" / "Teammate", contact →
+  `client_contacts.name`). Computes `canDelete` per row (author or
+  owner/admin).
+- `createCommentAction` — owner/admin/member only. Inserts with
+  `authorType=member`, `authorId=workspace_members.id`, and an
+  optional `visibility=client_visible` flag.
+- `deleteCommentAction` — comment author OR owner/admin.
+
+UI (`task-detail-dialog.tsx`):
+- Lazy-loads comments on open so the task list query stays cheap.
+- Each bubble shows author + relative timestamp + delete button
+  (author / admin only). Client-visible comments get a primary-
+  tinted bubble + badge.
+- Compose textarea with an inline "Client-visible (shown on the
+  portal)" checkbox. Optimistic append on post.
+
+### Task edit from the detail dialog
+
+Pencil button in the dialog header flips it into edit mode with
+fields for title, description, priority, department, visibility,
+and due date. Save dispatches the existing `updateTaskAction` (no
+new server plumbing), exits edit mode, `router.refresh()`es so the
+outer list updates. Edit state resets from the latest `task` prop
+on every open.
+
+Task rows' titles are now buttons that open the dialog — shared
+between workspace-wide and per-client surfaces via the existing
+`TaskRow` component, so both surfaces get comments + edit for free.
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `next build` (`apps/app`) — compiles cleanly.
+
+---
+
 ## 2026-04-23 — Three production fixes + editable notes + activity feed
 
 ### Three production-QA fixes
