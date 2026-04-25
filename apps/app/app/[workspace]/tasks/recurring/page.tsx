@@ -10,7 +10,11 @@ import { EmptyState } from '@phloz/ui';
 import { buildAppMetadata } from '@/lib/metadata';
 import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
-import { describeCadence, type RecurringCadence } from './cadence';
+import {
+  describeCadence,
+  describeNextFire,
+  type RecurringCadence,
+} from './cadence';
 import { NewRecurringDialog } from './new-recurring-dialog';
 import { RecurringRow } from './recurring-row';
 
@@ -60,12 +64,18 @@ export default async function RecurringTasksPage({
         .where(eq(schema.workspaceMembers.workspaceId, workspaceId)),
       canAddRecurringTemplate(workspaceId),
       db
-        .select({ tier: schema.workspaces.tier })
+        .select({
+          tier: schema.workspaces.tier,
+          timezone: schema.workspaces.timezone,
+        })
         .from(schema.workspaces)
         .where(eq(schema.workspaces.id, workspaceId))
         .limit(1)
         .then((rows) => rows[0]),
     ]);
+
+  const now = new Date();
+  const workspaceTimezone = workspaceRow?.timezone ?? 'UTC';
 
   // Pre-flight gate result. Server still authoritative on submit; this
   // disables the New button + surfaces the limit message before the
@@ -161,6 +171,14 @@ export default async function RecurringTasksPage({
                   cadence: t.cadence as RecurringCadence,
                   weekday: t.weekday,
                   dayOfMonth: t.dayOfMonth,
+                }),
+                nextFireSummary: describeNextFire({
+                  cadence: t.cadence as RecurringCadence,
+                  weekday: t.weekday,
+                  dayOfMonth: t.dayOfMonth,
+                  lastRunAt: t.lastRunAt,
+                  now,
+                  timezone: workspaceTimezone,
                 }),
                 clientName: t.clientId ? clientName.get(t.clientId) ?? null : null,
                 department: t.department,

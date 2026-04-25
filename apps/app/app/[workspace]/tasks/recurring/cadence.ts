@@ -156,3 +156,87 @@ export function sameLocalDate(
   const b = localDateParts(now, timezone);
   return a.year === b.year && a.month === b.month && a.day === b.day;
 }
+
+/**
+ * Next firing local-date for a template. Returns a Y-M-D triple in
+ * the supplied timezone — purely for display in the per-template
+ * cards. The cron's authoritative fire decision is still
+ * `cadenceMatches` + `sameLocalDate` at run-time.
+ *
+ * Walks forward day-by-day from `now` (capped at 366 lookups) and
+ * returns the first day whose cadence matches AND comes after
+ * `lastRunAt` if it's already today. Returns null when nothing
+ * matches inside the lookahead window — should never happen for
+ * valid daily/weekly/monthly templates but the guard keeps callers
+ * safe from infinite loops on malformed data.
+ */
+export function nextFireLocalDate(input: {
+  cadence: RecurringCadence;
+  weekday: number | null;
+  dayOfMonth: number | null;
+  lastRunAt: Date | null;
+  now: Date;
+  timezone: string;
+}): { year: number; month: number; day: number } | null {
+  const tzNow = localDateParts(input.now, input.timezone);
+  // If we haven't fired today yet AND today matches, today is next.
+  const todayMatches = cadenceMatches({
+    cadence: input.cadence,
+    weekday: input.weekday,
+    dayOfMonth: input.dayOfMonth,
+    local: tzNow,
+  });
+  const ranToday = sameLocalDate(input.lastRunAt, input.now, input.timezone);
+  if (todayMatches && !ranToday) {
+    return { year: tzNow.year, month: tzNow.month, day: tzNow.day };
+  }
+  // Otherwise walk forward up to 366 days. UTC-millisecond addition
+  // is fine because we re-resolve in the workspace timezone after
+  // each step.
+  for (let i = 1; i <= 366; i += 1) {
+    const stepped = new Date(input.now.getTime() + i * 86_400_000);
+    const local = localDateParts(stepped, input.timezone);
+    if (
+      cadenceMatches({
+        cadence: input.cadence,
+        weekday: input.weekday,
+        dayOfMonth: input.dayOfMonth,
+        local,
+      })
+    ) {
+      return { year: local.year, month: local.month, day: local.day };
+    }
+  }
+  return null;
+}
+
+/** Human-friendly "next fire" string. e.g. "Mon, Apr 27" or "Today". */
+export function describeNextFire(input: {
+  cadence: RecurringCadence;
+  weekday: number | null;
+  dayOfMonth: number | null;
+  lastRunAt: Date | null;
+  now: Date;
+  timezone: string;
+}): string | null {
+  const next = nextFireLocalDate(input);
+  if (!next) return null;
+  // Build a Date in the target tz at noon — noon avoids DST edge
+  // cases where midnight could roll into the previous day in the
+  // formatter's UTC interpretation.
+  const probe = new Date(
+    Date.UTC(next.year, next.month - 1, next.day, 12, 0, 0),
+  );
+  const tzToday = localDateParts(input.now, input.timezone);
+  const isToday =
+    next.year === tzToday.year &&
+    next.month === tzToday.month &&
+    next.day === tzToday.day;
+  if (isToday) return 'Today';
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(probe);
+}

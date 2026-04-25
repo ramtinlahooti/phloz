@@ -17,6 +17,9 @@ type Props = {
     id: string;
     title: string;
     cadenceSummary: string;
+    /** Pre-formatted "Next: <date>" hint computed server-side using
+     *  the workspace timezone. Skipped when the template is paused. */
+    nextFireSummary: string | null;
     clientName: string | null;
     department: string;
     enabled: boolean;
@@ -75,6 +78,9 @@ export function RecurringRow({ workspaceId, template }: Props) {
         </div>
         <p className="mt-1 truncate text-xs text-muted-foreground">
           {template.cadenceSummary}
+          {template.enabled && template.nextFireSummary && (
+            <> · next: {template.nextFireSummary}</>
+          )}
           {template.clientName && <> · {template.clientName}</>}
           <> · </>
           <span className="capitalize">{template.department.replace('_', ' ')}</span>
