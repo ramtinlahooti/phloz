@@ -55,10 +55,18 @@ export const sendDailyDigestFunction = inngest.createFunction(
   async ({ event, step }) => {
     const db = getDb();
 
-    // On-demand trigger can target one workspace; cron hits all.
-    const eventData = (event?.data ?? {}) as { workspaceId?: string };
+    // On-demand trigger can target one workspace + optionally one
+    // member; cron hits every workspace + every digest_enabled member.
+    const eventData = (event?.data ?? {}) as {
+      workspaceId?: string;
+      membershipId?: string;
+    };
     const targeted =
       event?.name === 'digest/send-daily' ? eventData.workspaceId : undefined;
+    const targetedMember =
+      event?.name === 'digest/send-daily'
+        ? eventData.membershipId ?? null
+        : null;
     // Manual event = always send. Cron = only send when each
     // workspace's local hour matches the configured digest hour.
     const isManual = event?.name === 'digest/send-daily';
@@ -87,11 +95,14 @@ export const sendDailyDigestFunction = inngest.createFunction(
       }
 
       const wsResults = await step.run(`digest-${ws.id}`, async () => {
-        return runDigestForWorkspace({
-          id: ws.id,
-          name: ws.name,
-          ownerUserId: ws.ownerUserId,
-        });
+        return runDigestForWorkspace(
+          {
+            id: ws.id,
+            name: ws.name,
+            ownerUserId: ws.ownerUserId,
+          },
+          { membershipId: targetedMember },
+        );
       });
       allResults.push(...wsResults);
     }
@@ -164,8 +175,24 @@ type MemberDigestResult = {
  */
 async function runDigestForWorkspace(
   ws: WorkspaceInput,
+  opts: { membershipId: string | null } = { membershipId: null },
 ): Promise<MemberDigestResult[]> {
   const db = getDb();
+
+  // Manual previews can target a single membership — used by the
+  // Settings → Notifications "Preview today's digest" button so a
+  // user can sanity-check their own digest without spamming
+  // teammates. Cron path always passes `membershipId: null` and
+  // hits every digest_enabled member.
+  const memberFilter = opts.membershipId
+    ? and(
+        eq(schema.workspaceMembers.workspaceId, ws.id),
+        eq(schema.workspaceMembers.id, opts.membershipId),
+      )
+    : and(
+        eq(schema.workspaceMembers.workspaceId, ws.id),
+        eq(schema.workspaceMembers.digestEnabled, true),
+      );
 
   const members = await db
     .select({
@@ -176,12 +203,7 @@ async function runDigestForWorkspace(
       displayName: schema.workspaceMembers.displayName,
     })
     .from(schema.workspaceMembers)
-    .where(
-      and(
-        eq(schema.workspaceMembers.workspaceId, ws.id),
-        eq(schema.workspaceMembers.digestEnabled, true),
-      ),
-    );
+    .where(memberFilter);
 
   if (members.length === 0) {
     return [

@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { hashAuthUidServer } from '@phloz/analytics/server';
 import { createServerSupabase, createServiceRoleSupabase } from '@phloz/auth/server';
 import { requireUser } from '@phloz/auth/session';
+import { TIER_NAMES, type TierName } from '@phloz/config';
 import { getDb, schema } from '@phloz/db/client';
 
 import { fireTrack, serverTrackContext } from '@/lib/analytics';
@@ -132,5 +133,19 @@ export async function createWorkspaceAction(
     serverTrackContext(user.id, workspace.id),
   );
 
+  // Honour a paid-tier hint captured during signup (the /pricing CTA
+  // sets `signup_tier_hint` on the auth user's metadata). The
+  // workspace stays on starter until payment clears — we just route
+  // the user to billing so the upgrade is one click instead of
+  // hunting through the sidebar. Invalid hints + the free 'starter'
+  // hint fall through to the normal dashboard landing.
+  const rawHint = user.user_metadata?.signup_tier_hint;
+  const tierHint =
+    typeof rawHint === 'string' && (TIER_NAMES as readonly string[]).includes(rawHint)
+      ? (rawHint as TierName)
+      : null;
+  if (tierHint && tierHint !== 'starter' && tierHint !== 'enterprise') {
+    redirect(`/${workspace.id}/billing?upgrade=${tierHint}`);
+  }
   redirect(`/${workspace.id}`);
 }
