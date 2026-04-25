@@ -1,6 +1,6 @@
 'use client';
 
-import { Bookmark, Check, Pencil, Trash2, Users } from 'lucide-react';
+import { Bookmark, Check, Pencil, Star, Trash2, Users } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 
@@ -21,6 +21,7 @@ import {
   deleteSavedViewAction,
   listSavedViewsAction,
   renameSavedViewAction,
+  setDefaultSavedViewAction,
   type SavedViewSummary,
 } from './saved-views-actions';
 
@@ -117,6 +118,27 @@ export function SavedViewsPicker({ workspaceId, canShare }: Props) {
     });
   }
 
+  function handleSetDefault(view: SavedViewSummary) {
+    // Toggle: if it's already my default, clear it. Otherwise, set.
+    const next = view.isDefault ? null : view.id;
+    startTransition(async () => {
+      const res = await setDefaultSavedViewAction({
+        workspaceId,
+        viewId: next,
+      });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success(
+        next === null
+          ? 'Default cleared'
+          : `"${view.name}" will open by default`,
+      );
+      reload();
+    });
+  }
+
   function handleDelete(view: SavedViewSummary) {
     if (!confirm(`Delete saved view "${view.name}"?`)) return;
     startTransition(async () => {
@@ -192,6 +214,33 @@ export function SavedViewsPicker({ workspaceId, canShare }: Props) {
                   </span>
                 )}
               </DropdownMenuItem>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSetDefault(v);
+                }}
+                disabled={pending}
+                aria-label={
+                  v.isDefault
+                    ? `Clear default (${v.name})`
+                    : `Set ${v.name} as default`
+                }
+                title={
+                  v.isDefault
+                    ? 'Default — opens when you land on /tasks'
+                    : 'Make this open by default'
+                }
+                className="h-7 px-2"
+              >
+                <Star
+                  className={`size-3.5 ${
+                    v.isDefault ? 'fill-primary text-primary' : ''
+                  }`}
+                />
+              </Button>
               {v.isMine && (
                 <>
                   <Button

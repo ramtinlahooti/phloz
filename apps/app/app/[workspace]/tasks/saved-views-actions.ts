@@ -27,6 +27,9 @@ export type SavedViewSummary = {
    *  rename / delete / re-share. Workspace-shared rows from teammates
    *  are read-only for everyone else. */
   isMine: boolean;
+  /** Whether this is the calling user's auto-apply default. Bare
+   *  `/tasks` redirects to the default's `searchParams`. */
+  isDefault: boolean;
 };
 
 /**
@@ -56,26 +59,42 @@ export async function listSavedViewsAction(input: {
   }
   const user = await requireUser();
   const db = getDb();
-  const rows = await db
-    .select({
-      id: schema.savedViews.id,
-      name: schema.savedViews.name,
-      searchParams: schema.savedViews.searchParams,
-      isShared: schema.savedViews.isShared,
-      userId: schema.savedViews.userId,
-    })
-    .from(schema.savedViews)
-    .where(
-      and(
-        eq(schema.savedViews.workspaceId, input.workspaceId),
-        eq(schema.savedViews.scope, input.scope),
-        or(
-          eq(schema.savedViews.userId, user.id),
-          eq(schema.savedViews.isShared, true),
+  const [rows, membership] = await Promise.all([
+    db
+      .select({
+        id: schema.savedViews.id,
+        name: schema.savedViews.name,
+        searchParams: schema.savedViews.searchParams,
+        isShared: schema.savedViews.isShared,
+        userId: schema.savedViews.userId,
+      })
+      .from(schema.savedViews)
+      .where(
+        and(
+          eq(schema.savedViews.workspaceId, input.workspaceId),
+          eq(schema.savedViews.scope, input.scope),
+          or(
+            eq(schema.savedViews.userId, user.id),
+            eq(schema.savedViews.isShared, true),
+          ),
         ),
-      ),
-    )
-    .orderBy(asc(schema.savedViews.name));
+      )
+      .orderBy(asc(schema.savedViews.name)),
+    db
+      .select({
+        defaultSavedViewId: schema.workspaceMembers.defaultSavedViewId,
+      })
+      .from(schema.workspaceMembers)
+      .where(
+        and(
+          eq(schema.workspaceMembers.workspaceId, input.workspaceId),
+          eq(schema.workspaceMembers.userId, user.id),
+        ),
+      )
+      .limit(1)
+      .then((m) => m[0] ?? null),
+  ]);
+  const defaultId = membership?.defaultSavedViewId ?? null;
   return {
     ok: true,
     views: rows.map((r) => ({
@@ -84,8 +103,82 @@ export async function listSavedViewsAction(input: {
       searchParams: r.searchParams,
       isShared: r.isShared,
       isMine: r.userId === user.id,
+      isDefault: r.id === defaultId,
     })),
   };
+}
+
+const setDefaultSchema = z.object({
+  workspaceId: uuid,
+  /** Pass `null` to clear the default. */
+  viewId: uuid.nullable(),
+});
+
+/**
+ * Set (or clear) the calling user's default saved view for this
+ * workspace. Self-targeting via `requireUser`. The viewId is
+ * validated against the user's accessible views — the SELECT
+ * filter mirrors `listSavedViewsAction` (own + shared) so a member
+ * can default to a workspace-shared view but not to a teammate's
+ * private view.
+ */
+export async function setDefaultSavedViewAction(
+  input: z.infer<typeof setDefaultSchema>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = setDefaultSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'invalid_input' };
+
+  try {
+    await requireRole(parsed.data.workspaceId, [
+      'owner',
+      'admin',
+      'member',
+      'viewer',
+    ]);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const user = await requireUser();
+  const db = getDb();
+
+  if (parsed.data.viewId !== null) {
+    const accessible = await db
+      .select({ id: schema.savedViews.id })
+      .from(schema.savedViews)
+      .where(
+        and(
+          eq(schema.savedViews.id, parsed.data.viewId),
+          eq(schema.savedViews.workspaceId, parsed.data.workspaceId),
+          or(
+            eq(schema.savedViews.userId, user.id),
+            eq(schema.savedViews.isShared, true),
+          ),
+        ),
+      )
+      .limit(1);
+    if (accessible.length === 0) {
+      return { ok: false, error: 'view_not_found' };
+    }
+  }
+
+  const updated = await db
+    .update(schema.workspaceMembers)
+    .set({ defaultSavedViewId: parsed.data.viewId })
+    .where(
+      and(
+        eq(schema.workspaceMembers.workspaceId, parsed.data.workspaceId),
+        eq(schema.workspaceMembers.userId, user.id),
+      ),
+    )
+    .returning({ id: schema.workspaceMembers.id });
+
+  if (updated.length === 0) {
+    return { ok: false, error: 'membership_not_found' };
+  }
+
+  revalidatePath(`/${parsed.data.workspaceId}/tasks`);
+  return { ok: true };
 }
 
 /**

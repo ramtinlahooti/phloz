@@ -1,5 +1,6 @@
 import { and, asc, eq, isNotNull, isNull } from 'drizzle-orm';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
 import { requireRole } from '@phloz/auth/roles';
 import { getDb, schema } from '@phloz/db/client';
@@ -34,6 +35,10 @@ type SearchParams = {
   sort?: string;
   /** Free-text search across task titles. */
   q?: string;
+  /** "all" forces the page to render unfiltered + bypasses the
+   *  default-saved-view redirect. Used by the All pill so a user
+   *  with a starred default can still reach the unfiltered list. */
+  view?: string;
 };
 
 const DISPLAY_GROUPS: TaskStatus[] = [
@@ -71,16 +76,6 @@ export default async function TasksPage({
 }) {
   const { workspace: workspaceId } = await params;
   const sp = await searchParams;
-  const departmentFilter = DEPARTMENTS.includes(sp.department as Department)
-    ? (sp.department as Department)
-    : null;
-  const statusFilter = TASK_STATUSES.includes(sp.status as TaskStatus)
-    ? (sp.status as TaskStatus)
-    : null;
-  const clientFilter = sp.client ?? null;
-  const assigneeFilter = sp.assignee ?? null;
-  const searchQuery = (sp.q ?? '').trim().toLowerCase();
-  const sort: TaskSort = isSort(sp.sort) ? sp.sort : 'priority';
 
   const db = getDb();
   const actor = await requireRole(workspaceId, [
@@ -91,6 +86,40 @@ export default async function TasksPage({
   ]);
   const user = actor.user;
   const canShareViews = actor.role === 'owner' || actor.role === 'admin';
+
+  // Bare /tasks → redirect to the calling user's default saved
+  // view, if any. Any query string (including `?view=all`) skips
+  // the redirect, so the All pill still reaches the unfiltered list.
+  if (Object.keys(sp).length === 0) {
+    const [defaultRow] = await db
+      .select({ params: schema.savedViews.searchParams })
+      .from(schema.workspaceMembers)
+      .innerJoin(
+        schema.savedViews,
+        eq(schema.savedViews.id, schema.workspaceMembers.defaultSavedViewId),
+      )
+      .where(
+        and(
+          eq(schema.workspaceMembers.workspaceId, workspaceId),
+          eq(schema.workspaceMembers.userId, user.id),
+        ),
+      )
+      .limit(1);
+    if (defaultRow?.params && defaultRow.params.length > 0) {
+      redirect(`/${workspaceId}/tasks?${defaultRow.params}`);
+    }
+  }
+
+  const departmentFilter = DEPARTMENTS.includes(sp.department as Department)
+    ? (sp.department as Department)
+    : null;
+  const statusFilter = TASK_STATUSES.includes(sp.status as TaskStatus)
+    ? (sp.status as TaskStatus)
+    : null;
+  const clientFilter = sp.client ?? null;
+  const assigneeFilter = sp.assignee ?? null;
+  const searchQuery = (sp.q ?? '').trim().toLowerCase();
+  const sort: TaskSort = isSort(sp.sort) ? sp.sort : 'priority';
 
   const [taskRows, clientRows, memberRows, subtaskRollupRows] =
     await Promise.all([
@@ -317,7 +346,7 @@ export default async function TasksPage({
       {/* Filters */}
       <div className="mb-6 flex flex-wrap items-center gap-2 text-xs">
         <FilterPill
-          href={`/${workspaceId}/tasks`}
+          href={`/${workspaceId}/tasks?view=all`}
           active={!anyFilterOn && sort === 'priority'}
         >
           All
@@ -377,7 +406,7 @@ export default async function TasksPage({
           description="Try clearing a filter or adjusting the sort."
           action={
             <Link
-              href={`/${workspaceId}/tasks`}
+              href={`/${workspaceId}/tasks?view=all`}
               className="text-sm text-primary hover:underline"
             >
               Reset all filters

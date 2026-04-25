@@ -1,7 +1,17 @@
-import { boolean, index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  type AnyPgColumn,
+} from 'drizzle-orm/pg-core';
 import type { Role } from '@phloz/config';
 
 import { pkUuid, userIdRef } from './_helpers';
+import { savedViews } from './saved-views';
 import { workspaces } from './workspaces';
 
 export const workspaceMembers = pgTable(
@@ -33,6 +43,17 @@ export const workspaceMembers = pgTable(
      * user disabled it from Settings → Notifications.
      */
     digestEnabled: boolean('digest_enabled').notNull().default(true),
+    /**
+     * Per-member auto-applied saved view for `/tasks`. When set, a
+     * bare `/tasks` landing redirects to `/tasks?<view.searchParams>`
+     * (the "All" pill goes to `/tasks?view=all` to bypass).
+     * Set to null on FK target delete so removing a saved view
+     * doesn't leave members with a dangling default.
+     */
+    defaultSavedViewId: uuid('default_saved_view_id').references(
+      (): AnyPgColumn => savedViews.id,
+      { onDelete: 'set null' },
+    ),
     invitedAt: timestamp('invited_at', { withTimezone: true, mode: 'date' }),
     acceptedAt: timestamp('accepted_at', { withTimezone: true, mode: 'date' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
