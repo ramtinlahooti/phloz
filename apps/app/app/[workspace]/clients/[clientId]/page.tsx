@@ -2,7 +2,7 @@ import { and, asc, desc, eq, isNotNull, isNull } from 'drizzle-orm';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { requireUser } from '@phloz/auth/session';
+import { requireRole } from '@phloz/auth/roles';
 import type {
   ApprovalState,
   Department,
@@ -58,6 +58,12 @@ import {
   type MessageItem,
 } from '../../messages/message-thread';
 import { NewTaskDialog } from '../../tasks/new-task-dialog';
+import {
+  describeCadence,
+  type RecurringCadence,
+} from '../../tasks/recurring/cadence';
+import { NewRecurringDialog } from '../../tasks/recurring/new-recurring-dialog';
+import { RecurringRow } from '../../tasks/recurring/recurring-row';
 import { TaskRow, type TaskRowModel } from '../../tasks/task-row';
 
 export const metadata = buildAppMetadata({ title: 'Client' });
@@ -94,7 +100,14 @@ export default async function ClientDetailPage({
     ? (sp.tab as ClientDetailTab)
     : 'overview';
   const db = getDb();
-  const user = await requireUser();
+  const actor = await requireRole(workspaceId, [
+    'owner',
+    'admin',
+    'member',
+    'viewer',
+  ]);
+  const user = actor.user;
+  const canDeleteRecurring = actor.role === 'owner' || actor.role === 'admin';
 
   const [
     client,
@@ -108,6 +121,7 @@ export default async function ClientDetailPage({
     trackingNodeRows,
     trackingEdgeRows,
     auditSuppressionRows,
+    recurringTemplateRows,
   ] = await Promise.all([
       db
         .select()
@@ -246,6 +260,19 @@ export default async function ClientDetailPage({
             eq(schema.auditSuppressions.clientId, clientId),
           ),
         ),
+      // Recurring task templates scoped to this client — surfaced in
+      // a section above the regular tasks list so agency owners
+      // discover them without leaving the client view.
+      db
+        .select()
+        .from(schema.recurringTaskTemplates)
+        .where(
+          and(
+            eq(schema.recurringTaskTemplates.workspaceId, workspaceId),
+            eq(schema.recurringTaskTemplates.clientId, clientId),
+          ),
+        )
+        .orderBy(asc(schema.recurringTaskTemplates.title)),
     ]);
 
   if (!client) notFound();
@@ -621,46 +648,98 @@ export default async function ClientDetailPage({
               />
             </TabsContent>
 
-            <TabsContent value="tasks" className="mt-6 space-y-4">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                  {tasksAsRows.length} total · {openTasks.length} open
-                </p>
-                <div className="flex items-center gap-2">
-                  <ApplyTemplateButton
-                    workspaceId={workspaceId}
-                    clientId={clientId}
-                  />
-                  <NewTaskDialog
+            <TabsContent value="tasks" className="mt-6 space-y-6">
+              <section className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">
+                      Recurring
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Templates that auto-create tasks for this client on a
+                      cadence.
+                    </p>
+                  </div>
+                  <NewRecurringDialog
                     workspaceId={workspaceId}
                     clientId={clientId}
                     members={memberOptions}
                   />
                 </div>
-              </div>
-              {tasksAsRows.length === 0 ? (
-                <Card>
-                  <CardContent className="p-8 text-sm text-muted-foreground">
-                    No tasks yet. Add one to start tracking work for this
-                    client.
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card>
-                  <CardContent className="p-0">
-                    <ul className="divide-y divide-border/60">
-                      {tasksAsRows.map((task) => (
-                        <TaskRow
-                          key={task.id}
-                          workspaceId={workspaceId}
-                          task={task}
-                          members={memberOptions}
-                        />
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              )}
+                {recurringTemplateRows.length === 0 ? (
+                  <Card>
+                    <CardContent className="px-6 py-4 text-xs text-muted-foreground">
+                      No recurring templates yet. Set one up for the work
+                      that repeats — weekly check-ins, monthly reports.
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {recurringTemplateRows.map((t) => (
+                      <RecurringRow
+                        key={t.id}
+                        workspaceId={workspaceId}
+                        template={{
+                          id: t.id,
+                          title: t.title,
+                          cadenceSummary: describeCadence({
+                            cadence: t.cadence as RecurringCadence,
+                            weekday: t.weekday,
+                            dayOfMonth: t.dayOfMonth,
+                          }),
+                          clientName: null,
+                          department: t.department,
+                          enabled: t.enabled,
+                          lastRunAt: t.lastRunAt,
+                          canDelete: canDeleteRecurring,
+                        }}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              <section className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    {tasksAsRows.length} total · {openTasks.length} open
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <ApplyTemplateButton
+                      workspaceId={workspaceId}
+                      clientId={clientId}
+                    />
+                    <NewTaskDialog
+                      workspaceId={workspaceId}
+                      clientId={clientId}
+                      members={memberOptions}
+                    />
+                  </div>
+                </div>
+                {tasksAsRows.length === 0 ? (
+                  <Card>
+                    <CardContent className="p-8 text-sm text-muted-foreground">
+                      No tasks yet. Add one to start tracking work for this
+                      client.
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card>
+                    <CardContent className="p-0">
+                      <ul className="divide-y divide-border/60">
+                        {tasksAsRows.map((task) => (
+                          <TaskRow
+                            key={task.id}
+                            workspaceId={workspaceId}
+                            task={task}
+                            members={memberOptions}
+                          />
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                )}
+              </section>
             </TabsContent>
 
             <TabsContent value="messages" className="mt-6">

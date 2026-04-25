@@ -64,11 +64,19 @@ type Values = z.infer<typeof schema>;
 
 type Props = {
   workspaceId: string;
+  /** When supplied, the template is fixed to this client and the
+   *  client picker is hidden (matches `NewTaskDialog`'s behaviour). */
+  clientId?: string | null;
   clients?: { id: string; name: string }[];
   members?: { id: string; label: string }[];
 };
 
-export function NewRecurringDialog({ workspaceId, clients, members }: Props) {
+export function NewRecurringDialog({
+  workspaceId,
+  clientId,
+  clients,
+  members,
+}: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -84,7 +92,7 @@ export function NewRecurringDialog({ workspaceId, clients, members }: Props) {
       weekday: '1',
       dayOfMonth: '1',
       dueOffsetDays: '0',
-      clientId: NO_CLIENT,
+      clientId: clientId ?? NO_CLIENT,
       assigneeMembershipId: UNASSIGNED,
     },
   });
@@ -102,12 +110,14 @@ export function NewRecurringDialog({ workspaceId, clients, members }: Props) {
   async function onSubmit(values: Values) {
     const cadence = values.cadence as RecurringCadence;
     const dueOffset = Math.max(0, parseInt(values.dueOffsetDays, 10) || 0);
+    const effectiveClientId =
+      clientId ??
+      (values.clientId && values.clientId !== NO_CLIENT
+        ? values.clientId
+        : null);
     const res = await createRecurringTemplateAction({
       workspaceId,
-      clientId:
-        values.clientId && values.clientId !== NO_CLIENT
-          ? values.clientId
-          : null,
+      clientId: effectiveClientId,
       title: values.title,
       description: values.description || null,
       priority: values.priority,
@@ -371,7 +381,7 @@ export function NewRecurringDialog({ workspaceId, clients, members }: Props) {
                   )}
                 />
               )}
-              {clients && clients.length > 0 && (
+              {!clientId && clients && clients.length > 0 && (
                 <FormField
                   control={form.control}
                   name="clientId"
