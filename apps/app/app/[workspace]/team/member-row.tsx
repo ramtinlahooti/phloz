@@ -1,6 +1,6 @@
 'use client';
 
-import { Crown, MoreHorizontal, Trash2, UserCog, X } from 'lucide-react';
+import { BellOff, Crown, MoreHorizontal, Trash2, UserCog, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
@@ -46,6 +46,13 @@ export type MemberRowView = {
   isSelf: boolean;
   /** Only owners can act on other owners. */
   viewerIsOwner: boolean;
+  /**
+   * Whether this member receives the daily digest. Muted members get
+   * a small badge so owners can see at-a-glance who's opted out.
+   * Toggling another member's preference is intentionally not
+   * exposed — preference is personal.
+   */
+  digestEnabled: boolean;
 };
 
 export function MemberRow({
@@ -124,6 +131,16 @@ export function MemberRow({
         <Badge variant="secondary" className="capitalize">
           {member.role}
         </Badge>
+        {!member.digestEnabled && (
+          <Badge
+            variant="outline"
+            className="gap-1 text-[10px] text-muted-foreground"
+            title="This member has muted the daily digest in Settings → Notifications."
+          >
+            <BellOff className="size-3" />
+            Digest off
+          </Badge>
+        )}
         {canManage && canActOnThisRole && (
           <DropdownMenu>
             <DropdownMenuTrigger className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">

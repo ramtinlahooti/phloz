@@ -56,6 +56,7 @@ export default async function TeamPage({
     role: m.role as Role,
     isSelf: m.userId === user.id,
     viewerIsOwner,
+    digestEnabled: m.digestEnabled,
   }));
 
   return (
