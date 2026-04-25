@@ -4,6 +4,76 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-25 — Subtask DnD + billing tier-hint deep-link
+
+### Added — Subtask drag-to-reorder
+
+Subtasks inside the task-detail dialog now have a grip handle that
+drags rows into a new order. HTML5 native DnD — no new dep. The
+list rearranges optimistically on drop and persists via the new
+`reorderSubtasksAction`; failure reverts + toasts.
+
+Schema: `tasks.sort_order` integer column, default 0. Migration
+0008 applied to Supabase. Existing subtasks backfilled with
+sequential 1024-spaced values via
+`ROW_NUMBER() OVER (PARTITION BY parent_task_id ORDER BY created_at)`
+so the first reorder doesn't fight with siblings collapsed to 0.
+
+`createTaskAction` (subtask path): new rows get
+`sort_order = MAX(sort_order) + 1024` so additions land at the end.
+`listSubtasksAction` now orders by `sort_order` ASC then
+`created_at` ASC (tiebreaker for legacy backfills). Top-level tasks
+ignore `sort_order` — they sort by priority + due date as before —
+but the column is on every row so bulk paths don't special-case.
+
+`reorderSubtasksAction(workspaceId, parentTaskId, orderedIds)`:
+- Validates each id belongs to the named parent in the same
+  workspace; drops mismatches silently rather than half-writing.
+- Single CASE-based UPDATE keeps the reorder atomic.
+- Re-numbers to 0, 1024, 2048, … so fractional inserts always have
+  headroom.
+
+### Added — Billing tier-hint deep-link + per-card upgrade buttons
+
+Closes the loop on yesterday's onboarding redirect: the billing
+page now reads `?upgrade=<tier>` and acts on it.
+
+- Primary-coloured callout card at the top of `/billing`:
+  "Picked <tier> during signup? One click to start checkout."
+- Matching plan in the "Other plans" grid gets a primary ring +
+  "You picked this" badge.
+- The current-plan card's CTA now reads the recommended tier from
+  the param instead of the hardcoded "Upgrade to Pro" — falls back
+  to Pro for invalid / missing / current-tier hints.
+
+`BillingActions`: extracted the Stripe checkout fetch into a shared
+`startCheckout` helper. New `recommendedTier` + `recommendedTierLabel`
+props (label pre-resolved server-side so the client component stays
+free of the `@phloz/billing` bundle).
+
+`UpgradeTierButton`: new client component for per-card use. Each
+"Other plans" card now has its own upgrade affordance instead of
+relying on the single hardcoded Pro CTA.
+
+`resolveUpgradeHint` server-side narrows against `TIER_NAMES` and
+skips the free / enterprise / current-tier cases — defense-in-depth
+on top of the onboarding redirect's own narrowing.
+
+### Files touched
+
+- `packages/db/src/schema/tasks.ts`
+- `packages/db/migrations/0008_tasks_sort_order.sql`
+- `apps/app/app/[workspace]/tasks/{actions,subtask-list}.{ts,tsx}`
+- `apps/app/app/[workspace]/billing/{page,billing-actions}.{tsx,tsx}`
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean. `/[workspace]/billing`
+  + the existing tasks routes both render the new affordances.
+
+---
+
 ## 2026-04-25 — Tier hint, digest preview, saved-views rename + share
 
 ### Added — Onboarding honors `signup_tier_hint`
