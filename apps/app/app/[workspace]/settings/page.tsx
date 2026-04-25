@@ -6,6 +6,7 @@ import { getDb, schema } from '@phloz/db/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@phloz/ui';
 
 import { buildAppMetadata } from '@/lib/metadata';
+import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
 import { NotificationsForm } from './notifications-form';
 import { ProfileForm } from './profile-form';
@@ -21,6 +22,7 @@ export default async function SettingsPage({
   params: Promise<RouteParams>;
 }) {
   const { workspace: workspaceId } = await params;
+  assertValidWorkspaceId(workspaceId);
   // Personal preferences (profile name, daily-digest opt-in) belong to
   // every member; only the agency card is owner/admin-gated.
   const actor = await requireRole(workspaceId, [

@@ -17,6 +17,7 @@ import { EmptyState } from '@phloz/ui';
 import { ExportButton } from '@/components/export-button';
 import { SearchInput } from '@/components/search-input';
 import { buildAppMetadata } from '@/lib/metadata';
+import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
 import { NewTaskDialog } from './new-task-dialog';
 import { SavedViewsPicker } from './saved-views-picker';
@@ -75,6 +76,7 @@ export default async function TasksPage({
   searchParams: Promise<SearchParams>;
 }) {
   const { workspace: workspaceId } = await params;
+  assertValidWorkspaceId(workspaceId);
   const sp = await searchParams;
 
   const db = getDb();

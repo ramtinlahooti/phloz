@@ -8,6 +8,7 @@ import { getDb, schema } from '@phloz/db/client';
 import { EmptyState } from '@phloz/ui';
 
 import { buildAppMetadata } from '@/lib/metadata';
+import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
 import { describeCadence, type RecurringCadence } from './cadence';
 import { NewRecurringDialog } from './new-recurring-dialog';
@@ -23,6 +24,7 @@ export default async function RecurringTasksPage({
   params: Promise<RouteParams>;
 }) {
   const { workspace: workspaceId } = await params;
+  assertValidWorkspaceId(workspaceId);
 
   const actor = await requireRole(workspaceId, [
     'owner',

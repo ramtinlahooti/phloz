@@ -9,6 +9,7 @@ import {
 } from '@phloz/ui';
 
 import { buildAppMetadata } from '@/lib/metadata';
+import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
 import { NewClientForm } from './new-client-form';
 
@@ -22,6 +23,7 @@ export default async function NewClientPage({
   params: Promise<RouteParams>;
 }) {
   const { workspace: workspaceId } = await params;
+  assertValidWorkspaceId(workspaceId);
   const gate = await canAddClient(workspaceId);
 
   return (

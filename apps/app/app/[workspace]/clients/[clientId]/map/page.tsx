@@ -6,6 +6,7 @@ import type { TrackingMapSnapshot } from '@phloz/tracking-map';
 import { Breadcrumbs } from '@phloz/ui';
 
 import { buildAppMetadata } from '@/lib/metadata';
+import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
 import { MapClient } from './map-client';
 
@@ -21,6 +22,8 @@ export default async function ClientMapPage({
   searchParams: Promise<{ node?: string }>;
 }) {
   const { workspace: workspaceId, clientId } = await params;
+  assertValidWorkspaceId(workspaceId);
+  assertValidWorkspaceId(clientId);
   const { node: focusNodeId } = await searchParams;
 
   const db = getDb();

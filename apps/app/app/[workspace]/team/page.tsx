@@ -6,6 +6,7 @@ import { getDb, schema } from '@phloz/db/client';
 import { Card, CardContent } from '@phloz/ui';
 
 import { buildAppMetadata } from '@/lib/metadata';
+import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
 import { InviteMemberCard } from './invite-member-card';
 import {
@@ -24,6 +25,7 @@ export default async function TeamPage({
   params: Promise<RouteParams>;
 }) {
   const { workspace: workspaceId } = await params;
+  assertValidWorkspaceId(workspaceId);
   const db = getDb();
   const user = await requireUser();
 

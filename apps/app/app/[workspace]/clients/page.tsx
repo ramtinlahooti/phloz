@@ -18,6 +18,7 @@ import {
   type HealthResult,
 } from '@/lib/client-health';
 import { buildAppMetadata } from '@/lib/metadata';
+import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
 import { collectPlatformIds } from './[clientId]/platform-ids';
 
@@ -64,6 +65,7 @@ export default async function ClientsListPage({
   searchParams: Promise<ClientsSearchParams>;
 }) {
   const { workspace: workspaceId } = await params;
+  assertValidWorkspaceId(workspaceId);
   const sp = await searchParams;
   const searchQuery = (sp.q ?? '').trim().toLowerCase();
   const sort: ClientsSort = isSort(sp.sort) ? sp.sort : 'recently_active';

@@ -18,6 +18,7 @@ import {
 } from '@phloz/ui';
 
 import { buildAppMetadata } from '@/lib/metadata';
+import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
 import { BillingActions, UpgradeTierButton } from './billing-actions';
 
@@ -52,6 +53,7 @@ export default async function BillingPage({
   searchParams: Promise<SearchParams>;
 }) {
   const { workspace: workspaceId } = await params;
+  assertValidWorkspaceId(workspaceId);
   const sp = await searchParams;
   await requireAdminOrOwner(workspaceId);
 

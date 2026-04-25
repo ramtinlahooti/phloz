@@ -8,6 +8,7 @@ import { Badge, Card, CardContent, EmptyState } from '@phloz/ui';
 
 import { SearchInput } from '@/components/search-input';
 import { buildAppMetadata } from '@/lib/metadata';
+import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
 export const metadata = buildAppMetadata({ title: 'Messages' });
 
@@ -39,6 +40,7 @@ export default async function MessagesInboxPage({
   searchParams: Promise<SearchParams>;
 }) {
   const { workspace: workspaceId } = await params;
+  assertValidWorkspaceId(workspaceId);
   const sp = await searchParams;
 
   const directionFilter =

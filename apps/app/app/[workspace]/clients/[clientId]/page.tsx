@@ -38,6 +38,7 @@ import {
   computeClientHealth,
 } from '@/lib/client-health';
 import { buildAppMetadata } from '@/lib/metadata';
+import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
 import { ArchiveButton } from './archive-button';
 import { ClientOverviewForm } from './client-overview-form';
@@ -93,6 +94,8 @@ export default async function ClientDetailPage({
   searchParams: Promise<{ tab?: string; task?: string }>;
 }) {
   const { workspace: workspaceId, clientId } = await params;
+  assertValidWorkspaceId(workspaceId);
+  assertValidWorkspaceId(clientId);
   const sp = await searchParams;
   // `?tab=audit` deep-links to a specific tab on load. Used by the
   // dashboard audit-rollup card + any other feature that wants to

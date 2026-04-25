@@ -51,6 +51,7 @@ import {
   computeOnboardingState,
   type OnboardingStep,
 } from '@/lib/onboarding-checklist';
+import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
 export const metadata = buildAppMetadata({ title: 'Overview' });
 
@@ -75,6 +76,11 @@ export default async function WorkspaceOverviewPage({
   params: Promise<RouteParams>;
 }) {
   const { workspace: workspaceId } = await params;
+  // Hard guard against stray non-UUID segments (favicon.ico, robots.txt,
+  // .well-known probes…). The layout has the same check but renders in
+  // parallel — without this the page's Promise.all fires DB queries
+  // with a malformed workspace id and burns Supabase pool connections.
+  assertValidWorkspaceId(workspaceId);
   const db = getDb();
 
   const now = new Date();
