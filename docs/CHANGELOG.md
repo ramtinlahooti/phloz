@@ -4,6 +4,79 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-25 — Production fix + marketing link + lazy canvas + next-fire hint
+
+### Fixed — `[workspace]` route caught `/favicon.ico` and broke the dashboard
+
+Stray `/favicon.ico` requests fell through to
+`apps/app/app/[workspace]/page.tsx` because the dynamic-segment
+matcher accepts any string. Each request kicked off ~7 DB queries
+with `workspace_id = "favicon.ico"` — every one threw an
+`invalid input syntax for type uuid` error and chewed a connection
+from the Supabase Transaction-mode pool. At a few requests per
+minute the pool exhausted (`ECHECKOUTTIMEOUT` after 60000ms) and
+real users couldn't load their dashboards.
+
+The `[workspace]/layout.tsx` already had a UUID guard, but in App
+Router the layout and page render concurrently — page data fetches
+fired before the layout's `notFound()` could tear them down.
+
+Fix: new shared `apps/app/lib/workspace-param.ts` exports
+`assertValidWorkspaceId(id)` — a synchronous UUID check that throws
+`notFound()`. Called at the top of every `[workspace]/...` page
+server component, BEFORE any DB call. Both `[clientId]` pages also
+validate the client param. Eleven pages updated.
+
+### Added — "Marketing site" link in the app sidebar
+
+Logged-in users couldn't easily jump back to phloz.com without
+typing the URL or losing the tab. Small link above the UserMenu in
+the sidebar footer, with an external-link icon. `target="_blank"`
+so the app session stays put. URL is env-driven via
+`NEXT_PUBLIC_MARKETING_URL` with `https://phloz.com` fallback.
+
+### Changed — Inline tracking map canvas now lazy-loads
+
+The yesterday-evening "render the canvas inline" change pulled
+React Flow + dagre + audit engine into the client-detail route
+bundle on every visit. New `LazyMapClient` thin wrapper uses
+`next/dynamic(() => import('./map-client'))` with `ssr: false`
+and a small "Loading the canvas…" placeholder. Combined with
+Radix Tabs unmounting inactive tabs by default, the chunk only
+downloads the first time the user opens the Tracking map tab.
+
+The dedicated `/map` route keeps importing `MapClient` directly —
+it's already its own bundle.
+
+### Added — "Next: <date>" hint on recurring template cards
+
+Each recurring-template card on `/tasks/recurring` and the per-
+client Tasks tab now shows when the template will next fire — e.g.
+"next: Mon, Apr 27" or "Today" when matching today and not yet
+fired. Suppressed for paused templates.
+
+`describeNextFire` walks forward day-by-day from `now` (capped at
+366 lookups) and returns the first day whose cadence predicate
+matches AND comes after `lastRunAt` if the template already fired
+today. Both surfaces fetch `workspace.timezone` so the calculation
+uses the same local clock as the cron.
+
+### Files touched
+
+- `apps/app/lib/workspace-param.ts` (new)
+- 11 × `apps/app/app/[workspace]/.../page.tsx` (UUID guard)
+- `apps/app/components/dashboard-shell.tsx`
+- `apps/app/app/[workspace]/clients/[clientId]/map/lazy-map-client.tsx` (new)
+- `apps/app/app/[workspace]/clients/[clientId]/page.tsx` (lazy import + next-fire wiring)
+- `apps/app/app/[workspace]/tasks/recurring/{cadence,page,recurring-row}.{ts,tsx}`
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean.
+
+---
+
 ## 2026-04-25 — Homepage pricing + platform-ID copy + inline tracking map + clients-list filters
 
 ### Added — Pricing summary on the marketing homepage
