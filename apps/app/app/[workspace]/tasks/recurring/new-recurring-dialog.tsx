@@ -2,6 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -75,6 +76,11 @@ type Props = {
    *  open + submit cycle when the user is at their tier limit. */
   disabled?: boolean;
   disabledMessage?: string;
+  /** When supplied alongside `disabled = true`, an "Upgrade →" link
+   *  renders next to the disabled trigger. Points at the workspace's
+   *  billing page (typically `/[workspace]/billing?upgrade=<tier>`)
+   *  so the user has a one-click path out of the limit. */
+  upgradeHref?: string;
 };
 
 export function NewRecurringDialog({
@@ -84,6 +90,7 @@ export function NewRecurringDialog({
   members,
   disabled = false,
   disabledMessage,
+  upgradeHref,
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -159,16 +166,26 @@ export function NewRecurringDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button
-        size="sm"
-        onClick={() => setOpen(true)}
-        disabled={disabled}
-        title={disabled ? disabledMessage : undefined}
-        className="gap-1.5"
-      >
-        <Plus className="size-3.5" />
-        New recurring task
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          onClick={() => setOpen(true)}
+          disabled={disabled}
+          title={disabled ? disabledMessage : undefined}
+          className="gap-1.5"
+        >
+          <Plus className="size-3.5" />
+          New recurring task
+        </Button>
+        {disabled && upgradeHref && (
+          <Link
+            href={upgradeHref}
+            className="text-xs text-primary underline-offset-2 hover:underline"
+          >
+            Upgrade →
+          </Link>
+        )}
+      </div>
 
       <DialogContent className="max-w-lg">
         <DialogHeader>

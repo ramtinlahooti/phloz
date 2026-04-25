@@ -3,7 +3,11 @@ import Link from 'next/link';
 
 import { requireRole } from '@phloz/auth/roles';
 import { requireUser } from '@phloz/auth/session';
-import { canAddRecurringTemplate, getTier } from '@phloz/billing';
+import {
+  canAddRecurringTemplate,
+  getTier,
+  nextTier,
+} from '@phloz/billing';
 import { getDb, schema } from '@phloz/db/client';
 import { EmptyState } from '@phloz/ui';
 
@@ -87,6 +91,17 @@ export default async function RecurringTasksPage({
     tierConfig && tierConfig.recurringTemplateLimit !== 'unlimited'
       ? tierConfig.recurringTemplateLimit
       : null;
+  // When at-limit, point the dialog's inline upgrade link at the
+  // billing page with the next tier pre-selected. The billing page
+  // already parses `?upgrade=<tier>` and surfaces a callout card +
+  // matching plan ring.
+  const upgradeTier = workspaceRow ? nextTier(workspaceRow.tier) : null;
+  const upgradeHref =
+    atLimit && upgradeTier && upgradeTier !== 'enterprise'
+      ? `/${workspaceId}/billing?upgrade=${upgradeTier}`
+      : atLimit
+        ? `/${workspaceId}/billing`
+        : undefined;
 
   const clientName = new Map(clientRows.map((c) => [c.id, c.name]));
   const memberOptions = memberRows
@@ -141,6 +156,7 @@ export default async function RecurringTasksPage({
           members={memberOptions}
           disabled={atLimit}
           disabledMessage={limitMessage}
+          upgradeHref={upgradeHref}
         />
       </header>
 
