@@ -23,6 +23,7 @@ export * from './audit-log';
 export * from './audit-suppressions';
 export * from './billing-events';
 export * from './newsletter-subscribers';
+export * from './saved-views';
 
 // --- V2 tables (scaffolded stubs; see ARCHITECTURE.md §5.4) ---
 export * from './ad-platform-accounts';

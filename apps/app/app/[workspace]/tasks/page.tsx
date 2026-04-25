@@ -18,6 +18,7 @@ import { SearchInput } from '@/components/search-input';
 import { buildAppMetadata } from '@/lib/metadata';
 
 import { NewTaskDialog } from './new-task-dialog';
+import { SavedViewsPicker } from './saved-views-picker';
 import { TaskListWithSelection } from './task-list-with-selection';
 import { type TaskRowModel } from './task-row';
 import { TaskFilters, type TaskSort } from './task-filters';
@@ -285,6 +286,7 @@ export default async function TasksPage({
             placeholder="Search tasks…"
             className="w-full sm:w-56"
           />
+          <SavedViewsPicker workspaceId={workspaceId} />
           <Link
             href={`/${workspaceId}/tasks/recurring`}
             className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/60 hover:text-foreground"
