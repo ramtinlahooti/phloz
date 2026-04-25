@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import {
   Building2,
-  Facebook,
+  Share2,
   Music2,
   Target,
   Zap,
@@ -98,7 +98,7 @@ export const metaPixelDescriptor: NodeTypeDescriptor<typeof metaPixelSchema> = {
   type: 'meta_pixel',
   label: 'Meta pixel',
   category: 'paid-media',
-  icon: Facebook,
+  icon: Share2,
   accent: 'text-indigo-300',
   summary: 'Facebook / Instagram tracking pixel',
   schema: metaPixelSchema,

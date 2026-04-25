@@ -20,7 +20,7 @@
     "@phloz/db": "workspace:*",
     "@phloz/types": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "stripe": "^22.0.2",
+    "stripe": "^22.1.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
