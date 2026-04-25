@@ -3,6 +3,7 @@ import Link from 'next/link';
 
 import { requireRole } from '@phloz/auth/roles';
 import { requireUser } from '@phloz/auth/session';
+import { canAddRecurringTemplate, getTier } from '@phloz/billing';
 import { getDb, schema } from '@phloz/db/client';
 import { EmptyState } from '@phloz/ui';
 
@@ -33,28 +34,47 @@ export default async function RecurringTasksPage({
   const canDelete = actor.role === 'owner' || actor.role === 'admin';
   const db = getDb();
 
-  const [templates, clientRows, memberRows] = await Promise.all([
-    db
-      .select()
-      .from(schema.recurringTaskTemplates)
-      .where(eq(schema.recurringTaskTemplates.workspaceId, workspaceId))
-      .orderBy(asc(schema.recurringTaskTemplates.title)),
-    db
-      .select({ id: schema.clients.id, name: schema.clients.name })
-      .from(schema.clients)
-      .where(eq(schema.clients.workspaceId, workspaceId))
-      .orderBy(asc(schema.clients.name)),
-    db
-      .select({
-        id: schema.workspaceMembers.id,
-        userId: schema.workspaceMembers.userId,
-        role: schema.workspaceMembers.role,
-        displayName: schema.workspaceMembers.displayName,
-        email: schema.workspaceMembers.email,
-      })
-      .from(schema.workspaceMembers)
-      .where(eq(schema.workspaceMembers.workspaceId, workspaceId)),
-  ]);
+  const [templates, clientRows, memberRows, gate, workspaceRow] =
+    await Promise.all([
+      db
+        .select()
+        .from(schema.recurringTaskTemplates)
+        .where(eq(schema.recurringTaskTemplates.workspaceId, workspaceId))
+        .orderBy(asc(schema.recurringTaskTemplates.title)),
+      db
+        .select({ id: schema.clients.id, name: schema.clients.name })
+        .from(schema.clients)
+        .where(eq(schema.clients.workspaceId, workspaceId))
+        .orderBy(asc(schema.clients.name)),
+      db
+        .select({
+          id: schema.workspaceMembers.id,
+          userId: schema.workspaceMembers.userId,
+          role: schema.workspaceMembers.role,
+          displayName: schema.workspaceMembers.displayName,
+          email: schema.workspaceMembers.email,
+        })
+        .from(schema.workspaceMembers)
+        .where(eq(schema.workspaceMembers.workspaceId, workspaceId)),
+      canAddRecurringTemplate(workspaceId),
+      db
+        .select({ tier: schema.workspaces.tier })
+        .from(schema.workspaces)
+        .where(eq(schema.workspaces.id, workspaceId))
+        .limit(1)
+        .then((rows) => rows[0]),
+    ]);
+
+  // Pre-flight gate result. Server still authoritative on submit; this
+  // disables the New button + surfaces the limit message before the
+  // user wastes a form-fill cycle.
+  const atLimit = !gate.allowed;
+  const limitMessage = !gate.allowed ? gate.message : undefined;
+  const tierConfig = workspaceRow ? getTier(workspaceRow.tier) : null;
+  const templateLimit =
+    tierConfig && tierConfig.recurringTemplateLimit !== 'unlimited'
+      ? tierConfig.recurringTemplateLimit
+      : null;
 
   const clientName = new Map(clientRows.map((c) => [c.id, c.name]));
   const memberOptions = memberRows
@@ -93,12 +113,22 @@ export default async function RecurringTasksPage({
           <p className="mt-1 text-sm text-muted-foreground">
             Templates fire at 6 AM workspace local time. New tasks land on
             the regular task list.
+            {templateLimit !== null && (
+              <>
+                {' · '}
+                <span className={atLimit ? 'text-destructive' : ''}>
+                  {templates.length} of {templateLimit} used
+                </span>
+              </>
+            )}
           </p>
         </div>
         <NewRecurringDialog
           workspaceId={workspaceId}
           clients={clientRows}
           members={memberOptions}
+          disabled={atLimit}
+          disabledMessage={limitMessage}
         />
       </header>
 
@@ -111,6 +141,8 @@ export default async function RecurringTasksPage({
               workspaceId={workspaceId}
               clients={clientRows}
               members={memberOptions}
+              disabled={atLimit}
+              disabledMessage={limitMessage}
             />
           }
         />

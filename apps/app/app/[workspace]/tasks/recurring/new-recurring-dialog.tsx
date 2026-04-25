@@ -69,6 +69,12 @@ type Props = {
   clientId?: string | null;
   clients?: { id: string; name: string }[];
   members?: { id: string; label: string }[];
+  /** When true, the trigger button is disabled and shows
+   *  `disabledMessage` as a tooltip. The server-side gate is still
+   *  the authoritative check — this is a UX hint to avoid a wasted
+   *  open + submit cycle when the user is at their tier limit. */
+  disabled?: boolean;
+  disabledMessage?: string;
 };
 
 export function NewRecurringDialog({
@@ -76,6 +82,8 @@ export function NewRecurringDialog({
   clientId,
   clients,
   members,
+  disabled = false,
+  disabledMessage,
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -151,7 +159,13 @@ export function NewRecurringDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button size="sm" onClick={() => setOpen(true)} className="gap-1.5">
+      <Button
+        size="sm"
+        onClick={() => setOpen(true)}
+        disabled={disabled}
+        title={disabled ? disabledMessage : undefined}
+        className="gap-1.5"
+      >
         <Plus className="size-3.5" />
         New recurring task
       </Button>
