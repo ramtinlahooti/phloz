@@ -4,6 +4,73 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-25 — Website inputs, smarter client search, upgrade CTA on tier-limit
+
+### Changed — Website fields accept bare domains
+
+`z.string().url()` rejected the most common shape users actually
+type — `acme.com` or `www.acme.com`. New `apps/app/lib/url-input.ts`
+exports `websiteFormFieldSchema` (form-side, `string | undefined`),
+`optionalWebsiteSchema` (action-side, accepts null for clearing),
+and a `normaliseWebsiteInput()` helper that canonicalises any
+accepted shape (bare domain, www-prefix, full URL) to a fully-
+qualified `https://...` string.
+
+Wired through the new-client form, client overview form, workspace
+settings form, the `POST /api/workspaces/[workspaceId]/clients`
+route, the `PATCH /api/workspaces/[workspaceId]` route, and the
+`updateClientAction` server action. What lands in the DB is always
+a fully-qualified URL — defense-in-depth on top of the form's own
+normalisation.
+
+Existing data with full URLs round-trips unchanged. New saves with
+`acme.com` get stored as `https://acme.com/`.
+
+### Changed — Smarter `/clients` search
+
+Two improvements to the workspace-clients text search:
+
+1. **Multi-token AND.** Splits the query on whitespace; every token
+   must match somewhere in the haystack. Typing `PPC ACME` now
+   finds the right client when "ACME" is in the name and "PPC" is
+   the industry. Single-token queries behave as before.
+2. **Matches contacts.** New parallel query for `client_contacts`
+   builds a per-client index of every contact's name + email +
+   phone. Typing a contact's email or first name surfaces the
+   parent client.
+
+Existing matchers (name, business name, industry, website, business
+email, headline platform ID) remain — contacts join the same
+haystack so AND semantics apply uniformly across columns.
+
+### Added — Inline "Upgrade →" link on disabled recurring dialog
+
+The recurring-template tier-limit gate already disabled the New
+button with the gate message as a tooltip — but offered no path
+out. `NewRecurringDialog` now accepts an optional `upgradeHref`
+prop; when the trigger is disabled and the href is set, a primary-
+coloured "Upgrade →" link renders next to the button.
+
+The recurring page builds the href with `nextTier(workspace.tier)`
+so it lands on `/[workspace]/billing?upgrade=<next>` — the billing
+page already parses that param and surfaces the matching plan with
+a primary callout card + ring.
+
+### Files touched
+
+- `apps/app/lib/url-input.ts` (new)
+- `apps/app/app/[workspace]/clients/{new/new-client-form,[clientId]/{client-overview-form,update-actions},page}.{ts,tsx}`
+- `apps/app/app/[workspace]/settings/workspace-settings-form.tsx`
+- `apps/app/app/api/workspaces/[workspaceId]/{route,clients/route}.ts`
+- `apps/app/app/[workspace]/tasks/recurring/{page,new-recurring-dialog}.tsx`
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean.
+
+---
+
 ## 2026-04-25 — Production fix + marketing link + lazy canvas + next-fire hint
 
 ### Fixed — `[workspace]` route caught `/favicon.ico` and broke the dashboard
