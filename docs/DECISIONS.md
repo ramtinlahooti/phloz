@@ -5,6 +5,91 @@ for the template.
 
 ---
 
+## 2026-04-25: Recurring template tier limits — escalating, not flat
+
+**Status:** Accepted
+
+**Context:** Tier-gating recurring task templates needed numeric caps.
+Options: (a) all paid tiers unlimited, (b) flat cap (e.g. 50 across
+all paid tiers), (c) escalating per tier mirroring `clientLimit`.
+
+**Decision:** Escalating per tier — starter=2, pro=25, growth=75,
+business=250, scale=750, enterprise=∞. Roughly 2.5–3× per step.
+
+**Rationale:** Flat caps would either gate Scale unfairly or over-
+provide for Pro. Escalating mirrors the existing `clientLimit`
+shape, which agencies already understand. Starter gets two so users
+can taste the feature before paying. Disabled templates count
+against the limit (verified with `getRecurringTemplateCount`) so a
+disable-then-create cycle can't skirt the cap.
+
+**Consequences:**
+- Public pricing page should eventually surface the limit alongside
+  client + seat counts.
+- Inngest cost stays predictable: hard upper bound on the number of
+  templates the cron iterates each hour is `Σ(workspaces × tier
+  cap)`. Even a heavy Scale workspace tops out at 750 hourly checks.
+
+---
+
+## 2026-04-25: Saved views are personal-by-default, not workspace-shared
+
+**Status:** Accepted
+
+**Context:** Filter views could be (a) personal only, (b)
+workspace-shared by default, (c) per-row choice. RLS shape and
+"workspace-shared" UX have very different costs.
+
+**Decision:** Personal only at V1 — RLS clause is
+`user_id = auth.uid() AND public.phloz_is_member_of(workspace_id)`.
+A future shared-views feature is queued in NEXT-STEPS as an
+`is_shared` column flip.
+
+**Rationale:** Personal saved combos are the high-frequency need:
+"my overdue", "my PPC backlog". Shared views imply governance ("who
+can edit?", "what if owner deletes a popular view?") that's not
+worth the complexity at launch. Postpone until an agency asks.
+
+**Consequences:**
+- Owners can't preconfigure agency-wide views for their team in V1.
+  Workaround: the URL is shareable, owners can paste it in Slack.
+- Schema is forward-compatible: the unique key
+  `(workspace_id, user_id, scope, name)` survives a later
+  `is_shared` column without rewriting.
+
+---
+
+## 2026-04-25: Per-member daily digest, owner-only sees workspace overview
+
+**Status:** Accepted
+
+**Context:** Switching from owner-only to per-member digest, the
+content shape becomes member-relative. Members might want the
+workspace-wide unreplied messages + audit findings; or those might
+be irrelevant noise.
+
+**Decision:** Owner / admin still receive the workspace-wide picture
+(every overdue task, unreplied client messages, audit rollup).
+Member / viewer receive only their assigned task agenda
+(`tasks.assignee_id = membership.id` filter). No workspace-wide
+content for them.
+
+**Rationale:** Members generally aren't accountable for client
+relationships or audit health — that's owner/admin work. Including
+those sections in their digest dilutes the personal agenda. The
+`audit_log`, `messages`, and tracking-map UIs all stay one click
+away in the dashboard if a member wants to see them.
+
+**Consequences:**
+- Members get smaller emails — usually 0–5 items vs. owner's 5–20.
+  Fewer "skip empty" no-ops on the cron, fewer wasted Inngest
+  steps.
+- Future per-member preference work is straightforward (the
+  `digest_enabled` boolean already exists — adding granular
+  toggles is just more booleans).
+
+---
+
 ## 2026-04-24: Recurring tasks fire at 6 AM workspace-local, no per-template hour
 
 **Status:** Accepted

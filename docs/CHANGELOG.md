@@ -4,6 +4,111 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-25 — Per-member digest, saved views, tier gating, magic-link fix
+
+### Fixed — Magic-link / signup / reset emails embed canonical URL
+
+The three auth forms built `emailRedirectTo` from
+`window.location.origin`, so a user hitting `phloz.com/login` (DNS
+still resolves the apex to the app project pre-marketing-project
+split) got a magic-link with `redirect_to=https://phloz.com/` —
+Supabase rewrote the path to its Site URL because the redirect
+allowlist matched only the bare URL. New
+`apps/app/lib/client-app-url.ts` exposes `getClientAppUrl()` that
+prefers `NEXT_PUBLIC_APP_URL` (compiled into the client bundle) and
+falls back to `window.location.origin`. All three forms now use it.
+**Manual companion steps live in NEXT-STEPS** — Supabase Site URL
++ redirect allowlist + Resend SMTP need to be configured in the
+dashboard before the link actually round-trips.
+
+### Added — Per-member daily digest + opt-out
+
+The digest now reaches every workspace member, filtered to their own
+agenda. Schema: `workspace_members.digest_enabled` boolean, default
+true. Migration 0005 applied to Supabase.
+
+- **Owner / admin** still get the workspace-wide picture: every
+  overdue / due-today / pending-approval task plus unreplied client
+  messages and the audit-rollup card.
+- **Member / viewer** get only their assigned task agenda
+  (`tasks.assignee_id = membership.id` filter).
+- Empty per-member digests are skipped — no "all clear" emails.
+
+`runDigestForWorkspace` is now factored to fetch workspace-wide data
+once (clients, message history, tracking nodes/edges) and reuse it
+across the per-member loop. The Supabase admin lookup for the owner's
+email is gone — cached `workspace_members.email` + `display_name`
+(backfilled in 0001) cover every recipient.
+
+Settings UI: role gate relaxed from `requireAdminOrOwner` to all
+roles so members can finally edit their own profile + manage
+notifications. New `NotificationsForm` card visible to every member;
+the agency card stays gated to owner/admin via a conditional render.
+`setDigestEnabledAction` is self-targeting via `requireUser` — no
+admin override path because the preference is personal.
+
+### Added — Saved filter views on /tasks
+
+Personal, per-workspace, persisted filter combos. Click a saved view
+→ single navigation to `/tasks?<searchParams>`. Schema: `saved_views`
+table with `(workspace_id, user_id, scope, name)` unique. `scope` is
+a discriminator — V1 only emits `tasks`, future surfaces (clients,
+messages) reuse the same table. Migration 0006 applied to Supabase.
+
+RLS makes views **personal** — even within the same workspace, a
+member only sees their own rows
+(`user_id = auth.uid() AND public.phloz_is_member_of(workspace_id)`).
+
+UI: `SavedViewsPicker` dropdown next to the task search input. Lazy-
+loads on open (no DB hit on /tasks renders for users who don't use
+the feature). Per-row delete; inline name field with Save button at
+the bottom for capturing the current URL search-params string. Re-
+using a name UPSERTs via `onConflictDoUpdate`. When the current URL
+matches a saved view, the trigger button shows the view name with a
+check mark.
+
+### Added — Tier-gate recurring task templates
+
+V1 was unbounded — a free workspace with 1000 templates would chew
+through Inngest steps every hour. Per-tier caps:
+starter=2, pro=25, growth=75, business=250, scale=750, enterprise=∞.
+
+`TierConfig.recurringTemplateLimit` typed as `number | 'unlimited'`.
+`getRecurringTemplateCount(workspaceId)` counts every row regardless
+of `enabled` (disabled templates still occupy a slot — no
+disable-then-create skirting). New
+`canAddRecurringTemplateCheck({tier, templateCount})` returns the
+standard `CanResult` with `recurring_template_limit_reached` reason
++ `upgradeTo` hint. `canAddRecurringTemplate(workspaceId)` server
+wrapper now sits inside `createRecurringTemplateAction` after the
+role check.
+
+`GateDenialReason` extended with the new variant. Billing test suite
+gained 4 cases (under-limit / at-limit / enterprise-unlimited /
+upgrade-suggestion) for a total of 28 passing.
+
+### Files touched
+
+- `packages/db/src/schema/{workspace-members,saved-views,index}.ts`
+- `packages/db/src/rls/{saved-views.sql,index.ts}`
+- `packages/db/migrations/0005_workspace_members_digest_enabled.sql`
+- `packages/db/migrations/0006_saved_views.sql`
+- `packages/billing/src/{tiers,gates,errors,active-clients,gates.test}.ts`
+- `apps/app/inngest/functions/send-daily-digest.ts`
+- `apps/app/app/[workspace]/settings/{page,notifications-actions,notifications-form}.{ts,tsx}`
+- `apps/app/app/[workspace]/tasks/{page,saved-views-actions,saved-views-picker,recurring/actions}.{ts,tsx}`
+- `apps/app/app/(auth)/{login/login-form,signup/signup-form,forgot-password/forgot-password-form}.tsx`
+- `apps/app/lib/client-app-url.ts`
+
+### Verified
+
+- `pnpm check` — 29/29 green (28 billing tests, up from 24).
+- `pnpm --filter @phloz/app build` — `/[workspace]/tasks`,
+  `/[workspace]/tasks/recurring`, `/[workspace]/settings` all in the
+  build manifest.
+
+---
+
 ## 2026-04-24 — Recurring tasks + bulk dep update + DB catch-up
 
 ### Added — Recurring task templates (the headline feature)
