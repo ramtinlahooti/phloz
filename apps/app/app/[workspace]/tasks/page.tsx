@@ -1,7 +1,7 @@
 import { and, asc, eq, isNotNull, isNull } from 'drizzle-orm';
 import Link from 'next/link';
 
-import { requireUser } from '@phloz/auth/session';
+import { requireRole } from '@phloz/auth/roles';
 import { getDb, schema } from '@phloz/db/client';
 import type {
   ApprovalState,
@@ -83,7 +83,14 @@ export default async function TasksPage({
   const sort: TaskSort = isSort(sp.sort) ? sp.sort : 'priority';
 
   const db = getDb();
-  const user = await requireUser();
+  const actor = await requireRole(workspaceId, [
+    'owner',
+    'admin',
+    'member',
+    'viewer',
+  ]);
+  const user = actor.user;
+  const canShareViews = actor.role === 'owner' || actor.role === 'admin';
 
   const [taskRows, clientRows, memberRows, subtaskRollupRows] =
     await Promise.all([
@@ -286,7 +293,10 @@ export default async function TasksPage({
             placeholder="Search tasks…"
             className="w-full sm:w-56"
           />
-          <SavedViewsPicker workspaceId={workspaceId} />
+          <SavedViewsPicker
+            workspaceId={workspaceId}
+            canShare={canShareViews}
+          />
           <Link
             href={`/${workspaceId}/tasks/recurring`}
             className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/60 hover:text-foreground"

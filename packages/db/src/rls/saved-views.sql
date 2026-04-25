@@ -6,8 +6,8 @@ ALTER TABLE public.saved_views ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "saved_views_select" ON public.saved_views
 FOR SELECT USING (
-  user_id = auth.uid()
-  AND public.phloz_is_member_of(workspace_id)
+  public.phloz_is_member_of(workspace_id)
+  AND (user_id = auth.uid() OR is_shared = true)
 );
 
 CREATE POLICY "saved_views_insert" ON public.saved_views

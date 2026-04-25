@@ -1,4 +1,11 @@
-import { index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  pgTable,
+  text,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { pkUuid, timestamps, userIdRef } from './_helpers';
 import { workspaces } from './workspaces';
@@ -32,6 +39,13 @@ export const savedViews = pgTable(
      * navigating to `/tasks?<this>` anyway.
      */
     searchParams: text('search_params').notNull(),
+    /**
+     * When true, every workspace member sees this view in their
+     * picker. The creator (`user_id`) still owns the row — only they
+     * can rename/delete. Owner/admin only — gated server-side in
+     * `createSavedViewAction`.
+     */
+    isShared: boolean('is_shared').notNull().default(false),
     ...timestamps,
   },
   (table) => ({
