@@ -1,77 +1,62 @@
-# Next Steps (as of 2026-04-25)
+# Next Steps (as of 2026-04-25, evening)
 
 ## Branch state
 
 `claude/stupefied-vaughan-5f394f` is the active feature branch.
-After two mid-session merges to main earlier today, two more commits
-landed on the branch since:
+Three new feature commits since the last main-merge:
 
-- `feat(subtasks): drag-to-reorder` — schema + migration 0008 applied
-- `feat(billing): tier-hint deep-link + per-card upgrade buttons`
+- `feat(saved-views)`: bookmark a default + auto-redirect bare /tasks
+- `feat(team)`: surface "Digest off" badge when a member has muted
+- `feat(subtasks)`: keyboard reorder (Cmd/Ctrl-↑/↓)
 
-Plus this docs commit. Fast-forward main when ready.
+Plus a docs commit. Fast-forward main when ready.
 
-All commits pass `pnpm check` (29/29 green; 28 billing tests). Both
-apps build clean.
-
-## Manual steps Ramtin still owes
-
-(Same as before — these still gate end-to-end auth + marketing.)
-
-### Vercel dashboard
-
-- `phloz-web` project → Settings → Domains → add `phloz.com` and
-  `www.phloz.com`. Production deploy is green; the domain just needs
-  to be wired.
-- Confirm `NEXT_PUBLIC_APP_URL=https://app.phloz.com` is set on
-  `phloz-app` (Production scope).
-
-### Supabase auth
-
-- Authentication → URL Configuration: Site URL =
-  `https://app.phloz.com`. Redirect URLs: add
-  `https://app.phloz.com/auth/callback{,?**}` and
-  `http://localhost:3001/auth/callback?**`.
-- Authentication → SMTP Settings → Enable Custom SMTP per
-  `docs/DEPLOYMENT.md` Step 6.
-
-### DNS
-
-- Drop the stale `76.76.21.21` A record on `phloz.com`. Keep
-  `216.198.79.1`.
-- Add a CNAME `www.phloz.com → cname.vercel-dns.com` so the www
-  subdomain resolves.
+`pnpm check` 29/29 green. Both apps build clean. 9 Drizzle
+migrations all reconciled with Supabase.
 
 ## Top backlog (next session)
 
-1. **Playwright smoke tests.** Recurring-tasks happy path, saved-
-   views save / apply / share / rename round-trip, subtask DnD
-   reorder, digest preview returning ok, billing upgrade-hint
-   redirect ending at Stripe checkout.
-2. **Saved views: bookmark a default.** Star icon per row that
-   marks "open this when I land on /tasks". Likely a
-   `default_saved_view_id` column on `workspace_members` (per-user,
-   scoped). Tasks page reads it on landing and redirects when no
-   query params are set.
-3. **Team-wide digest opt-out visibility.** Owners want to see who
-   on the team has muted the daily digest. New column on the Team
-   page row + a small "Send a nudge" link that fires the manual
-   `digest/send-daily` event scoped to that member.
-4. **Recurring template — pause / resume from cards.** The card on
-   `/tasks/recurring` already toggles enabled state, but the
-   per-template UI on the client tasks tab doesn't surface the
-   toggle. Mirror the workspace page.
-5. **Marketing site domain split.** Production deploy on `phloz-web`
-   is green, just needs `phloz.com` attached. Once attached, remove
-   `phloz.com` from the app project's domain list to stop the
-   "DNS round-robin to two projects" risk.
-6. **Subtask reorder — keyboard support.** DnD works with mouse +
-   touch but power users will want ⌘↑/⌘↓ to nudge a subtask up or
-   down. Same `reorderSubtasksAction` underneath.
+1. **Playwright smoke tests.** Coverage is now broad enough to
+   benefit from automation:
+   - Recurring-tasks happy path (manual `recurring/process` event +
+     assertion).
+   - Saved-views: save / apply / share / rename / star-default round-trip.
+   - Subtask DnD + Cmd-↑/↓ reorder.
+   - Digest preview returning ok.
+   - Billing upgrade-hint redirect ending at Stripe checkout.
+2. **Recurring template — pause / resume from cards.** The toggle
+   already exists (RecurringRow component is shared between the
+   workspace `/tasks/recurring` page and the per-client tasks tab),
+   but the per-client variant doesn't surface the cadence next-fire
+   estimate. Owners want to know "this fires next Monday".
+3. **Per-template UI: usage hints.** When a workspace is at the
+   recurring-template tier limit, the dialog already disables the
+   New button. Add a "Manage subscription" inline CTA that links
+   to /[workspace]/billing — closes the upgrade loop.
+4. **Saved views: rename a shared view as the creator.** V1 only
+   lets a member rename their own private views. The owner who
+   shared a view should be able to rename it from the picker too —
+   the action already permits it server-side
+   (`user_id = auth.uid()` clause), the UI just hides the pencil
+   on shared rows. Show pencil on shared rows when `isMine`.
+
+   ✅ Already supported by the picker — `isMine` is true for shared
+   rows the caller created, so rename appears. **Verify by hand
+   then strike off the backlog if confirmed.**
+5. **Team: "send a nudge"** menu item for a muted teammate. Fires
+   `digest/send-daily` with the target member's `membership_id` so
+   they get one ad-hoc send. Useful when an owner wants to remind
+   someone what the digest looks like.
+6. **Marketing site: blog post template polish.** Existing blog
+   posts render fine but the layout is template-thin — typography
+   pass, OG-image generator, related-posts strip.
+7. **Audit engine: scheduled re-runs.** Inngest cron that
+   re-evaluates every workspace's tracking maps weekly and pushes
+   new findings into `audit_log` for the dashboard rollup card.
 
 ## SQL migrations queued
 
-All 8 Drizzle migrations match Supabase state. Nothing pending.
+All 9 Drizzle migrations match Supabase state. Nothing pending.
 
 | File | Status |
 |---|---|
@@ -84,16 +69,16 @@ All 8 Drizzle migrations match Supabase state. Nothing pending.
 | `0006_saved_views.sql` | ✅ applied 2026-04-25 |
 | `0007_saved_views_is_shared.sql` | ✅ applied 2026-04-25 |
 | `0008_tasks_sort_order.sql` | ✅ applied 2026-04-25 |
+| `0009_workspace_members_default_saved_view.sql` | ✅ applied 2026-04-25 |
 
 ## Env vars to light up dormant features
 
 - **PostHog** — `NEXT_PUBLIC_POSTHOG_KEY` + `POSTHOG_API_KEY`.
 - **GA4** — `GA4_MEASUREMENT_ID` + `GA4_API_SECRET`.
 - **Resend** — `RESEND_API_KEY`. Daily digest + recurring-task
-  crons + the Settings → Notifications "Preview today's digest"
-  button all fire silently without it.
-- **Inngest** — `INNGEST_SIGNING_KEY` + `INNGEST_EVENT_KEY`. Cron
-  doesn't fire without them.
+  crons + Settings → Notifications "Preview today's digest" all
+  fire silently without it.
+- **Inngest** — `INNGEST_SIGNING_KEY` + `INNGEST_EVENT_KEY`.
 
 ## Deferred dep upgrades
 
@@ -115,12 +100,10 @@ pnpm check                     # lint + typecheck + unit tests
 ## Accounts / provisioning status
 
 - ✅ GitHub, Supabase (`tdvzhwhzxuskrsobdyrm`, RLS + JWT hook
-  enabled, 9 migrations applied), GTM (`GTM-W3MGZ8V7`), Stripe
-  sandbox (`acct_1RXbVlPomvpsIeGO`, 4 products × 3 prices live, API
-  pinned to `2026-04-22.dahlia`), Vercel app project (`phloz`, live
-  at `app.phloz.com`).
-- 🚧 Vercel marketing project (`phloz-web`) — production deploy
-  green, but `phloz.com` domain not yet attached to the project.
-- ⏳ Supabase URL configuration + custom SMTP, Resend domain
-  verification, Inngest app registration, PostHog project, Sentry
-  project, GA4 property.
+  enabled, 10 migrations applied), GTM, Stripe sandbox (API pinned
+  to `2026-04-22.dahlia`), Vercel app (`phloz`, live at
+  `app.phloz.com`), Vercel marketing (`phloz-web`, live at
+  `phloz.com`), Supabase auth URLs + custom SMTP.
+- ⏳ Resend domain verification, Inngest app registration, PostHog
+  project, Sentry project, GA4 property — these light up dormant
+  features but aren't gating anything user-visible right now.

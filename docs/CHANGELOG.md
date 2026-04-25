@@ -4,6 +4,69 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-25 — Default-view auto-redirect + team digest visibility + keyboard reorder
+
+### Added — Saved-view default bookmark + auto-redirect
+
+Star a saved view to make it your default. Bare `/tasks` now
+redirects to `/tasks?<view.searchParams>`. The All pill + "Reset
+all filters" link both navigate to `/tasks?view=all` so a user with
+a starred default can still reach the unfiltered list — any query
+string (including `view=all`) skips the redirect.
+
+Schema: `workspace_members.default_saved_view_id` uuid + FK to
+`saved_views.id` with `ON DELETE SET NULL` so removing a saved
+view doesn't leave members with a dangling default. Migration 0009.
+
+`setDefaultSavedViewAction(viewId | null)` self-targets via
+`requireUser` + validates the view against the user's accessible
+views (own + shared). `listSavedViewsAction` joins the member row
+in parallel so the picker renders starred state without an extra
+round-trip. `SavedViewSummary` now carries `isDefault`.
+
+UI: new Star column on every picker row. Filled-primary when
+default, outlined otherwise. Click toggles. Stars on shared rows
+let a member default to a teammate's published view too.
+
+### Added — "Digest off" badge on the Team page
+
+Each member row renders a small "Digest off" pill (BellOff icon)
+next to the role badge when that member's `digest_enabled` is
+false. Owners + admins can see at-a-glance who has muted the daily
+digest. Toggling another member's preference is intentionally not
+exposed — preference is personal — so this is read-only context.
+
+One-column extension to `MemberRowView` (`digestEnabled: boolean`)
+forwarded from the existing workspace_members fetch.
+
+### Added — Subtask keyboard reorder (Cmd/Ctrl-↑/↓)
+
+Power-user shortcut on top of the existing HTML5 DnD. Focus a
+subtask (Tab into the list) and Cmd-↑ / Cmd-↓ moves it up or down
+among siblings via the same `reorderSubtasksAction` the drop path
+uses. Plain arrow keys still navigate dialog focus.
+
+Internal refactor: extracted the optimistic-then-persist logic into
+`applyReorder(nextIds, previous)` so DnD `onDrop` and the new
+`moveBy(id, delta)` helper share one path. Each row gets
+`tabIndex={0}` + a focus-visible ring + muted-bg highlight, so
+keyboard users see which subtask the next shortcut will affect.
+
+### Files touched
+
+- `packages/db/src/schema/workspace-members.ts`
+- `packages/db/migrations/0009_workspace_members_default_saved_view.sql`
+- `apps/app/app/[workspace]/tasks/{page,saved-views-actions,saved-views-picker,subtask-list}.{ts,tsx}`
+- `apps/app/app/[workspace]/team/{page,member-row}.tsx`
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — `/[workspace]/{tasks,team,tasks/recurring}`
+  all in the build manifest.
+
+---
+
 ## 2026-04-25 — Subtask DnD + billing tier-hint deep-link
 
 ### Added — Subtask drag-to-reorder
