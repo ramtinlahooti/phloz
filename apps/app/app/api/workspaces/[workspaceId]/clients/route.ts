@@ -7,11 +7,12 @@ import { getDb, schema } from '@phloz/db/client';
 
 import { fireTrack, serverTrackContext } from '@/lib/analytics';
 import { inngest } from '@/inngest';
+import { normaliseWebsiteInput, optionalWebsiteSchema } from '@/lib/url-input';
 
 const bodySchema = z.object({
   name: z.string().trim().min(1).max(80),
   businessName: z.string().trim().max(120).nullable().optional(),
-  websiteUrl: z.string().url().nullable().optional(),
+  websiteUrl: optionalWebsiteSchema,
   industry: z.string().trim().max(60).nullable().optional(),
 });
 
@@ -68,7 +69,7 @@ export async function POST(
       workspaceId,
       name: parsed.data.name,
       businessName: parsed.data.businessName ?? null,
-      websiteUrl: parsed.data.websiteUrl ?? null,
+      websiteUrl: normaliseWebsiteInput(parsed.data.websiteUrl),
       industry: parsed.data.industry ?? null,
     })
     .returning({ id: schema.clients.id });

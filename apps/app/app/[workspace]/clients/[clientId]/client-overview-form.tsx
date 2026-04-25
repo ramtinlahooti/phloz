@@ -23,6 +23,8 @@ import {
   toast,
 } from '@phloz/ui';
 
+import { websiteFormFieldSchema } from '@/lib/url-input';
+
 import { updateClientAction } from './update-actions';
 
 const schema = z.object({
@@ -35,12 +37,7 @@ const schema = z.object({
     .optional()
     .or(z.literal('')),
   businessPhone: z.string().max(60).optional(),
-  websiteUrl: z
-    .string()
-    .url('Enter a valid URL')
-    .max(500)
-    .optional()
-    .or(z.literal('')),
+  websiteUrl: websiteFormFieldSchema,
   industry: z.string().trim().max(120).optional(),
 });
 type Values = z.infer<typeof schema>;
@@ -94,6 +91,10 @@ export function ClientOverviewForm({
         businessName: values.businessName?.trim() || null,
         businessEmail: values.businessEmail?.trim() || null,
         businessPhone: values.businessPhone?.trim() || null,
+        // Pass the raw user input — the action calls
+        // `normaliseWebsiteInput` so "acme.com" → "https://acme.com"
+        // before it lands in the DB. Empty input → null clears the
+        // field on save.
         websiteUrl: values.websiteUrl?.trim() || null,
         industry: values.industry?.trim() || null,
       });

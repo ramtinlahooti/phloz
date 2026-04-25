@@ -18,10 +18,12 @@ import {
   toast,
 } from '@phloz/ui';
 
+import { websiteFormFieldSchema } from '@/lib/url-input';
+
 const schema = z.object({
   name: z.string().trim().min(1, 'Client name is required').max(80),
   businessName: z.string().trim().max(120).optional(),
-  websiteUrl: z.string().trim().url('Enter a valid URL').or(z.literal('')).optional(),
+  websiteUrl: websiteFormFieldSchema,
   industry: z.string().trim().max(60).optional(),
 });
 
@@ -46,7 +48,7 @@ export function NewClientForm({ workspaceId }: { workspaceId: string }) {
       body: JSON.stringify({
         name: values.name,
         businessName: values.businessName || null,
-        websiteUrl: values.websiteUrl || null,
+        websiteUrl: values.websiteUrl,
         industry: values.industry || null,
       }),
     });

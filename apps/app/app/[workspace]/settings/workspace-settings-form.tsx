@@ -18,15 +18,12 @@ import {
   toast,
 } from '@phloz/ui';
 
+import { websiteFormFieldSchema } from '@/lib/url-input';
+
 const schema = z.object({
   name: z.string().trim().min(2, 'At least 2 characters').max(60),
   description: z.string().max(1000).optional(),
-  websiteUrl: z
-    .string()
-    .url('Enter a valid URL')
-    .max(500)
-    .optional()
-    .or(z.literal('')),
+  websiteUrl: websiteFormFieldSchema,
   timezone: z.string().max(64).optional(),
 });
 

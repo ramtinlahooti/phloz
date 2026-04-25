@@ -8,6 +8,7 @@ import { requireRole } from '@phloz/auth/roles';
 import { getDb, schema } from '@phloz/db/client';
 
 import { fireTrack, serverTrackContext } from '@/lib/analytics';
+import { normaliseWebsiteInput, optionalWebsiteSchema } from '@/lib/url-input';
 
 const uuid = z.string().uuid();
 
@@ -23,7 +24,7 @@ const patchSchema = z.object({
   businessName: z.string().trim().max(200).nullable().optional(),
   businessEmail: z.string().email().max(200).nullable().optional(),
   businessPhone: z.string().max(60).nullable().optional(),
-  websiteUrl: z.string().url().max(500).nullable().optional(),
+  websiteUrl: optionalWebsiteSchema,
   industry: z.string().trim().max(120).nullable().optional(),
   notes: z.string().max(10_000).nullable().optional(),
 });
@@ -57,7 +58,16 @@ export async function updateClientAction(
   void _ws;
   void _id;
   for (const [key, value] of Object.entries(fields)) {
-    if (value !== undefined) updates[key] = value;
+    if (value === undefined) continue;
+    // websiteUrl is the one field the form lets users type bare
+    // ("acme.com"). Canonicalise here so what we store is always a
+    // fully-qualified URL — defense-in-depth on top of the form's
+    // submit-time normalisation.
+    if (key === 'websiteUrl') {
+      updates[key] = normaliseWebsiteInput(value as string | null | undefined);
+      continue;
+    }
+    updates[key] = value;
   }
 
   if (Object.keys(updates).length === 1) {

@@ -6,6 +6,7 @@ import { requireAdminOrOwner } from '@phloz/auth/roles';
 import { getDb, schema } from '@phloz/db/client';
 
 import { fireTrack, serverTrackContext } from '@/lib/analytics';
+import { normaliseWebsiteInput, optionalWebsiteSchema } from '@/lib/url-input';
 
 const SETTING_KEY: Record<string, string> = {
   name: 'name',
@@ -17,13 +18,7 @@ const SETTING_KEY: Record<string, string> = {
 const patchSchema = z.object({
   name: z.string().trim().min(2).max(60).optional(),
   description: z.string().max(1000).nullable().optional(),
-  websiteUrl: z
-    .string()
-    .url()
-    .max(500)
-    .or(z.literal(''))
-    .nullable()
-    .optional(),
+  websiteUrl: optionalWebsiteSchema,
   timezone: z
     .string()
     .max(64)
@@ -65,7 +60,7 @@ export async function PATCH(
     updates.description = parsed.data.description || null;
   }
   if (parsed.data.websiteUrl !== undefined) {
-    updates.websiteUrl = parsed.data.websiteUrl || null;
+    updates.websiteUrl = normaliseWebsiteInput(parsed.data.websiteUrl);
   }
   if (parsed.data.timezone !== undefined) {
     updates.timezone = parsed.data.timezone || null;
