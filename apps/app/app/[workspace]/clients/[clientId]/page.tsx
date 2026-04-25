@@ -42,7 +42,7 @@ import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
 import { ArchiveButton } from './archive-button';
 import { ClientOverviewForm } from './client-overview-form';
-import { MapClient } from './map/map-client';
+import { LazyMapClient } from './map/lazy-map-client';
 import { ClientNotesEditor } from './notes-editor';
 import { PlatformIdsCard } from './platform-ids-card';
 import { collectPlatformIds } from './platform-ids';
@@ -64,6 +64,7 @@ import {
 import { NewTaskDialog } from '../../tasks/new-task-dialog';
 import {
   describeCadence,
+  describeNextFire,
   type RecurringCadence,
 } from '../../tasks/recurring/cadence';
 import { NewRecurringDialog } from '../../tasks/recurring/new-recurring-dialog';
@@ -129,6 +130,7 @@ export default async function ClientDetailPage({
     trackingEdgeRows,
     auditSuppressionRows,
     recurringTemplateRows,
+    workspaceRow,
   ] = await Promise.all([
       db
         .select()
@@ -280,7 +282,20 @@ export default async function ClientDetailPage({
           ),
         )
         .orderBy(asc(schema.recurringTaskTemplates.title)),
+      // Workspace timezone — used by the recurring-template
+      // "next fire" hint. Cheap single-row lookup; if the layout's
+      // `workspaces` query were lifted to a Context we could reuse
+      // it, but that's a refactor for another day.
+      db
+        .select({ timezone: schema.workspaces.timezone })
+        .from(schema.workspaces)
+        .where(eq(schema.workspaces.id, workspaceId))
+        .limit(1)
+        .then((rows) => rows[0]),
     ]);
+
+  const workspaceTimezone = workspaceRow?.timezone ?? 'UTC';
+  const recurringNow = new Date();
 
   if (!client) notFound();
 
@@ -721,6 +736,14 @@ export default async function ClientDetailPage({
                             weekday: t.weekday,
                             dayOfMonth: t.dayOfMonth,
                           }),
+                          nextFireSummary: describeNextFire({
+                            cadence: t.cadence as RecurringCadence,
+                            weekday: t.weekday,
+                            dayOfMonth: t.dayOfMonth,
+                            lastRunAt: t.lastRunAt,
+                            now: recurringNow,
+                            timezone: workspaceTimezone,
+                          }),
                           clientName: null,
                           department: t.department,
                           enabled: t.enabled,
@@ -806,7 +829,7 @@ export default async function ClientDetailPage({
                   of the page (header strip + breadcrumbs) stays in
                   view. */}
               <div className="h-[70vh] min-h-[480px] overflow-hidden rounded-lg border border-border/60">
-                <MapClient
+                <LazyMapClient
                   workspaceId={workspaceId}
                   clientId={clientId}
                   initial={{
