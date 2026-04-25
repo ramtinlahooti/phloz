@@ -64,7 +64,8 @@ import {
 } from '../../tasks/recurring/cadence';
 import { NewRecurringDialog } from '../../tasks/recurring/new-recurring-dialog';
 import { RecurringRow } from '../../tasks/recurring/recurring-row';
-import { TaskRow, type TaskRowModel } from '../../tasks/task-row';
+import { TaskListWithSelection } from '../../tasks/task-list-with-selection';
+import { type TaskRowModel } from '../../tasks/task-row';
 
 export const metadata = buildAppMetadata({ title: 'Client' });
 
@@ -346,6 +347,21 @@ export default async function ClientDetailPage({
   const openTasks = tasksAsRows.filter(
     (t) => t.status !== 'done' && t.status !== 'archived',
   );
+
+  // Group rows by status for the selection-aware list. Mirrors the
+  // workspace `/tasks` page so the per-client tab feels identical
+  // and bulk actions work the same way.
+  const TASK_GROUP_ORDER: TaskStatus[] = [
+    'todo',
+    'in_progress',
+    'blocked',
+    'done',
+  ];
+  const tasksByStatus = TASK_GROUP_ORDER.flatMap((status) => {
+    const rows = tasksAsRows.filter((t) => t.status === status);
+    if (rows.length === 0) return [];
+    return [{ status, tasks: rows }];
+  });
 
   const messages: MessageItem[] = clientMessages.map((m) => ({
     id: m.id,
@@ -724,20 +740,11 @@ export default async function ClientDetailPage({
                     </CardContent>
                   </Card>
                 ) : (
-                  <Card>
-                    <CardContent className="p-0">
-                      <ul className="divide-y divide-border/60">
-                        {tasksAsRows.map((task) => (
-                          <TaskRow
-                            key={task.id}
-                            workspaceId={workspaceId}
-                            task={task}
-                            members={memberOptions}
-                          />
-                        ))}
-                      </ul>
-                    </CardContent>
-                  </Card>
+                  <TaskListWithSelection
+                    workspaceId={workspaceId}
+                    members={memberOptions}
+                    groups={tasksByStatus}
+                  />
                 )}
               </section>
             </TabsContent>
