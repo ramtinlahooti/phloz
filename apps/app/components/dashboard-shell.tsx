@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import {
+  ExternalLink,
   LayoutDashboard,
   Users,
   ListChecks,
@@ -130,6 +131,7 @@ export function DashboardShell({
           })}
         </nav>
         <div className="border-t border-border/60 p-3">
+          <MarketingLink />
           <UserMenu user={user} currentWorkspaceId={workspace.id} />
         </div>
       </aside>
@@ -145,5 +147,27 @@ export function DashboardShell({
         <main className="flex-1 overflow-auto">{children}</main>
       </div>
     </div>
+  );
+}
+
+/**
+ * Sidebar link out to the marketing site. Lets logged-in users
+ * jump back to the public-facing pages — pricing, blog, the
+ * tracking-map landing — without typing the URL or losing the
+ * tab. `target="_blank"` so the app session stays put. URL is
+ * env-driven; the fallback matches `apps/web/lib/site-config.ts`.
+ */
+function MarketingLink() {
+  const url = process.env.NEXT_PUBLIC_MARKETING_URL ?? 'https://phloz.com';
+  return (
+    <Link
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      className="mb-2 flex items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      <ExternalLink className="size-3.5" />
+      <span className="flex-1">Marketing site</span>
+    </Link>
   );
 }
