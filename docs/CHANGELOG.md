@@ -4,6 +4,77 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-25 — Tier hint, digest preview, saved-views rename + share
+
+### Added — Onboarding honors `signup_tier_hint`
+
+The `/pricing` page CTAs already wrote `signup_tier_hint` into auth
+user metadata, but onboarding ignored it. Now: if the hint is a paid
+tier (pro / growth / business / scale), the new owner lands on
+`/[workspace]/billing?upgrade=<tier>` instead of the dashboard. The
+workspace itself stays on starter — payment hasn't cleared — but
+the upgrade is one click away. Hints are zod-narrowed against
+`TIER_NAMES` first; malformed hints fall through to the normal path.
+
+### Added — "Preview today's digest" button (Settings → Notifications)
+
+Per-member preview of the daily digest. Clicking the button fires
+`digest/send-daily` with both `workspaceId` and `membershipId` in
+the event data. The cron's manual path now honours `membershipId`:
+`runDigestForWorkspace` filters its `workspace_members` query to
+that single row when present, so the preview lands in the caller's
+inbox without notifying teammates. `previewDigestAction` self-targets
+via `requireUser`. Inngest's API key being absent returns 200
+(no-op), so the action's `ok: true` doesn't guarantee email
+delivery — it depends on Resend + Inngest both being configured,
+which the toast description calls out.
+
+### Added — Saved views: in-place rename + workspace-shared variant
+
+Schema: `saved_views.is_shared` boolean column, default false.
+Migration 0007 applied to Supabase. RLS SELECT policy expanded to
+return shared rows from any creator in the workspace; INSERT /
+UPDATE / DELETE stay creator-only.
+
+`createSavedViewAction` accepts an `isShared` flag and runs an
+extra `requireRole(['owner','admin'])` check when true — members
+can save personal views but not publish team-wide. Re-saving by
+name UPSERTs the `is_shared` flag too so toggling share status is
+a one-click re-save with the same name.
+
+`renameSavedViewAction` is a thin update-by-(id, workspace_id, user_id)
+that returns `not_found_or_not_owner` for any attempt to rename a
+teammate's shared view.
+
+UI:
+- `SavedViewSummary` carries `isShared` + `isMine` so the picker
+  can render the right per-row affordances without round-trips.
+- Per-row rename pencil + delete trash render only on `isMine`
+  rows — shared rows from teammates are read-only.
+- Shared rows show a small "Shared" pill with a Users icon.
+- Save section gets a "Share with the workspace" checkbox below the
+  name field, rendered only when `canShare = true`.
+- `/tasks` page switched to `requireRole` to derive `canShare` for
+  the picker.
+
+### Files touched
+
+- `apps/app/app/onboarding/actions.ts`
+- `apps/app/inngest/functions/send-daily-digest.ts`
+- `apps/app/app/[workspace]/settings/notifications-{actions,form}.{ts,tsx}`
+- `apps/app/app/[workspace]/tasks/{page,saved-views-actions,saved-views-picker}.{ts,tsx}`
+- `packages/db/src/schema/saved-views.ts`
+- `packages/db/src/rls/saved-views.sql`
+- `packages/db/migrations/0007_saved_views_is_shared.sql`
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean; no route changes
+  (existing pages now render the new affordances).
+
+---
+
 ## 2026-04-25 — Client tasks tab parity + tier-gate UX
 
 ### Added — Recurring templates section on the client tasks tab
