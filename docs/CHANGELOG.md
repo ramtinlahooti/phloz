@@ -4,6 +4,31 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Daily digest is now timezone-aware
+
+Bug fix more than a feature. The digest was firing at 9am **UTC**
+for every workspace, meaning North-American agencies got it at
+1–5am local time. Now each workspace gets it at 9am in its own
+timezone (`workspaces.timezone`, defaulting to UTC).
+
+- Cron switched from `TZ=UTC 0 9 * * *` to `TZ=UTC 0 * * * *`
+  (hourly).
+- Per-workspace gate skips unless
+  `Intl.DateTimeFormat({ hour, timeZone: ws.timezone }).format(now)`
+  is 9 (`DIGEST_LOCAL_HOUR`).
+- Manual `digest/send-daily` event always runs — useful for
+  previewing the email.
+- Falls back to UTC if `ws.timezone` is empty or invalid (rather
+  than crashing the whole cron because of one bad value).
+
+Cost: Inngest function now invokes 24× per day instead of once.
+At free-tier scale (50k steps/mo) still way under cap; revisit
+if workspace count tops ~200.
+
+`pnpm check` 29/29 green. Local build clean.
+
+---
+
 ## 2026-04-24 — Audit rule suppression (per-client snooze)
 
 Without snooze the audit engine becomes annoying the moment a

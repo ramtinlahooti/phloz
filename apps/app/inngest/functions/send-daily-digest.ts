@@ -23,18 +23,22 @@ import {
 import { inngest } from '../client';
 
 /**
- * Daily digest email. Runs once a day at 09:00 UTC and also fires
- * on-demand via the `digest/send-daily` event (useful for testing).
+ * Daily digest email. Cron fires every hour; each workspace is sent
+ * only when **its local time** is 9 AM. Using the workspace timezone
+ * (defaulting to UTC) means agencies in Vancouver get the digest at
+ * 9am Pacific, agencies in London get it at 9am GMT, etc. The
+ * `digest/send-daily` manual event always sends regardless of the
+ * hour — useful for testing.
  *
- * V1 audience: only the workspace owner. Per-member digests +
- * per-user opt-out land in V2 — requires a new settings column and
- * timezone plumbing. For now the email itself tells the recipient
- * they can reply to opt out, which gives us a manual safety valve.
+ * V1 audience: workspace owner only. Per-member digests + per-user
+ * opt-out land in V2; the email itself tells the recipient to reply
+ * to opt out as a safety valve.
  *
  * Skips sending when there's nothing actionable in the workspace.
  * No point filling an inbox with "all clear" messages every morning.
  */
-const DIGEST_CRON = 'TZ=UTC 0 9 * * *';
+const DIGEST_CRON = 'TZ=UTC 0 * * * *'; // hourly
+const DIGEST_LOCAL_HOUR = 9;
 
 export const sendDailyDigestFunction = inngest.createFunction(
   {
@@ -54,6 +58,9 @@ export const sendDailyDigestFunction = inngest.createFunction(
     const eventData = (event?.data ?? {}) as { workspaceId?: string };
     const targeted =
       event?.name === 'digest/send-daily' ? eventData.workspaceId : undefined;
+    // Manual event = always send. Cron = only send when each
+    // workspace's local hour matches the configured digest hour.
+    const isManual = event?.name === 'digest/send-daily';
 
     const workspaces = await step.run('load-workspaces', async () => {
       const rows = targeted
@@ -65,6 +72,7 @@ export const sendDailyDigestFunction = inngest.createFunction(
       return rows;
     });
 
+    const now = new Date();
     const results: Array<{
       workspaceId: string;
       ownerUserId: string | null;
@@ -73,6 +81,21 @@ export const sendDailyDigestFunction = inngest.createFunction(
     }> = [];
 
     for (const ws of workspaces) {
+      // Cron path: skip workspaces whose local hour isn't 9am.
+      // Manual path: always run (useful for previewing the email).
+      if (!isManual) {
+        const localHour = currentHourInTz(now, ws.timezone ?? 'UTC');
+        if (localHour !== DIGEST_LOCAL_HOUR) {
+          results.push({
+            workspaceId: ws.id,
+            ownerUserId: ws.ownerUserId,
+            sent: false,
+            reason: 'not_local_9am',
+          });
+          continue;
+        }
+      }
+
       const result = await step.run(`digest-${ws.id}`, async () => {
         return runDigestForWorkspace(ws);
       });
@@ -87,6 +110,35 @@ export const sendDailyDigestFunction = inngest.createFunction(
     };
   },
 );
+
+/**
+ * Local hour [0–23] in the given timezone. Falls back to UTC when the
+ * timezone string is invalid or empty — better to send at "the wrong"
+ * hour than to crash the entire cron because one workspace has a
+ * malformed timezone string.
+ */
+function currentHourInTz(date: Date, timezone: string): number {
+  const tz = timezone?.trim() || 'UTC';
+  try {
+    const formatted = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      hour12: false,
+      timeZone: tz,
+    }).format(date);
+    const parsed = parseInt(formatted, 10);
+    if (Number.isFinite(parsed)) return parsed;
+  } catch {
+    // RangeError from an unknown timezone → fall through.
+  }
+  return new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    hour12: false,
+    timeZone: 'UTC',
+  })
+    .format(date)
+    .split(':')
+    .map((s) => parseInt(s, 10))[0] ?? 0;
+}
 
 /**
  * Compose + send the digest for one workspace. Called once per
