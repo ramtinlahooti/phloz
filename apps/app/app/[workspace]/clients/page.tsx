@@ -81,6 +81,7 @@ export default async function ClientsListPage({
     inboundMessageRows,
     outboundMessageRows,
     trackingNodeRows,
+    contactRows,
   ] = await Promise.all([
     db
       .select()
@@ -144,6 +145,18 @@ export default async function ClientsListPage({
       })
       .from(schema.trackingNodes)
       .where(eq(schema.trackingNodes.workspaceId, workspaceId)),
+    // Contacts feed the search index — typing a contact's name or
+    // email surfaces their parent client. Phone too, in case an
+    // incoming caller's number is what the user remembers.
+    db
+      .select({
+        clientId: schema.clientContacts.clientId,
+        name: schema.clientContacts.name,
+        email: schema.clientContacts.email,
+        phone: schema.clientContacts.phone,
+      })
+      .from(schema.clientContacts)
+      .where(eq(schema.clientContacts.workspaceId, workspaceId)),
   ]);
 
   // Aggregate per-client inputs for the health scorer.
@@ -267,10 +280,34 @@ export default async function ClientsListPage({
     );
   }
 
-  // Text search — matches on name, business_name, industry, and website.
-  // Case-insensitive substring. Runs on whatever's already filtered by
-  // status + industry so search narrows further inside the chosen scope.
-  const filteredClients = searchQuery
+  // Per-client contact search index. Joining name + email + phone
+  // so typing any of those three (or a fragment of them) finds the
+  // parent client.
+  const contactSearchByClient = new Map<string, string>();
+  for (const c of contactRows) {
+    if (!c.clientId) continue;
+    const piece = [c.name, c.email, c.phone]
+      .filter((x): x is string => typeof x === 'string' && x.length > 0)
+      .join(' ');
+    if (piece.length === 0) continue;
+    const existing = contactSearchByClient.get(c.clientId);
+    contactSearchByClient.set(
+      c.clientId,
+      existing ? `${existing} ${piece}` : piece,
+    );
+  }
+
+  // Text search — multi-token AND. Splits the query on whitespace
+  // and requires every token to match somewhere in the haystack
+  // (case-insensitive substring). Haystack covers name + business
+  // name + industry + website + business email + the headline
+  // platform ID + every contact's name/email/phone. Runs on
+  // whatever's already filtered by status + industry so search
+  // narrows further inside the chosen scope.
+  const searchTokens = searchQuery
+    .split(/\s+/)
+    .filter((t) => t.length > 0);
+  const filteredClients = searchTokens.length
     ? scoped.filter((c) => {
         const hay = [
           c.name,
@@ -279,11 +316,12 @@ export default async function ClientsListPage({
           c.websiteUrl,
           c.businessEmail,
           platformIdSummary.get(c.id) ?? null,
+          contactSearchByClient.get(c.id) ?? null,
         ]
           .filter((x): x is string => typeof x === 'string' && x.length > 0)
           .join(' ')
           .toLowerCase();
-        return hay.includes(searchQuery);
+        return searchTokens.every((t) => hay.includes(t));
       })
     : scoped;
 
