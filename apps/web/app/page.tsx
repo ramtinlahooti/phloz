@@ -1,9 +1,30 @@
+import { annualMonthlyEquivalent, publicTiers, type TierConfig } from '@phloz/billing';
 import { Badge, buttonVariants } from '@phloz/ui';
 
 import { TrackedCtaLink } from '@/components/analytics/tracked-cta-link';
 import { NewsletterForm } from '@/components/newsletter-form';
 import { buildMetadata, softwareApplicationJsonLd } from '@/lib/metadata';
 import { SITE_CONFIG } from '@/lib/site-config';
+
+function formatUsd(value: number | null): string {
+  if (value === null) return 'Custom';
+  return `$${value.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function clientLimitLabel(tier: TierConfig): string {
+  return tier.clientLimit === 'unlimited'
+    ? 'Unlimited active clients'
+    : `${tier.clientLimit} active client${tier.clientLimit === 1 ? '' : 's'}`;
+}
+
+function seatsLabel(tier: TierConfig): string {
+  return tier.includedSeats === 'unlimited'
+    ? 'Unlimited included seats'
+    : `${tier.includedSeats} included seats`;
+}
 
 export const metadata = buildMetadata({
   title: 'CRM + work management for digital marketing agencies',
@@ -127,6 +148,9 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Pricing summary */}
+      <PricingSummary />
+
       {/* CTA */}
       <section>
         <div className="mx-auto max-w-4xl px-4 py-24 text-center sm:px-6 lg:px-8">
@@ -177,5 +201,107 @@ export default function HomePage() {
         </div>
       </section>
     </>
+  );
+}
+
+/**
+ * Compact pricing strip for the homepage. Mirrors the full pricing
+ * page's tier set + Growth-as-most-popular highlight, but trims each
+ * card to price + main caps + a CTA so the homepage stays browsable.
+ * Full plan comparison + FAQ live at /pricing.
+ */
+function PricingSummary() {
+  const tiers = publicTiers();
+  return (
+    <section
+      id="pricing"
+      className="border-b border-border/60 bg-card/20"
+    >
+      <div className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-2xl text-center">
+          <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+            Pay per active client, not per seat.
+          </h2>
+          <p className="mt-4 text-muted-foreground">
+            Six plans from free to unlimited. Client portals are free on
+            every tier — only your team counts against the seat cap.
+          </p>
+        </div>
+
+        <div className="mt-16 grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {tiers.map((tier) => {
+            const isFeatured = tier.name === 'growth';
+            const annualMonthly = annualMonthlyEquivalent(tier.name);
+            return (
+              <article
+                key={tier.name}
+                className={`relative flex flex-col rounded-xl border p-5 ${
+                  isFeatured
+                    ? 'border-primary bg-card/60 ring-1 ring-primary'
+                    : 'border-border/60 bg-card/30'
+                }`}
+              >
+                {isFeatured && (
+                  <Badge className="absolute -top-3 left-5 text-[10px]">
+                    Most popular
+                  </Badge>
+                )}
+                <h3 className="text-base font-semibold text-foreground">
+                  {tier.displayName}
+                </h3>
+                <p className="mt-3 flex items-baseline gap-1">
+                  <span className="text-2xl font-bold text-foreground">
+                    {formatUsd(tier.monthlyPriceUsd)}
+                  </span>
+                  {tier.monthlyPriceUsd !== null && (
+                    <span className="text-xs text-muted-foreground">/mo</span>
+                  )}
+                </p>
+                {annualMonthly !== null && (
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {formatUsd(annualMonthly)}/mo billed annually
+                  </p>
+                )}
+                <ul className="mt-4 space-y-1.5 text-xs text-muted-foreground">
+                  <li>{clientLimitLabel(tier)}</li>
+                  <li>{seatsLabel(tier)}</li>
+                  <li>Unlimited client portal users</li>
+                </ul>
+                <TrackedCtaLink
+                  href={
+                    tier.name === 'enterprise'
+                      ? '/contact'
+                      : `${SITE_CONFIG.appUrl}/signup?tier=${tier.name}`
+                  }
+                  className={`${buttonVariants({
+                    variant: isFeatured ? 'default' : 'outline',
+                    size: 'sm',
+                  })} mt-6 w-full`}
+                  ctaLocation="homepage_pricing"
+                  ctaLabel={`tier_${tier.name}`}
+                >
+                  {tier.name === 'starter'
+                    ? 'Start free'
+                    : tier.name === 'enterprise'
+                      ? 'Contact sales'
+                      : 'Start trial'}
+                </TrackedCtaLink>
+              </article>
+            );
+          })}
+        </div>
+
+        <div className="mt-10 text-center">
+          <TrackedCtaLink
+            href="/pricing"
+            className={buttonVariants({ variant: 'ghost', size: 'md' })}
+            ctaLocation="homepage_pricing"
+            ctaLabel="compare_all_plans"
+          >
+            Compare all plans + FAQ →
+          </TrackedCtaLink>
+        </div>
+      </div>
+    </section>
   );
 }
