@@ -5,6 +5,56 @@ for the template.
 
 ---
 
+## 2026-04-24: Recurring tasks fire at 6 AM workspace-local, no per-template hour
+
+**Status:** Accepted
+
+**Context:** Recurring task templates need a "fire at" time. Options:
+(a) per-template hour-of-day, (b) workspace-wide hour, (c) hardcoded.
+
+**Decision:** Hardcode 6 AM workspace-local. The hourly Inngest cron
+gates each workspace on `localDateParts(now, ws.timezone).hour === 6`
+before iterating templates.
+
+**Rationale:** Per-template hour adds a column + UI control that users
+will universally set to "early morning" anyway. The daily digest does
+the same thing at 9 AM (one hour difference is intentional — recurring
+tasks land before the digest reads them, so morning agendas already
+include today's freshly-spawned tasks).
+
+**Consequences:**
+- One TZ-resolution call per workspace per cron run; cron runs hourly,
+  so cost is workspace_count × 24/day. Fine at launch.
+- Future: if a customer asks for per-template hour control, add a
+  nullable `hour_of_day` column with a default null = workspace 6 AM.
+  Backwards-compatible.
+
+---
+
+## 2026-04-24: Lucide v1's removal of branded icons → Share2 for Meta Pixel
+
+**Status:** Accepted
+
+**Context:** `lucide-react` 1.0 dropped the `Facebook` icon (and other
+branded marks) for trademark/legal reasons. Our tracking-map registry
+imported it for the Meta Pixel node type.
+
+**Decision:** Replace `Facebook` with `Share2` everywhere it was used.
+(Meta Ads accounts already used `Building2`; only the pixel node was
+affected.)
+
+**Rationale:** Generic "social/share" icon reads as "social-network
+tracking" without leaning on a specific brand. Avoids re-adding the
+brand via a separate icon library + extra dependency.
+
+**Consequences:**
+- Visual change for any user who has a `meta_pixel` node on their
+  tracking map. Acceptable cosmetic shift.
+- Establishes the pattern: when lucide drops branded marks, prefer
+  generic substitutes over pulling a brand-icon package.
+
+---
+
 ## 2026-04-23: Deep-blue accent color
 
 **Status:** Accepted

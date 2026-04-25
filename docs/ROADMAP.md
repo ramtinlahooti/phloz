@@ -43,11 +43,12 @@ Full React Flow canvas with typed node library, drawer forms, keyboard shortcuts
 
 ## Phase 3 — Tasks & Messages
 
-- [ ] Task CRUD (workspace + client scoped, with department filter)
-- [ ] Task comment threads
-- [ ] Message thread UI in the split-pane client view
-- [ ] Resend inbound handler fully wired
-- [ ] Email digest notification (Inngest)
+- [x] Task CRUD (workspace + client scoped, with department filter)
+- [x] Task comment threads
+- [x] Message thread UI in the split-pane client view
+- [x] Resend inbound handler fully wired
+- [x] Email digest notification (Inngest) — timezone-aware
+- [x] Recurring task templates (daily/weekly/monthly Inngest cron)
 
 ## Phase 4 — Client Portal Polish
 

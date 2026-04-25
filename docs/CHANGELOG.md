@@ -4,6 +4,115 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-24 — Recurring tasks + bulk dep update + DB catch-up
+
+### Added — Recurring task templates (the headline feature)
+
+A core agency workflow: weekly client check-ins, monthly billing
+reminders, daily standups. Each template fires at 6 AM in the
+workspace's local timezone via an hourly Inngest cron, instantiating
+a fresh task with the template's title/description/priority/department/
+visibility/assignee + a `due_offset_days`-driven due date.
+
+**Schema (`packages/db/src/schema/recurring-task-templates.ts`):**
+- New `recurring_task_templates` table mirrors the relevant `tasks`
+  columns plus `cadence` (daily/weekly/monthly), `weekday`,
+  `day_of_month`, `due_offset_days`, `enabled`, `last_run_at`.
+- RLS matches `tasks.sql`: workspace members read; owner/admin/member
+  mutate; owner/admin delete; client-tied templates respect
+  per-member assignment. Inline RLS in migration; mirrored in
+  `packages/db/src/rls/recurring-task-templates.sql` for
+  `db:apply-rls`.
+- Migration `0004_recurring_task_templates.sql` applied to Supabase
+  (entry `recurring_task_templates`, 2026-04-24).
+- Added to `TENANT_TABLES` so the CI invariant check covers it.
+
+**Cron (`apps/app/inngest/functions/process-recurring-tasks.ts`):**
+- Hourly trigger; for each workspace, gate on local hour == 6.
+- Iterate enabled templates whose cadence predicate matches today's
+  local date; insert a fresh `tasks` row; advance `last_run_at`.
+- Skip if `last_run_at` is already on the same local date —
+  retry-safe within the same hour-window.
+- Monthly `day_of_month=31` clamps to last day of month so Feb
+  fires on the 28th (or 29th in leap years) instead of skipping.
+- Manual `recurring/process` event ignores the local-hour gate —
+  useful for dashboard replays and previewing creation.
+
+**UI (`apps/app/app/[workspace]/tasks/recurring/`):**
+- New route `/[workspace]/tasks/recurring` lists templates with
+  cadence summary, client name, department, "last fired" date, and
+  per-row enable toggle (member-mutable). Delete button is
+  owner/admin only.
+- New-template dialog mirrors `NewTaskDialog`'s shape with extra
+  cadence/weekday/day-of-month controls. Live preview line in the
+  dialog header reflects the chosen cadence.
+- Shared `cadence.ts` exports `RECURRING_CADENCES`,
+  `describeCadence`, `cadenceMatches`, `localDateParts`,
+  `sameLocalDate` — used by both the cron and the UI so cadence
+  semantics live in exactly one place.
+- Existing `/tasks` page header gets a "Recurring" link button
+  next to Search / Export / New task.
+
+### Changed — Bulk dependency update (16 packages)
+
+**Security fix:** `next-mdx-remote` 5 → 6 (Vercel-flagged advisory;
+v6 ships stricter JS-in-MDX defaults — our blog posts have no MDX
+JS expressions so the upgrade was drop-in).
+
+**Type alignment:** `react`/`react-dom` 19-rc → 19.2 GA, plus
+`@types/react`(-dom) 18 → 19.2 — clears the long-standing
+"React 19 with @types/react 18" peer warning. `@types/node` 22 → 25.
+
+**SDK bumps:**
+- Stripe SDK 22.0.2 → 22.1.0; pinned API version
+  `2026-03-25.dahlia` → `2026-04-22.dahlia` in
+  `packages/billing/src/stripe.ts`.
+- `@supabase/ssr` 0.5 → 0.10. `drizzle-kit` 0.28 → 0.31.
+  `pino` 9 → 10. `posthog-js` + `posthog-node` (5.x). `resend` 4 → 6.
+  `@react-email/components` 1.0.12 (replaces deprecated 0.0.28).
+  `@dagrejs/dagre` 1 → 3. `tailwind-merge` 2 → 3. `sonner` 1 → 2.
+
+**Lucide v1 dropped the branded `Facebook` icon.** Meta Pixel
+node-type now uses `Share2` (`packages/tracking-map/src/node-types/{registry,ads}.ts`).
+
+**Skipped (deferred — see NEXT-STEPS):** zod 3 → 4 (cross-codebase
+schema migration), vitest 2 → 4 (config breaking), typescript 5 → 6,
+eslint 9 → 10, `@hookform/resolvers` 3 → 5 (waits on zod 4).
+
+### Fixed — Migration 0001 catch-up
+
+`packages/db/migrations/0001_loving_marauders.sql`'s primary payload
+(`workspace_members.display_name` + `email` columns + the
+auth.users → workspace_members backfill UPDATE) had never been
+applied to Supabase, despite the column-by-column splits applied
+piecewise. Detected via direct schema probe; applied via the
+`workspace_members_identity_cache` migration entry. The team page
++ assignee picker now resolve teammates by name/email instead of
+UUID prefix for **every** existing member, not just freshly-invited ones.
+
+### Files touched
+
+- `packages/db/src/schema/{recurring-task-templates,index}.ts`
+- `packages/db/src/rls/{recurring-task-templates.sql,index.ts}`
+- `packages/db/migrations/0004_recurring_task_templates.sql`
+- `apps/app/app/[workspace]/tasks/recurring/{actions,cadence,page,
+  new-recurring-dialog,recurring-row}.{ts,tsx}`
+- `apps/app/app/[workspace]/tasks/page.tsx` (new "Recurring" link)
+- `apps/app/inngest/{client,index}.ts`
+- `apps/app/inngest/functions/process-recurring-tasks.ts`
+- All 11 `package.json` files (+ `pnpm-lock.yaml`)
+- `packages/billing/src/stripe.ts` (API version pin)
+- `packages/tracking-map/src/node-types/{registry,ads}.ts` (Facebook → Share2)
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/web build` — 49 pages compile.
+- `pnpm --filter @phloz/app build` — `/[workspace]/tasks/recurring`
+  surfaces in the build manifest.
+
+---
+
 ## 2026-04-24 — Daily digest is now timezone-aware
 
 Bug fix more than a feature. The digest was firing at 9am **UTC**
