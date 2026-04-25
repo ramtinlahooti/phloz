@@ -4,6 +4,109 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-25 — Homepage pricing + platform-ID copy + inline tracking map + clients-list filters
+
+### Added — Pricing summary on the marketing homepage
+
+The full `/pricing` page existed but the homepage hid pricing
+behind a "View pricing →" link. New `PricingSummary` section
+between Features and the bottom CTA renders all five public tiers
+in a five-column grid (Most-popular highlight on Growth matches
+the dedicated page). Each card: tier name, monthly price + annual-
+monthly equivalent, client cap, seat cap, "Unlimited client portal
+users" reminder, tier-specific CTA. CTAs route to
+`/signup?tier=<name>` so the onboarding redirect picks them up via
+`signup_tier_hint`. "Compare all plans + FAQ →" ghost link sends
+detail-seekers to the full pricing page.
+
+Tracking: every CTA fires `cta_click` with `cta_location=
+homepage_pricing` + a tier-specific label. Slots into the existing
+event catalog without a new event name.
+
+### Added — Platform IDs panel on the client Overview tab
+
+New "Platform IDs" card aggregates every recognisable tracking ID
+from the client's `tracking_nodes.metadata` — GA4 measurement IDs,
+GTM container IDs, Meta Pixel + CAPI, Google Ads customer +
+conversion IDs, TikTok advertiser + pixel, Microsoft Ads + UET
+tag, LinkedIn account + insight tag — and renders each as a single-
+click copy row.
+
+Per row: label ("GTM container · Acme website") + an external-link
+icon that deep-links into `/map?node=<id>` so clicking opens that
+node's drawer in the canvas. Value rendered as `<code>` inside a
+clickable copy button — `navigator.clipboard.writeText` + a brief
+check-mark animation. Empty state nudges new users toward the
+tracking map.
+
+`platform-ids.ts` exports `collectPlatformIds(nodes)` as a pure
+function. Adding a new ID-bearing node type is a single switch
+case. The clients-list page reuses the same helper to surface the
+headline platform ID per row — extraction logic lives in exactly
+one place.
+
+### Added — Inline tracking map in the client detail tab
+
+The Tracking map tab no longer renders a click-through Card with
+an "Open tracking map →" button. Instead, the live `MapClient`
+mounts inline inside a 70vh / `min-h-[480px]` container. Same
+component the dedicated `/[workspace]/clients/[clientId]/map`
+route uses — no duplication of the canvas + server-action wiring.
+
+Above the canvas: a thin strip with kbd hints, the inline
+`SeedStarterNodesButton` (when empty), and an "Open full screen ↗"
+link to the dedicated route for users who need the full viewport.
+
+Cost: the React Flow + dagre bundle now downloads on the first
+client-detail tab visit. Acceptable trade — the map is the core
+feature and click-throughs were the #1 complaint from the
+dogfooding pass.
+
+> Note: this change shipped in the same patch as the platform-IDs
+> commit (`ffa30a6`); the change-log + the follow-up
+> `feat(clients)` commit message both call it out so future-you
+> can find it.
+
+### Added — Clients list: sort + filter + detail rows
+
+`/[workspace]/clients` gains the missing sort + status + industry
+filter + per-row detail line.
+
+- Status pills: Active (default) / Archived / All.
+- Sort menu (native `<details>`): Recently active / Name A→Z /
+  Recently added / Most dormant.
+- Industry menu: distinct `clients.industry` values in the
+  workspace, sorted; "Any industry" clears the filter.
+- "Reset" link clears every filter dimension at once.
+- New URL params: `?sort=`, `?status=`, `?industry=`. Defaults
+  match the in-app links so existing navigation still hits the
+  same view.
+- Per-row sub-line joins business name + industry + truncated
+  hostname + headline platform ID with `·`. Empty fields disappear
+  so the line just vanishes for clients with no metadata yet.
+- Search now also matches the headline platform ID — typing
+  "GTM-ABCD" finds the right client.
+
+Performance: the existing `tracking_nodes` query was extended to
+return `metadata` too. One query, two consumers (per-client
+headline ID + the in-app search index) — no extra round-trip.
+
+### Files touched
+
+- `apps/web/app/page.tsx`
+- `apps/app/app/[workspace]/clients/[clientId]/{page,platform-ids,platform-ids-card}.{ts,tsx}`
+- `apps/app/app/[workspace]/clients/page.tsx`
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/web build` — 49 marketing pages.
+- `pnpm --filter @phloz/app build` — clean. `/[workspace]/clients`
+  + `/[workspace]/clients/[clientId]` routes both render the new
+  affordances.
+
+---
+
 ## 2026-04-25 — Default-view auto-redirect + team digest visibility + keyboard reorder
 
 ### Added — Saved-view default bookmark + auto-redirect
