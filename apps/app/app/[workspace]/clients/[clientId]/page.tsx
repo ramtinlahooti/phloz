@@ -41,7 +41,10 @@ import { buildAppMetadata } from '@/lib/metadata';
 
 import { ArchiveButton } from './archive-button';
 import { ClientOverviewForm } from './client-overview-form';
+import { MapClient } from './map/map-client';
 import { ClientNotesEditor } from './notes-editor';
+import { PlatformIdsCard } from './platform-ids-card';
+import { collectPlatformIds } from './platform-ids';
 import {
   ContactsPanel,
   type ContactRow,
@@ -640,6 +643,18 @@ export default async function ClientDetailPage({
                   industry: client.industry,
                 }}
               />
+              <PlatformIdsCard
+                workspaceId={workspaceId}
+                clientId={clientId}
+                rows={collectPlatformIds(
+                  trackingNodeRows.map((n) => ({
+                    id: n.id,
+                    nodeType: n.nodeType,
+                    label: n.label,
+                    metadata: (n.metadata as Record<string, unknown>) ?? null,
+                  })),
+                )}
+              />
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -759,38 +774,64 @@ export default async function ClientDetailPage({
               />
             </TabsContent>
 
-            <TabsContent value="map" className="mt-6">
-              <Card>
-                <CardContent className="space-y-4 p-6 text-sm">
-                  <p className="text-muted-foreground">
-                    The tracking infrastructure map is a typed graph of every
-                    GA4 property, GTM container, pixel, audience, and
-                    conversion owned by this client.
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Link
-                      href={`/${workspaceId}/clients/${clientId}/map`}
-                      className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-accent"
-                    >
-                      Open tracking map →
-                    </Link>
-                    {trackingNodeRows.length === 0 && (
-                      <SeedStarterNodesButton
-                        workspaceId={workspaceId}
-                        clientId={clientId}
-                        variant="inline"
-                      />
-                    )}
-                  </div>
+            <TabsContent value="map" className="mt-6 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>
+                  Drag to position · click to edit · handle drag = connect ·
+                  press <kbd className="rounded border border-border bg-card px-1 text-[10px]">n</kbd> to add
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
                   {trackingNodeRows.length === 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      New client? Seed a starter setup — Website, GTM,
-                      GA4, Meta Pixel + CAPI, Google Ads — in one click.
-                      You&apos;ll fill in the IDs as you go.
-                    </p>
+                    <SeedStarterNodesButton
+                      workspaceId={workspaceId}
+                      clientId={clientId}
+                      variant="inline"
+                    />
                   )}
-                </CardContent>
-              </Card>
+                  <Link
+                    href={`/${workspaceId}/clients/${clientId}/map`}
+                    className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-xs text-muted-foreground hover:border-primary/60 hover:text-foreground"
+                  >
+                    Open full screen ↗
+                  </Link>
+                </div>
+              </div>
+              {/* Inline canvas. Keeps the canvas mounted inside the
+                  tab so the user lands on the live map, not a
+                  click-through. The dedicated /map route stays for
+                  full-screen work. Height is constrained so the rest
+                  of the page (header strip + breadcrumbs) stays in
+                  view. */}
+              <div className="h-[70vh] min-h-[480px] overflow-hidden rounded-lg border border-border/60">
+                <MapClient
+                  workspaceId={workspaceId}
+                  clientId={clientId}
+                  initial={{
+                    nodes: trackingNodeRows.map((n) => ({
+                      id: n.id,
+                      clientId: n.clientId,
+                      workspaceId: n.workspaceId,
+                      nodeType: n.nodeType,
+                      label: n.label,
+                      metadata: (n.metadata as Record<string, unknown>) ?? {},
+                      healthStatus: n.healthStatus,
+                      lastVerifiedAt: n.lastVerifiedAt,
+                      position: n.position ?? null,
+                    })),
+                    edges: trackingEdgeRows.map((e) => ({
+                      id: e.id,
+                      clientId: e.clientId,
+                      workspaceId: e.workspaceId,
+                      sourceNodeId: e.sourceNodeId,
+                      targetNodeId: e.targetNodeId,
+                      edgeType: e.edgeType,
+                      label: e.label,
+                      metadata: (e.metadata as Record<string, unknown>) ?? {},
+                    })),
+                  }}
+                  focusNodeId={null}
+                />
+              </div>
             </TabsContent>
 
             <TabsContent value="audit" className="mt-6">
