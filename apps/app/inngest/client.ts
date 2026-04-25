@@ -19,6 +19,10 @@ export const INNGEST_EVENT_NAMES = [
   /** Fired on-demand to send a daily digest to one workspace's owner
    *  (for testing) OR fired by the cron over every workspace. */
   'digest/send-daily',
+  /** Fired on-demand to process recurring task templates for one
+   *  workspace, ignoring the local-hour gate. Cron path uses no
+   *  event name. */
+  'recurring/process',
 ] as const;
 export type PhlozInngestEventName = (typeof INNGEST_EVENT_NAMES)[number];
 

@@ -6,6 +6,7 @@
  * function, then add it to the array below.
  */
 import { onClientAdded, onWorkspaceCreated } from './functions/on-workspace-created';
+import { processRecurringTasksFunction } from './functions/process-recurring-tasks';
 import { recomputeActiveClientCount } from './functions/recompute-active-client-count';
 import { sendDailyDigestFunction } from './functions/send-daily-digest';
 import { sendTrialEndingReminder } from './functions/send-trial-ending-reminder';
@@ -17,6 +18,7 @@ export const inngestFunctions = [
   recomputeActiveClientCount,
   sendTrialEndingReminder,
   sendDailyDigestFunction,
+  processRecurringTasksFunction,
   onWorkspaceCreated,
   onClientAdded,
 ] as const;

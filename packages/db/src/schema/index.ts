@@ -13,6 +13,7 @@ export * from './tracking-nodes';
 export * from './tracking-edges';
 export * from './tasks';
 export * from './task-watchers';
+export * from './recurring-task-templates';
 export * from './comments';
 export * from './messages';
 export * from './inbound-email-addresses';

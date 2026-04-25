@@ -285,6 +285,12 @@ export default async function TasksPage({
             placeholder="Search tasks…"
             className="w-full sm:w-56"
           />
+          <Link
+            href={`/${workspaceId}/tasks/recurring`}
+            className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/60 hover:text-foreground"
+          >
+            Recurring
+          </Link>
           <ExportButton
             route={`/api/workspaces/${workspaceId}/tasks/export`}
           />
