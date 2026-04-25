@@ -54,6 +54,7 @@ export function SubtaskList({
   const [adding, setAdding] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   useEffect(() => {
@@ -156,6 +157,41 @@ export function SubtaskList({
     });
   }
 
+  // ---- Reorder helpers (shared by DnD + keyboard) -----------------------
+
+  function applyReorder(nextIds: string[], previous: SubtaskView[]) {
+    const lookup = new Map(previous.map((s) => [s.id, s]));
+    const next = nextIds.flatMap((id) => {
+      const row = lookup.get(id);
+      return row ? [row] : [];
+    });
+    setSubtasks(next);
+    startTransition(async () => {
+      const res = await reorderSubtasksAction({
+        workspaceId,
+        parentTaskId,
+        orderedIds: nextIds,
+      });
+      if (!res.ok) {
+        toast.error(res.error);
+        setSubtasks(previous);
+      }
+    });
+  }
+
+  function moveBy(id: string, delta: -1 | 1) {
+    if (!subtasks) return;
+    const idx = subtasks.findIndex((s) => s.id === id);
+    if (idx === -1) return;
+    const target = idx + delta;
+    if (target < 0 || target >= subtasks.length) return;
+    const nextIds = subtasks.map((s) => s.id);
+    const [moved] = nextIds.splice(idx, 1);
+    if (!moved) return;
+    nextIds.splice(target, 0, moved);
+    applyReorder(nextIds, subtasks);
+  }
+
   // ---- DnD --------------------------------------------------------------
 
   function onDragStart(id: string) {
@@ -187,24 +223,29 @@ export function SubtaskList({
       const toIdx = subtasks.findIndex((s) => s.id === targetId);
       if (fromIdx === -1 || toIdx === -1) return;
 
-      const next = subtasks.slice();
-      const [moved] = next.splice(fromIdx, 1);
+      const nextIds = subtasks.map((s) => s.id);
+      const [moved] = nextIds.splice(fromIdx, 1);
       if (!moved) return;
-      next.splice(toIdx, 0, moved);
+      nextIds.splice(toIdx, 0, moved);
+      applyReorder(nextIds, subtasks);
+    };
+  }
 
-      const previous = subtasks;
-      setSubtasks(next);
-      startTransition(async () => {
-        const res = await reorderSubtasksAction({
-          workspaceId,
-          parentTaskId,
-          orderedIds: next.map((s) => s.id),
-        });
-        if (!res.ok) {
-          toast.error(res.error);
-          setSubtasks(previous);
-        }
-      });
+  // ---- Keyboard reorder (Cmd/Ctrl + ↑/↓) --------------------------------
+
+  function onRowKeyDown(id: string) {
+    return (e: React.KeyboardEvent) => {
+      // Only handle Cmd/Ctrl + arrow up/down. Plain arrow keys still
+      // navigate inside the dialog (focus traversal) — we don't want
+      // to swallow them.
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        moveBy(id, -1);
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        moveBy(id, 1);
+      }
     };
   }
 
@@ -248,6 +289,7 @@ export function SubtaskList({
               <li
                 key={s.id}
                 draggable
+                tabIndex={0}
                 onDragStart={onDragStart(s.id)}
                 onDragOver={onDragOver(s.id)}
                 onDrop={onDrop(s.id)}
@@ -255,12 +297,18 @@ export function SubtaskList({
                   setDraggingId(null);
                   setOverId(null);
                 }}
-                className={`group flex items-start gap-2 rounded-md px-1 py-1.5 transition-colors ${
+                onKeyDown={onRowKeyDown(s.id)}
+                onFocus={() => setFocusedId(s.id)}
+                onBlur={() => setFocusedId((prev) => (prev === s.id ? null : prev))}
+                aria-label={`${s.title}. Cmd-Up or Cmd-Down to reorder.`}
+                className={`group flex items-start gap-2 rounded-md px-1 py-1.5 transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                   isDragging
                     ? 'opacity-40'
                     : isDragTarget
                       ? 'bg-primary/10'
-                      : 'hover:bg-muted/50'
+                      : focusedId === s.id
+                        ? 'bg-muted/40'
+                        : 'hover:bg-muted/50'
                 }`}
               >
                 <span
