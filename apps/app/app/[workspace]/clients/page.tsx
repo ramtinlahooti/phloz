@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, lt, not } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, not } from 'drizzle-orm';
 import Link from 'next/link';
 
 import { getDb, schema } from '@phloz/db/client';
@@ -19,10 +19,42 @@ import {
 } from '@/lib/client-health';
 import { buildAppMetadata } from '@/lib/metadata';
 
+import { collectPlatformIds } from './[clientId]/platform-ids';
+
 export const metadata = buildAppMetadata({ title: 'Clients' });
 
+const SORT_OPTIONS = [
+  'recently_active',
+  'name',
+  'recently_added',
+  'oldest_activity',
+] as const;
+type ClientsSort = (typeof SORT_OPTIONS)[number];
+
+const SORT_LABELS: Record<ClientsSort, string> = {
+  recently_active: 'Recently active',
+  name: 'Name (A→Z)',
+  recently_added: 'Recently added',
+  oldest_activity: 'Most dormant',
+};
+
+const STATUS_OPTIONS = ['active', 'archived', 'all'] as const;
+type ClientsStatus = (typeof STATUS_OPTIONS)[number];
+
 type RouteParams = { workspace: string };
-type ClientsSearchParams = { q?: string };
+type ClientsSearchParams = {
+  q?: string;
+  sort?: string;
+  status?: string;
+  industry?: string;
+};
+
+function isSort(v: string | undefined): v is ClientsSort {
+  return !!v && (SORT_OPTIONS as readonly string[]).includes(v);
+}
+function isStatus(v: string | undefined): v is ClientsStatus {
+  return !!v && (STATUS_OPTIONS as readonly string[]).includes(v);
+}
 
 export default async function ClientsListPage({
   params,
@@ -34,6 +66,9 @@ export default async function ClientsListPage({
   const { workspace: workspaceId } = await params;
   const sp = await searchParams;
   const searchQuery = (sp.q ?? '').trim().toLowerCase();
+  const sort: ClientsSort = isSort(sp.sort) ? sp.sort : 'recently_active';
+  const statusFilter: ClientsStatus = isStatus(sp.status) ? sp.status : 'active';
+  const industryFilter = (sp.industry ?? '').trim() || null;
   const db = getDb();
 
   const now = new Date();
@@ -93,10 +128,16 @@ export default async function ClientsListPage({
           not(eq(schema.messages.channel, 'internal_note')),
         ),
       ),
-    // Tracking node health rollup per client.
+    // Tracking node health + ID rollup per client. The metadata
+    // payload is small (one tracking node per client averages ~150
+    // bytes) so fetching the JSON inline beats a separate query.
     db
       .select({
+        id: schema.trackingNodes.id,
         clientId: schema.trackingNodes.clientId,
+        nodeType: schema.trackingNodes.nodeType,
+        label: schema.trackingNodes.label,
+        metadata: schema.trackingNodes.metadata,
         healthStatus: schema.trackingNodes.healthStatus,
       })
       .from(schema.trackingNodes)
@@ -164,24 +205,125 @@ export default async function ClientsListPage({
   const active = clients.filter((c) => c.archivedAt === null);
   const archived = clients.filter((c) => c.archivedAt !== null);
 
+  // Per-client first GTM container ID (if any). Aggregated from the
+  // same tracking_node rows the health rollup uses — no extra query.
+  const nodesByClient = new Map<
+    string,
+    Array<{
+      id: string;
+      nodeType: typeof schema.trackingNodes.$inferSelect['nodeType'];
+      label: string | null;
+      metadata: Record<string, unknown> | null;
+    }>
+  >();
+  for (const n of trackingNodeRows) {
+    if (!n.clientId) continue;
+    const list = nodesByClient.get(n.clientId) ?? [];
+    list.push({
+      id: n.id,
+      nodeType: n.nodeType,
+      label: n.label,
+      metadata: (n.metadata as Record<string, unknown> | null) ?? null,
+    });
+    nodesByClient.set(n.clientId, list);
+  }
+  const platformIdSummary = new Map<string, string | null>();
+  for (const [clientId, nodes] of nodesByClient) {
+    const ids = collectPlatformIds(nodes);
+    // Pick the most identifying ID we have, in order of usefulness.
+    // GTM and GA4 are the headline integrations agencies copy most.
+    const headline =
+      ids.find((r) => r.label.startsWith('GTM container')) ??
+      ids.find((r) => r.label.startsWith('GA4 measurement')) ??
+      ids[0] ??
+      null;
+    platformIdSummary.set(clientId, headline?.value ?? null);
+  }
+
+  // Distinct industries for the filter dropdown.
+  const industryOptions = Array.from(
+    new Set(
+      clients
+        .map((c) => c.industry?.trim())
+        .filter((i): i is string => typeof i === 'string' && i.length > 0),
+    ),
+  ).sort();
+
+  // Status filter (default active).
+  let scoped = clients;
+  if (statusFilter === 'active') {
+    scoped = active;
+  } else if (statusFilter === 'archived') {
+    scoped = archived;
+  }
+
+  if (industryFilter) {
+    scoped = scoped.filter(
+      (c) =>
+        (c.industry ?? '').trim().toLowerCase() ===
+        industryFilter.toLowerCase(),
+    );
+  }
+
   // Text search — matches on name, business_name, industry, and website.
-  // Case-insensitive substring. Runs on the full client list (not just
-  // active) so a search can surface archived matches too.
+  // Case-insensitive substring. Runs on whatever's already filtered by
+  // status + industry so search narrows further inside the chosen scope.
   const filteredClients = searchQuery
-    ? clients.filter((c) => {
+    ? scoped.filter((c) => {
         const hay = [
           c.name,
           c.businessName,
           c.industry,
           c.websiteUrl,
           c.businessEmail,
+          platformIdSummary.get(c.id) ?? null,
         ]
           .filter((x): x is string => typeof x === 'string' && x.length > 0)
           .join(' ')
           .toLowerCase();
         return hay.includes(searchQuery);
       })
-    : clients;
+    : scoped;
+
+  // Sort the filtered set in JS — small N, simple semantics.
+  filteredClients.sort((a, b) => {
+    switch (sort) {
+      case 'name':
+        return a.name.localeCompare(b.name);
+      case 'recently_added':
+        return b.createdAt.getTime() - a.createdAt.getTime();
+      case 'oldest_activity': {
+        const aT = a.lastActivityAt?.getTime() ?? a.createdAt.getTime();
+        const bT = b.lastActivityAt?.getTime() ?? b.createdAt.getTime();
+        return aT - bT;
+      }
+      case 'recently_active':
+      default: {
+        const aT = a.lastActivityAt?.getTime() ?? a.updatedAt.getTime();
+        const bT = b.lastActivityAt?.getTime() ?? b.updatedAt.getTime();
+        return bT - aT;
+      }
+    }
+  });
+
+  // URL helpers for sort + filter pills. Each click flips one
+  // dimension while preserving the others; clicking the same value
+  // toggles back to the default.
+  function hrefWith(updates: Partial<ClientsSearchParams>): string {
+    const next = new URLSearchParams();
+    const merged = { ...sp, ...updates } as ClientsSearchParams;
+    for (const [k, v] of Object.entries(merged)) {
+      if (typeof v === 'string' && v.length > 0) next.set(k, v);
+    }
+    const qs = next.toString();
+    return qs ? `/${workspaceId}/clients?${qs}` : `/${workspaceId}/clients`;
+  }
+
+  const anyFilterActive =
+    statusFilter !== 'active' ||
+    industryFilter !== null ||
+    sort !== 'recently_active' ||
+    searchQuery !== '';
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
@@ -218,6 +360,51 @@ export default async function ClientsListPage({
           </Link>
         </div>
       </header>
+
+      {/* Status pills + sort + industry filter */}
+      <div className="mb-6 flex flex-wrap items-center gap-2 text-xs">
+        {STATUS_OPTIONS.map((s) => (
+          <Link
+            key={s}
+            href={hrefWith({ status: s === 'active' ? undefined : s })}
+            className={`rounded-full border px-3 py-1 capitalize transition-colors ${
+              statusFilter === s
+                ? 'border-primary bg-primary/10 text-foreground'
+                : 'border-border bg-card text-muted-foreground hover:border-primary/60 hover:text-foreground'
+            }`}
+          >
+            {s === 'all' ? 'All' : s}
+          </Link>
+        ))}
+
+        <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+
+        <SortMenu
+          current={sort}
+          hrefFor={(value) =>
+            hrefWith({
+              sort: value === 'recently_active' ? undefined : value,
+            })
+          }
+        />
+
+        {industryOptions.length > 0 && (
+          <IndustryMenu
+            current={industryFilter}
+            options={industryOptions}
+            hrefFor={(value) => hrefWith({ industry: value ?? undefined })}
+          />
+        )}
+
+        {anyFilterActive && (
+          <Link
+            href={`/${workspaceId}/clients`}
+            className="ml-1 text-muted-foreground hover:text-foreground"
+          >
+            Reset
+          </Link>
+        )}
+      </div>
 
       {clients.length === 0 ? (
         <EmptyState
@@ -293,11 +480,12 @@ export default async function ClientsListPage({
                                 </Badge>
                               )}
                           </div>
-                          {client.businessName && (
-                            <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                              {client.businessName}
-                            </div>
-                          )}
+                          <ClientRowDetails
+                            businessName={client.businessName}
+                            industry={client.industry}
+                            websiteUrl={client.websiteUrl}
+                            platformId={platformIdSummary.get(client.id) ?? null}
+                          />
                         </div>
                       </div>
                       <div className="shrink-0 text-xs text-muted-foreground">
@@ -313,6 +501,121 @@ export default async function ClientsListPage({
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+/**
+ * Sort menu rendered as a tiny inline `<details>`. No client-side
+ * state — the `<a>` href changes the URL which re-renders the page
+ * server-side. Keeps this page a single server component.
+ */
+function SortMenu({
+  current,
+  hrefFor,
+}: {
+  current: ClientsSort;
+  hrefFor: (value: ClientsSort) => string;
+}) {
+  return (
+    <details className="relative">
+      <summary
+        className="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground [&::-webkit-details-marker]:hidden"
+      >
+        Sort: <span className="text-foreground">{SORT_LABELS[current]}</span>
+        <span aria-hidden>▾</span>
+      </summary>
+      <div className="absolute left-0 top-full z-20 mt-1 min-w-[10rem] rounded-md border border-border bg-card p-1 text-xs shadow-md">
+        {SORT_OPTIONS.map((s) => (
+          <Link
+            key={s}
+            href={hrefFor(s)}
+            className={`block rounded px-2 py-1.5 transition-colors hover:bg-muted ${
+              current === s ? 'text-foreground' : 'text-muted-foreground'
+            }`}
+          >
+            {SORT_LABELS[s]}
+          </Link>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function IndustryMenu({
+  current,
+  options,
+  hrefFor,
+}: {
+  current: string | null;
+  options: string[];
+  hrefFor: (value: string | null) => string;
+}) {
+  return (
+    <details className="relative">
+      <summary
+        className="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground [&::-webkit-details-marker]:hidden"
+      >
+        Industry:{' '}
+        <span className="text-foreground">{current ?? 'Any'}</span>
+        <span aria-hidden>▾</span>
+      </summary>
+      <div className="absolute left-0 top-full z-20 mt-1 max-h-72 min-w-[12rem] overflow-y-auto rounded-md border border-border bg-card p-1 text-xs shadow-md">
+        <Link
+          href={hrefFor(null)}
+          className={`block rounded px-2 py-1.5 transition-colors hover:bg-muted ${
+            current === null ? 'text-foreground' : 'text-muted-foreground'
+          }`}
+        >
+          Any industry
+        </Link>
+        {options.map((opt) => (
+          <Link
+            key={opt}
+            href={hrefFor(opt)}
+            className={`block rounded px-2 py-1.5 transition-colors hover:bg-muted ${
+              current === opt ? 'text-foreground' : 'text-muted-foreground'
+            }`}
+          >
+            {opt}
+          </Link>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+/**
+ * Per-row sub-line. Joins business name (when set), industry, the
+ * truncated hostname, and the headline platform ID with `·`. Empty
+ * fields are skipped — the line just disappears when the client has
+ * none of these set.
+ */
+function ClientRowDetails({
+  businessName,
+  industry,
+  websiteUrl,
+  platformId,
+}: {
+  businessName: string | null;
+  industry: string | null;
+  websiteUrl: string | null;
+  platformId: string | null;
+}) {
+  const host =
+    websiteUrl && websiteUrl.length > 0
+      ? websiteUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')
+      : null;
+  const segments = [
+    businessName,
+    industry,
+    host,
+    platformId,
+  ].filter((s): s is string => typeof s === 'string' && s.length > 0);
+  if (segments.length === 0) return null;
+  return (
+    <div className="mt-0.5 truncate text-xs text-muted-foreground">
+      {segments.join(' · ')}
     </div>
   );
 }
