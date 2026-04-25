@@ -9,6 +9,8 @@ import { z } from 'zod';
 
 import { track } from '@phloz/analytics';
 import { createBrowserSupabase } from '@phloz/auth/client';
+
+import { getClientAppUrl } from '@/lib/client-app-url';
 import {
   Button,
   Form,
@@ -67,7 +69,7 @@ export function LoginForm() {
       const { error } = await supabase.auth.signInWithOtp({
         email: parsed.data,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?redirect_to=${encodeURIComponent(redirectTo)}`,
+          emailRedirectTo: `${getClientAppUrl()}/auth/callback?redirect_to=${encodeURIComponent(redirectTo)}`,
         },
       });
       if (error) {

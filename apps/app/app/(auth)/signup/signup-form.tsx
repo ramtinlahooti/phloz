@@ -7,6 +7,8 @@ import { z } from 'zod';
 
 import { track } from '@phloz/analytics';
 import { createBrowserSupabase } from '@phloz/auth/client';
+
+import { getClientAppUrl } from '@/lib/client-app-url';
 import {
   Button,
   Form,
@@ -48,7 +50,7 @@ export function SignupForm() {
       password: values.password,
       options: {
         data: { full_name: values.name, signup_tier_hint: tierHint ?? null },
-        emailRedirectTo: `${window.location.origin}/auth/callback?redirect_to=/onboarding`,
+        emailRedirectTo: `${getClientAppUrl()}/auth/callback?redirect_to=/onboarding`,
       },
     });
     if (error) {

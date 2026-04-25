@@ -6,6 +6,8 @@ import { z } from 'zod';
 
 import { track } from '@phloz/analytics';
 import { createBrowserSupabase } from '@phloz/auth/client';
+
+import { getClientAppUrl } from '@/lib/client-app-url';
 import {
   Button,
   Form,
@@ -33,7 +35,7 @@ export function ForgotPasswordForm() {
   async function onSubmit(values: Values) {
     const supabase = createBrowserSupabase();
     const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
-      redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+      redirectTo: `${getClientAppUrl()}/auth/callback?next=/reset-password`,
     });
     if (error) {
       toast.error(error.message);
