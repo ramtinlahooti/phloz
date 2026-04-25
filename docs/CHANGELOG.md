@@ -4,6 +4,70 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-25 — Client tasks tab parity + tier-gate UX
+
+### Added — Recurring templates section on the client tasks tab
+
+The client detail page's Tasks tab now renders a Recurring section
+above the regular task list, listing templates filtered to this
+client. Discoverable without leaving the client view — agency
+owners no longer need to detour through `/tasks/recurring` and pick
+the client from a dropdown.
+
+`NewRecurringDialog` accepts an optional `clientId` prop (matches
+`NewTaskDialog`'s shape). When set, the dialog hides the client
+picker and locks new templates to that client on submit. The
+workspace-wide `/tasks/recurring` route is unchanged.
+
+`apps/app/app/[workspace]/clients/[clientId]/page.tsx`:
+- Switched `requireUser` → `requireRole` so the page knows the
+  caller's role; only owner/admin see the per-row Delete button on
+  the recurring section (mirrors the workspace recurring page).
+- New parallel query for `recurring_task_templates` filtered by
+  `(workspace_id, client_id)`, ordered by title.
+
+### Added — Bulk selection on the client tasks tab
+
+Parity with the workspace `/tasks` page. Tasks group by status
+(todo / in_progress / blocked / done — empty groups filtered out)
+and use `TaskListWithSelection` instead of a flat `<ul>`. Each row
+gets a checkbox; the floating action bar appears at the bottom of
+the viewport when one or more tasks are selected and supports bulk
+status change + bulk delete. No new server actions —
+`bulkUpdateTasksAction` already filtered by `(workspaceId, taskIds)`.
+
+### Added — Pre-flight tier-gate UX on recurring tasks
+
+The `canAddRecurringTemplate` server gate already enforced limits,
+but users only saw the limit message after filling the dialog. The
+recurring page now runs the gate at render time and reflects the
+result in the UI:
+
+- Subtitle shows "X of Y used" (paid tiers) or omits when enterprise
+- At-limit count renders in destructive red
+- Trigger button on `NewRecurringDialog` is disabled with the gate's
+  human-readable message as a `title` tooltip when at-limit
+
+`NewRecurringDialog` gained two optional props (`disabled` +
+`disabledMessage`) that pass straight onto the trigger Button. The
+server-side gate inside `createRecurringTemplateAction` is still
+authoritative — the disabled trigger is a UX hint, not a security
+boundary.
+
+### Files touched
+
+- `apps/app/app/[workspace]/clients/[clientId]/page.tsx`
+- `apps/app/app/[workspace]/tasks/recurring/page.tsx`
+- `apps/app/app/[workspace]/tasks/recurring/new-recurring-dialog.tsx`
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — `/[workspace]/clients/[clientId]`
+  + `/[workspace]/tasks/recurring` both surface in the build manifest.
+
+---
+
 ## 2026-04-25 — Per-member digest, saved views, tier gating, magic-link fix
 
 ### Fixed — Magic-link / signup / reset emails embed canonical URL

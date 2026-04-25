@@ -2,19 +2,52 @@
 
 ## Branch state
 
-`claude/stupefied-vaughan-5f394f` is now **34 commits ahead of `main`**
-(was 30 at last wrap). All commits pass `pnpm check` (29/29 green;
-billing test suite at 28). Both apps build clean. Ready to squash-merge
-to `main` whenever Ramtin is done dogfooding.
+`claude/stupefied-vaughan-5f394f` was merged into `main` mid-session
+(fast-forward; main was strictly behind). Three follow-up commits on
+the branch since the merge — they need to land on main before the
+production deploys catch up:
 
-Vercel is wired and live. New commits trigger a fresh deploy.
+- `feat(client-tasks): inline recurring templates section`
+- `feat(client-tasks): bulk selection + status grouping on client tab`
+- `feat(billing): pre-flight tier-gate UX on recurring tasks page`
+
+A second fast-forward of main → branch will pull them in, or wait
+and squash a future bigger batch.
+
+All commits pass `pnpm check` (29/29 green). Both apps build clean.
 
 ## Manual steps Ramtin still owes
 
-Highest priority — without these, magic-link login + transactional
-emails don't work end-to-end on production:
+### 1. Vercel: attach `phloz.com` to the `phloz-web` project
 
-### Supabase auth dashboard
+Confirmed via Vercel API that `phloz.com` is **not** in `phloz-web`'s
+domain list — that's why "deployment not found" appeared. Steps:
+
+1. Vercel dashboard → `phloz-web` project → Settings → Domains →
+   "Add Domain" → enter `phloz.com`.
+2. Add `www.phloz.com` with the redirect-to-apex option.
+3. If Vercel says "in use elsewhere", check the `phloz` (app) project
+   and remove it there first.
+
+Production deployments on `phloz-web` are now green (the post-merge
+build of `main` is `READY`). The previous production deployment from
+`main` had errored — that's why no production deploy existed before
+the merge.
+
+### 2. DNS — drop the stale Vercel A record
+
+`phloz.com` apex currently has two A records:
+- ✅ `216.198.79.1` — Vercel's current recommended apex IP. Keep.
+- ❌ `76.76.21.21` — Vercel's older anycast IP. Both happen to point
+  at Vercel so DNS round-robin works, but it's redundant. Remove
+  from Squarespace.
+
+Add `www.phloz.com` as a CNAME → `cname.vercel-dns.com`, or A →
+`216.198.79.1`. Without it the www subdomain won't resolve.
+
+### 3. Supabase auth dashboard
+
+Still required — the magic-link code fix is dormant without these:
 
 1. Project Settings → Authentication → URL Configuration:
    - **Site URL**: `https://app.phloz.com`
@@ -23,89 +56,69 @@ emails don't work end-to-end on production:
      - `https://app.phloz.com/auth/callback?**`
      - `http://localhost:3001/auth/callback?**`
 2. Project Settings → Authentication → SMTP Settings → **Enable
-   Custom SMTP** and fill in the Resend creds per
-   `docs/DEPLOYMENT.md` Step 6 (host `smtp.resend.com`, port `465`,
-   username `resend`, password = a Resend API key, sender
-   `no-reply@phloz.com`). Pre-req: `phloz.com` verified in Resend.
+   Custom SMTP** per `docs/DEPLOYMENT.md` Step 6 (host
+   `smtp.resend.com`, port `465`, username `resend`, password = a
+   Resend API key, sender `no-reply@phloz.com`).
 
-### Vercel env
+### 4. Vercel env
 
 Confirm `NEXT_PUBLIC_APP_URL=https://app.phloz.com` is set on the
 `phloz-app` project (Production scope). The new
 `getClientAppUrl()` helper reads it.
 
-### DNS / Vercel marketing project (still pending from last session)
-
-`phloz.com` apex still resolves to the app project — that's why
-`phloz.com/login` works. Long-term: spin up a second Vercel project
-for `apps/web` rooted at `phloz.com`, remove `phloz.com` from the
-app project's Domains. Otherwise marketing visitors keep getting
-redirected through the app's `/login`.
-
 ## Top backlog (next session)
 
-1. **Per-template UI on the client tasks tab.** V1 only surfaces
-   workspace-wide `/tasks/recurring`. Client-specific pages should
-   show client-scoped templates inline so agency owners discover
-   them without leaving the client view.
-   (`apps/app/app/[workspace]/clients/[clientId]/...`)
-2. **Bulk selection on `/clients/[id]` tasks tab** — parity with
-   the workspace `/tasks` page (lift `task-list-with-selection.tsx`
-   shared logic).
-3. **Subtask reordering (DnD)** — `subtask-list.tsx` already renders
+1. **Subtask reordering (DnD).** `subtask-list.tsx` already renders
    an ordered list; add `dnd-kit` (or native HTML5 DnD) plus a
    `sort_order` column on `tasks` to persist.
-4. **Saved-views polish: rename in-place + bookmark default.**
-   Today only "save" + "delete". Add a small edit button per row
-   for renaming, and a star icon to mark one view as "open this
-   when I land on /tasks".
-5. **Wire the recurring-template tier-gate to the dialog UX.** The
-   gate is enforced server-side, but the dialog doesn't pre-check
-   — users only see the limit message after Submit. Fetch the
-   count on render of `/tasks/recurring` and disable the New
-   button + show "Pro upgrade" CTA when at-limit.
-6. **Saved views — workspace-shared variant.** V1 is personal-only.
-   A second `is_shared` column would let owners publish a view all
-   members see in their picker. Useful for agency-wide standards
-   like "All overdue PPC tasks".
-7. **Playwright smoke test for the recurring-tasks happy path** —
-   manual `recurring/process` event triggers a task; assertion that
-   it appears in `/tasks`; cleanup. Bonus: snapshot test for the
-   new `digest_enabled` toggle saving.
+2. **Saved-views polish.** Today only "save" + "delete". Add a small
+   edit button per row for renaming, and a star icon to mark one
+   view as "open this when I land on /tasks".
+3. **Saved views — workspace-shared variant.** A second `is_shared`
+   column would let owners publish a view all members see in their
+   picker. Useful for agency-wide standards like "All overdue PPC
+   tasks". Requires a small RLS policy tweak.
+4. **Per-member digest preview link.** Settings → Notifications card
+   gets a "Preview today's digest" button that fires the
+   `digest/send-daily` Inngest event scoped to this workspace + this
+   member. Useful for sanity-checking the new per-member filter
+   without waiting until 9 AM tomorrow.
+5. **Playwright smoke tests** for the recurring-tasks happy path
+   (manual `recurring/process` event triggers a task; assertion that
+   it appears in `/tasks`; cleanup) and the saved-views save/apply
+   round-trip.
+6. **Onboarding tier hint → checkout.** The signup form already
+   captures `signup_tier_hint` in user metadata; the onboarding
+   action could honor it (default `tier` on the workspace row to the
+   hint when valid).
 
 ## SQL migrations queued
 
-All 6 Drizzle migrations match Supabase state:
+All 6 Drizzle migrations match Supabase state. Nothing pending.
 
 | File | Status |
 |---|---|
-| `0000_melted_supreme_intelligence.sql` | ✅ applied (initial) |
+| `0000_melted_supreme_intelligence.sql` | ✅ applied |
 | `0001_loving_marauders.sql` | ✅ applied 2026-04-24 |
-| `0002_glamorous_susan_delgado.sql` | ✅ applied (newsletter) |
-| `0003_wet_lake.sql` | ✅ applied (audit_suppressions) |
+| `0002_glamorous_susan_delgado.sql` | ✅ applied |
+| `0003_wet_lake.sql` | ✅ applied |
 | `0004_recurring_task_templates.sql` | ✅ applied 2026-04-24 |
 | `0005_workspace_members_digest_enabled.sql` | ✅ applied 2026-04-25 |
 | `0006_saved_views.sql` | ✅ applied 2026-04-25 |
 
-Nothing queued. Future migrations: `pnpm --filter @phloz/db
-db:generate` → SQL editor paste / `db:migrate`.
-
 ## Env vars to light up dormant features
 
 - **PostHog** — `NEXT_PUBLIC_POSTHOG_KEY` + `POSTHOG_API_KEY`.
-  Without these, `track()` is a no-op.
 - **GA4** — `GA4_MEASUREMENT_ID` + `GA4_API_SECRET`.
-- **Resend** — `RESEND_API_KEY`. Without this every transactional
-  email + the daily digest is a logged no-op. Recurring task
-  templates still fire — just silently.
+- **Resend** — `RESEND_API_KEY`. Daily digest + recurring task crons
+  fire silently without it.
 - **Inngest** — `INNGEST_SIGNING_KEY` + `INNGEST_EVENT_KEY`. Cron
-  doesn't fire without them. The `process-recurring-tasks` and
-  `send-daily-digest` crons are dormant until they're set + the app
-  is registered at `app.phloz.com/api/inngest`.
+  doesn't fire without them. Register at
+  `app.phloz.com/api/inngest`.
 
 ## Deferred dep upgrades
 
-Same skip list as last session:
+Same skip list. Each is its own focused session:
 
 - **zod 3 → 4** — cross-codebase schema migration.
 - **vitest 2 → 4** — config breaking changes.
@@ -131,7 +144,10 @@ values for local development.
 - ✅ GitHub, Supabase (`tdvzhwhzxuskrsobdyrm`, RLS + JWT hook
   enabled, 7 migrations applied), GTM (`GTM-W3MGZ8V7`), Stripe
   sandbox (`acct_1RXbVlPomvpsIeGO`, 4 products × 3 prices live, API
-  pinned to `2026-04-22.dahlia`), Vercel app project (live).
-- ⏳ Vercel marketing project, Supabase URL configuration + custom
-  SMTP, Resend domain verification, Inngest app registration,
-  PostHog project, Sentry project, GA4 property.
+  pinned to `2026-04-22.dahlia`), Vercel app project
+  (`phloz`, live at `app.phloz.com`).
+- 🚧 Vercel marketing project (`phloz-web`) — production deploy
+  green, but `phloz.com` domain not yet attached to the project.
+- ⏳ Supabase URL configuration + custom SMTP, Resend domain
+  verification, Inngest app registration, PostHog project, Sentry
+  project, GA4 property.
