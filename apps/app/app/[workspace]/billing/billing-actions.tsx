@@ -7,12 +7,45 @@ import { Button, toast } from '@phloz/ui';
 
 type TierSlug = EventMap['begin_checkout']['tier'];
 
+async function startCheckout(
+  workspaceId: string,
+  tier: TierSlug,
+  period: 'monthly' | 'annual' = 'monthly',
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  // Fire begin_checkout *before* the redirect. GA4 recognises this
+  // event name for ecommerce funnels; PostHog just records it.
+  void track('begin_checkout', { tier, billing_period: period });
+  const res = await fetch(
+    `/api/workspaces/${workspaceId}/billing/checkout`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tier, period }),
+    },
+  );
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    return { ok: false, error: body.error ?? 'Could not start checkout' };
+  }
+  const { url } = (await res.json()) as { url: string };
+  return { ok: true, url };
+}
+
 export function BillingActions({
   workspaceId,
   hasStripeCustomer,
+  recommendedTier = 'pro',
+  recommendedTierLabel = 'Pro',
 }: {
   workspaceId: string;
   hasStripeCustomer: boolean;
+  /** Tier slug to upgrade to. Sourced from `?upgrade=<tier>` (set by
+   *  the onboarding redirect for users who picked a paid plan during
+   *  signup) or defaulted to 'pro'. */
+  recommendedTier?: TierSlug;
+  /** Pre-resolved display name to keep this client component free of
+   *  `getTier` (and the billing package's whole bundle). */
+  recommendedTierLabel?: string;
 }) {
   const [loading, setLoading] = useState<'portal' | 'checkout' | null>(null);
 
@@ -35,27 +68,15 @@ export function BillingActions({
     }
   }
 
-  async function openCheckout(tier: TierSlug, period: 'monthly' | 'annual' = 'monthly') {
+  async function openCheckout() {
     setLoading('checkout');
-    // Fire begin_checkout *before* the redirect. GA4 recognises this
-    // event name for ecommerce funnels; PostHog just records it.
-    void track('begin_checkout', { tier, billing_period: period });
     try {
-      const res = await fetch(
-        `/api/workspaces/${workspaceId}/billing/checkout`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tier, period }),
-        },
-      );
+      const res = await startCheckout(workspaceId, recommendedTier);
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        toast.error(body.error ?? 'Could not start checkout');
+        toast.error(res.error);
         return;
       }
-      const { url } = (await res.json()) as { url: string };
-      window.location.href = url;
+      window.location.href = res.url;
     } finally {
       setLoading(null);
     }
@@ -75,11 +96,54 @@ export function BillingActions({
       )}
       <Button
         size="sm"
-        onClick={() => openCheckout('pro')}
+        onClick={openCheckout}
         disabled={loading !== null}
       >
-        {loading === 'checkout' ? 'Redirecting…' : 'Upgrade to Pro'}
+        {loading === 'checkout' ? 'Redirecting…' : `Upgrade to ${recommendedTierLabel}`}
       </Button>
     </div>
+  );
+}
+
+/**
+ * Per-card upgrade button used in the "Other plans" grid. Identical
+ * checkout flow as `BillingActions`, but renders as a single inline
+ * button so each plan card can drive its own upgrade.
+ */
+export function UpgradeTierButton({
+  workspaceId,
+  tier,
+  label,
+}: {
+  workspaceId: string;
+  tier: TierSlug;
+  label: string;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  async function onClick() {
+    setLoading(true);
+    try {
+      const res = await startCheckout(workspaceId, tier);
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      window.location.href = res.url;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={onClick}
+      disabled={loading}
+      className="w-full"
+    >
+      {loading ? 'Redirecting…' : label}
+    </Button>
   );
 }
