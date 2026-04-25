@@ -2,6 +2,7 @@ export type GateDenialReason =
   | 'client_limit_reached'
   | 'client_hard_cap_reached'
   | 'seat_limit_reached'
+  | 'recurring_template_limit_reached'
   | 'unarchive_throttled'
   | 'downgrade_blocked_clients'
   | 'downgrade_blocked_seats'

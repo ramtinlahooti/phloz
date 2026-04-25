@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { requireRole } from '@phloz/auth/roles';
 import { requireUser } from '@phloz/auth/session';
+import { canAddRecurringTemplate } from '@phloz/billing';
 import {
   DEPARTMENTS,
   TASK_PRIORITIES,
@@ -65,6 +66,11 @@ export async function createRecurringTemplateAction(
     await requireRole(parsed.data.workspaceId, ['owner', 'admin', 'member']);
   } catch {
     return { ok: false, error: 'forbidden' };
+  }
+
+  const gate = await canAddRecurringTemplate(parsed.data.workspaceId);
+  if (!gate.allowed) {
+    return { ok: false, error: gate.message ?? gate.reason };
   }
 
   const user = await requireUser();

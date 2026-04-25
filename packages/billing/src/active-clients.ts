@@ -88,3 +88,18 @@ export async function getPaidSeatCount(workspaceId: string): Promise<number> {
     );
   return Number(rows[0]?.count ?? 0);
 }
+
+/**
+ * Count of recurring task templates regardless of `enabled` state — a
+ * disabled template still occupies a row and a future re-enable
+ * shouldn't be blocked by the limit. Disable + create cycles would
+ * otherwise let users skirt the cap.
+ */
+export async function getRecurringTemplateCount(workspaceId: string): Promise<number> {
+  const db = getDb();
+  const rows = await db
+    .select({ count: sql<string>`COUNT(*)::text` })
+    .from(schema.recurringTaskTemplates)
+    .where(eq(schema.recurringTaskTemplates.workspaceId, workspaceId));
+  return Number(rows[0]?.count ?? 0);
+}

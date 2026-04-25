@@ -10,6 +10,7 @@ import { and, eq, getDb, schema } from '@phloz/db';
 import {
   getActiveClientCount,
   getPaidSeatCount,
+  getRecurringTemplateCount,
   getTotalClientCount,
 } from './active-clients';
 import type { CanResult } from './errors';
@@ -107,6 +108,28 @@ export function canUnarchiveClientCheck(input: {
   });
 }
 
+export function canAddRecurringTemplateCheck(input: {
+  tier: TierName;
+  templateCount: number;
+}): CanResult {
+  const cfg = getTier(input.tier);
+  if (cfg.recurringTemplateLimit === 'unlimited') return { allowed: true };
+  if (input.templateCount >= cfg.recurringTemplateLimit) {
+    return {
+      allowed: false,
+      reason: 'recurring_template_limit_reached',
+      message: `Your ${cfg.displayName} plan supports ${cfg.recurringTemplateLimit} recurring task template${cfg.recurringTemplateLimit === 1 ? '' : 's'}.`,
+      meta: {
+        tier: input.tier,
+        limit: cfg.recurringTemplateLimit,
+        templateCount: input.templateCount,
+        upgradeTo: nextTier(input.tier),
+      },
+    };
+  }
+  return { allowed: true };
+}
+
 export function canDowngradeCheck(input: {
   fromTier: TierName;
   toTier: TierName;
@@ -199,6 +222,16 @@ export async function canUnarchiveClient(
   // truth once it's wired.
   const lastUnarchivedAt = client.archivedAt ? null : client.updatedAt;
   return canUnarchiveClientCheck({ tier, activeCount, totalCount, lastUnarchivedAt });
+}
+
+export async function canAddRecurringTemplate(
+  workspaceId: string,
+): Promise<CanResult> {
+  const [tier, templateCount] = await Promise.all([
+    readWorkspaceTier(workspaceId),
+    getRecurringTemplateCount(workspaceId),
+  ]);
+  return canAddRecurringTemplateCheck({ tier, templateCount });
 }
 
 export async function canDowngrade(

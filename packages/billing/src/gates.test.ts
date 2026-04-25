@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   canAddClientCheck,
+  canAddRecurringTemplateCheck,
   canDowngradeCheck,
   canInviteMemberCheck,
   canUnarchiveClientCheck,
@@ -37,6 +38,35 @@ describe('canAddClientCheck', () => {
   it('suggests upgrade tier in meta', () => {
     const r = canAddClientCheck({ tier: 'pro', activeCount: 10, totalCount: 10 });
     if (!r.allowed) expect(r.meta?.upgradeTo).toBe('growth');
+  });
+});
+
+describe('canAddRecurringTemplateCheck', () => {
+  it('allows when under limit', () => {
+    const r = canAddRecurringTemplateCheck({ tier: 'pro', templateCount: 10 });
+    expect(r.allowed).toBe(true);
+  });
+
+  it('denies when at limit', () => {
+    const r = canAddRecurringTemplateCheck({ tier: 'pro', templateCount: 25 });
+    expect(r.allowed).toBe(false);
+    if (!r.allowed) expect(r.reason).toBe('recurring_template_limit_reached');
+  });
+
+  it('always allows for enterprise', () => {
+    const r = canAddRecurringTemplateCheck({
+      tier: 'enterprise',
+      templateCount: 10_000,
+    });
+    expect(r.allowed).toBe(true);
+  });
+
+  it('suggests upgrade tier in meta', () => {
+    const r = canAddRecurringTemplateCheck({
+      tier: 'starter',
+      templateCount: 2,
+    });
+    if (!r.allowed) expect(r.meta?.upgradeTo).toBe('pro');
   });
 });
 

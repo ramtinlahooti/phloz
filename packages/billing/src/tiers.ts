@@ -16,6 +16,12 @@ export type TierConfig = {
   clientLimit: number | 'unlimited';
   /** Paid-seat roles (owner/admin/member) count against this. Viewers don't. */
   includedSeats: number | 'unlimited';
+  /**
+   * Maximum recurring task templates. Templates run as a workspace-wide
+   * Inngest cron — capping prevents free workspaces from spawning
+   * thousands of background tasks. 'unlimited' is enterprise-only.
+   */
+  recurringTemplateLimit: number | 'unlimited';
   /** Per-month price for an extra paid seat, or null if not purchasable. */
   extraSeatPriceUsd: number | null;
   /** Base plan price. null = free or custom. */
@@ -34,6 +40,7 @@ export const TIERS: Record<TierName, TierConfig> = {
     displayName: 'Starter',
     clientLimit: 1,
     includedSeats: 2,
+    recurringTemplateLimit: 2,
     extraSeatPriceUsd: null,
     monthlyPriceUsd: 0,
     annualPriceUsd: 0,
@@ -47,6 +54,7 @@ export const TIERS: Record<TierName, TierConfig> = {
     displayName: 'Pro',
     clientLimit: 10,
     includedSeats: 5,
+    recurringTemplateLimit: 25,
     extraSeatPriceUsd: 9.99,
     monthlyPriceUsd: 29.99,
     annualPriceUsd: 299.99,
@@ -61,6 +69,7 @@ export const TIERS: Record<TierName, TierConfig> = {
     displayName: 'Growth',
     clientLimit: 30,
     includedSeats: 8,
+    recurringTemplateLimit: 75,
     extraSeatPriceUsd: 9.99,
     monthlyPriceUsd: 59.99,
     annualPriceUsd: 599.99,
@@ -75,6 +84,7 @@ export const TIERS: Record<TierName, TierConfig> = {
     displayName: 'Business',
     clientLimit: 100,
     includedSeats: 15,
+    recurringTemplateLimit: 250,
     extraSeatPriceUsd: 7.99,
     monthlyPriceUsd: 149.99,
     annualPriceUsd: 1499.99,
@@ -89,6 +99,7 @@ export const TIERS: Record<TierName, TierConfig> = {
     displayName: 'Scale',
     clientLimit: 250,
     includedSeats: 30,
+    recurringTemplateLimit: 750,
     extraSeatPriceUsd: 5.99,
     monthlyPriceUsd: 299.99,
     annualPriceUsd: 2999.99,
@@ -103,6 +114,7 @@ export const TIERS: Record<TierName, TierConfig> = {
     displayName: 'Enterprise',
     clientLimit: 'unlimited',
     includedSeats: 'unlimited',
+    recurringTemplateLimit: 'unlimited',
     extraSeatPriceUsd: null,
     monthlyPriceUsd: null,
     annualPriceUsd: null,
