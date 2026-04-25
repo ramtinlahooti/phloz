@@ -11,7 +11,6 @@ import {
   not,
 } from 'drizzle-orm';
 
-import { createServiceRoleSupabase } from '@phloz/auth/server';
 import { getDb, schema } from '@phloz/db/client';
 import { sendDailyDigest } from '@phloz/email';
 import {
@@ -23,19 +22,21 @@ import {
 import { inngest } from '../client';
 
 /**
- * Daily digest email. Cron fires every hour; each workspace is sent
- * only when **its local time** is 9 AM. Using the workspace timezone
- * (defaulting to UTC) means agencies in Vancouver get the digest at
- * 9am Pacific, agencies in London get it at 9am GMT, etc. The
- * `digest/send-daily` manual event always sends regardless of the
- * hour — useful for testing.
+ * Daily digest email. Cron fires every hour; each workspace is
+ * processed only when **its local time** is 9 AM. For each workspace
+ * we iterate every `workspace_members` row with `digest_enabled = true`
+ * and send each member their own personalised digest:
  *
- * V1 audience: workspace owner only. Per-member digests + per-user
- * opt-out land in V2; the email itself tells the recipient to reply
- * to opt out as a safety valve.
+ *   - **Owner / admin** receive the full workspace-wide picture: every
+ *     overdue / due-today / pending-approval task, plus unreplied client
+ *     messages and the audit-rollup card.
+ *   - **Member / viewer** receive only their assigned task agenda
+ *     (filtered to `tasks.assignee_id = member.id`). No workspace-wide
+ *     unreplied or audit content — those are owner concerns.
  *
- * Skips sending when there's nothing actionable in the workspace.
- * No point filling an inbox with "all clear" messages every morning.
+ * Empty digests are skipped so an inbox isn't filled with "all clear"
+ * emails. The `digest/send-daily` manual event always runs regardless
+ * of local hour — useful for previewing the email.
  */
 const DIGEST_CRON = 'TZ=UTC 0 * * * *'; // hourly
 const DIGEST_LOCAL_HOUR = 9;
@@ -73,12 +74,7 @@ export const sendDailyDigestFunction = inngest.createFunction(
     });
 
     const now = new Date();
-    const results: Array<{
-      workspaceId: string;
-      ownerUserId: string | null;
-      sent: boolean;
-      reason?: string;
-    }> = [];
+    const allResults: MemberDigestResult[] = [];
 
     for (const ws of workspaces) {
       // Cron path: skip workspaces whose local hour isn't 9am.
@@ -86,27 +82,25 @@ export const sendDailyDigestFunction = inngest.createFunction(
       if (!isManual) {
         const localHour = currentHourInTz(now, ws.timezone ?? 'UTC');
         if (localHour !== DIGEST_LOCAL_HOUR) {
-          results.push({
-            workspaceId: ws.id,
-            ownerUserId: ws.ownerUserId,
-            sent: false,
-            reason: 'not_local_9am',
-          });
           continue;
         }
       }
 
-      const result = await step.run(`digest-${ws.id}`, async () => {
-        return runDigestForWorkspace(ws);
+      const wsResults = await step.run(`digest-${ws.id}`, async () => {
+        return runDigestForWorkspace({
+          id: ws.id,
+          name: ws.name,
+          ownerUserId: ws.ownerUserId,
+        });
       });
-      results.push(result);
+      allResults.push(...wsResults);
     }
 
     return {
       scanned: workspaces.length,
-      sent: results.filter((r) => r.sent).length,
-      skipped: results.filter((r) => !r.sent).length,
-      results,
+      sent: allResults.filter((r) => r.sent).length,
+      skipped: allResults.filter((r) => !r.sent).length,
+      results: allResults,
     };
   },
 );
@@ -140,78 +134,199 @@ function currentHourInTz(date: Date, timezone: string): number {
     .map((s) => parseInt(s, 10))[0] ?? 0;
 }
 
-/**
- * Compose + send the digest for one workspace. Called once per
- * workspace per run.
- *
- * The data shape here mirrors the dashboard's "This week" widget +
- * audit rollup card so users see the same numbers in the email as
- * they see when they click through.
- *
- * Takes `WorkspaceInput` (not the full schema row) because Inngest's
- * `step.run` serialises its arguments through JSON — Date fields
- * arrive as strings. We only need three columns here, so narrow
- * explicitly.
- */
 interface WorkspaceInput {
   id: string;
   name: string;
   ownerUserId: string | null;
 }
 
-async function runDigestForWorkspace(
-  ws: WorkspaceInput,
-): Promise<{
+interface MemberInput {
+  id: string;
+  userId: string | null;
+  role: string;
+  email: string | null;
+  displayName: string | null;
+}
+
+type MemberDigestResult = {
   workspaceId: string;
-  ownerUserId: string | null;
+  membershipId: string | null;
   sent: boolean;
   reason?: string;
-}> {
+};
+
+/**
+ * Compose + send digests for every digest-enabled member of one
+ * workspace. Workspace-wide aggregations (clients, messages, tracking
+ * map) are computed once and shared across members; per-member task
+ * queries are run individually to keep the assignee filter close to
+ * the database.
+ */
+async function runDigestForWorkspace(
+  ws: WorkspaceInput,
+): Promise<MemberDigestResult[]> {
   const db = getDb();
 
-  if (!ws.ownerUserId) {
-    return {
-      workspaceId: ws.id,
-      ownerUserId: null,
-      sent: false,
-      reason: 'no_owner',
-    };
-  }
+  const members = await db
+    .select({
+      id: schema.workspaceMembers.id,
+      userId: schema.workspaceMembers.userId,
+      role: schema.workspaceMembers.role,
+      email: schema.workspaceMembers.email,
+      displayName: schema.workspaceMembers.displayName,
+    })
+    .from(schema.workspaceMembers)
+    .where(
+      and(
+        eq(schema.workspaceMembers.workspaceId, ws.id),
+        eq(schema.workspaceMembers.digestEnabled, true),
+      ),
+    );
 
-  // Resolve the owner's email via Supabase admin — auth.users isn't
-  // mirrored into our schema, so service-role is the cleanest path.
-  const admin = await createServiceRoleSupabase();
-  const ownerLookup = await admin.auth.admin.getUserById(ws.ownerUserId);
-  const ownerEmail = ownerLookup.data.user?.email;
-  const ownerName =
-    (ownerLookup.data.user?.user_metadata?.full_name as string | undefined) ??
-    ownerLookup.data.user?.email ??
-    'there';
-  if (!ownerEmail) {
-    return {
-      workspaceId: ws.id,
-      ownerUserId: ws.ownerUserId,
-      sent: false,
-      reason: 'owner_email_missing',
-    };
+  if (members.length === 0) {
+    return [
+      {
+        workspaceId: ws.id,
+        membershipId: null,
+        sent: false,
+        reason: 'no_enabled_members',
+      },
+    ];
   }
 
   const now = new Date();
-  const startOfToday = new Date(now);
-  startOfToday.setHours(0, 0, 0, 0);
-  const endOfToday = new Date(now);
-  endOfToday.setHours(23, 59, 59, 999);
 
-  const [
-    overdueTasks,
-    dueTodayTasks,
-    pendingApprovalTasks,
-    clientRows,
+  // Workspace-wide payload — fetched once, used for owner/admin and as
+  // the client-name lookup for every member's personal task list.
+  const [clientRows, inboundMessages, outboundMessages, trackingNodeRows, trackingEdgeRows] =
+    await Promise.all([
+      db
+        .select({ id: schema.clients.id, name: schema.clients.name })
+        .from(schema.clients)
+        .where(
+          and(
+            eq(schema.clients.workspaceId, ws.id),
+            isNull(schema.clients.archivedAt),
+          ),
+        ),
+      db
+        .select({
+          id: schema.messages.id,
+          clientId: schema.messages.clientId,
+          createdAt: schema.messages.createdAt,
+          subject: schema.messages.subject,
+          body: schema.messages.body,
+        })
+        .from(schema.messages)
+        .where(
+          and(
+            eq(schema.messages.workspaceId, ws.id),
+            eq(schema.messages.direction, 'inbound'),
+            not(eq(schema.messages.channel, 'internal_note')),
+            gte(
+              schema.messages.createdAt,
+              new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000),
+            ),
+          ),
+        )
+        .orderBy(desc(schema.messages.createdAt)),
+      db
+        .select({
+          clientId: schema.messages.clientId,
+          createdAt: schema.messages.createdAt,
+        })
+        .from(schema.messages)
+        .where(
+          and(
+            eq(schema.messages.workspaceId, ws.id),
+            eq(schema.messages.direction, 'outbound'),
+            not(eq(schema.messages.channel, 'internal_note')),
+          ),
+        ),
+      db
+        .select()
+        .from(schema.trackingNodes)
+        .where(eq(schema.trackingNodes.workspaceId, ws.id)),
+      db
+        .select()
+        .from(schema.trackingEdges)
+        .where(eq(schema.trackingEdges.workspaceId, ws.id)),
+    ]);
+
+  const clientName = new Map(clientRows.map((c) => [c.id, c.name]));
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.phloz.com';
+
+  // Owner-eligible content: unreplied messages + audit rollup. Computed
+  // once because the answer is workspace-wide; members don't see them.
+  const unreplied = computeUnreplied({
     inboundMessages,
     outboundMessages,
+    clientName,
+    appUrl,
+    workspaceId: ws.id,
+  });
+  const auditDigest = computeAuditDigest({
+    clientRows,
     trackingNodeRows,
     trackingEdgeRows,
-  ] = await Promise.all([
+    appUrl,
+    workspaceId: ws.id,
+  });
+
+  const results: MemberDigestResult[] = [];
+  for (const m of members) {
+    const result = await runDigestForMember(ws, m, {
+      clientName,
+      unreplied,
+      auditDigest,
+      appUrl,
+      now,
+    });
+    results.push(result);
+  }
+  return results;
+}
+
+interface SharedDigestPayload {
+  clientName: Map<string, string>;
+  unreplied: ReturnType<typeof computeUnreplied>;
+  auditDigest: ReturnType<typeof computeAuditDigest>;
+  appUrl: string;
+  now: Date;
+}
+
+async function runDigestForMember(
+  ws: WorkspaceInput,
+  member: MemberInput,
+  shared: SharedDigestPayload,
+): Promise<MemberDigestResult> {
+  const db = getDb();
+  if (!member.email) {
+    return {
+      workspaceId: ws.id,
+      membershipId: member.id,
+      sent: false,
+      reason: 'member_email_missing',
+    };
+  }
+
+  const isPrivileged = member.role === 'owner' || member.role === 'admin';
+  const startOfToday = new Date(shared.now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = new Date(shared.now);
+  endOfToday.setHours(23, 59, 59, 999);
+
+  // Member-scoped task queries. Owner/admin: workspace-wide. Others:
+  // tasks where assignee_id = membership id (one DB filter; viewer with
+  // no assignments naturally sees an empty digest and gets skipped).
+  const taskScope = isPrivileged
+    ? eq(schema.tasks.workspaceId, ws.id)
+    : and(
+        eq(schema.tasks.workspaceId, ws.id),
+        eq(schema.tasks.assigneeId, member.id),
+      );
+
+  const [overdueTasks, dueTodayTasks, pendingApprovalTasks] = await Promise.all([
     db
       .select({
         id: schema.tasks.id,
@@ -222,7 +337,7 @@ async function runDigestForWorkspace(
       .from(schema.tasks)
       .where(
         and(
-          eq(schema.tasks.workspaceId, ws.id),
+          taskScope,
           inArray(schema.tasks.status, ['todo', 'in_progress', 'blocked']),
           isNotNull(schema.tasks.dueDate),
           lt(schema.tasks.dueDate, startOfToday),
@@ -241,7 +356,7 @@ async function runDigestForWorkspace(
       .from(schema.tasks)
       .where(
         and(
-          eq(schema.tasks.workspaceId, ws.id),
+          taskScope,
           inArray(schema.tasks.status, ['todo', 'in_progress', 'blocked']),
           gte(schema.tasks.dueDate, startOfToday),
           lte(schema.tasks.dueDate, endOfToday),
@@ -259,76 +374,40 @@ async function runDigestForWorkspace(
       .from(schema.tasks)
       .where(
         and(
-          eq(schema.tasks.workspaceId, ws.id),
+          taskScope,
           eq(schema.tasks.approvalState, 'pending'),
           isNull(schema.tasks.parentTaskId),
         ),
       )
       .orderBy(desc(schema.tasks.approvalUpdatedAt))
       .limit(10),
-    db
-      .select({ id: schema.clients.id, name: schema.clients.name })
-      .from(schema.clients)
-      .where(
-        and(
-          eq(schema.clients.workspaceId, ws.id),
-          isNull(schema.clients.archivedAt),
-        ),
-      ),
-    db
-      .select({
-        id: schema.messages.id,
-        clientId: schema.messages.clientId,
-        createdAt: schema.messages.createdAt,
-        subject: schema.messages.subject,
-        body: schema.messages.body,
-      })
-      .from(schema.messages)
-      .where(
-        and(
-          eq(schema.messages.workspaceId, ws.id),
-          eq(schema.messages.direction, 'inbound'),
-          not(eq(schema.messages.channel, 'internal_note')),
-          gte(
-            schema.messages.createdAt,
-            new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000),
-          ),
-        ),
-      )
-      .orderBy(desc(schema.messages.createdAt)),
-    db
-      .select({
-        clientId: schema.messages.clientId,
-        createdAt: schema.messages.createdAt,
-      })
-      .from(schema.messages)
-      .where(
-        and(
-          eq(schema.messages.workspaceId, ws.id),
-          eq(schema.messages.direction, 'outbound'),
-          not(eq(schema.messages.channel, 'internal_note')),
-        ),
-      ),
-    db
-      .select()
-      .from(schema.trackingNodes)
-      .where(eq(schema.trackingNodes.workspaceId, ws.id)),
-    db
-      .select()
-      .from(schema.trackingEdges)
-      .where(eq(schema.trackingEdges.workspaceId, ws.id)),
   ]);
 
-  const clientName = new Map(clientRows.map((c) => [c.id, c.name]));
+  const memberUnreplied = isPrivileged ? shared.unreplied : [];
+  const memberAudit = isPrivileged ? shared.auditDigest : [];
+
+  const totalActionable =
+    overdueTasks.length +
+    dueTodayTasks.length +
+    pendingApprovalTasks.length +
+    memberUnreplied.length +
+    memberAudit.length;
+
+  if (totalActionable === 0) {
+    return {
+      workspaceId: ws.id,
+      membershipId: member.id,
+      sent: false,
+      reason: 'all_clear',
+    };
+  }
+
   const nameFor = (id: string | null) =>
-    id ? clientName.get(id) ?? null : null;
-
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.phloz.com';
-
+    id ? shared.clientName.get(id) ?? null : null;
   const taskHref = (clientId: string | null, taskId: string) =>
     clientId
-      ? `${appUrl}/${ws.id}/clients/${clientId}?task=${taskId}`
-      : `${appUrl}/${ws.id}/tasks?task=${taskId}`;
+      ? `${shared.appUrl}/${ws.id}/clients/${clientId}?task=${taskId}`
+      : `${shared.appUrl}/${ws.id}/tasks?task=${taskId}`;
 
   const formatDueSubtitle = (
     dueDate: Date | null,
@@ -343,144 +422,27 @@ async function runDigestForWorkspace(
       );
       return [clientBit, `${days}d overdue`].filter(Boolean).join(' · ');
     }
-    if (mode === 'due-today') {
-      return clientBit || undefined;
-    }
     return clientBit || undefined;
   };
-
-  // Unreplied inbound: per-client, count messages newer than the
-  // last outbound. Same logic the inbox + dashboard use.
-  const lastOutboundByClient = new Map<string, Date>();
-  for (const m of outboundMessages) {
-    if (!m.clientId) continue;
-    const existing = lastOutboundByClient.get(m.clientId);
-    if (!existing || m.createdAt > existing) {
-      lastOutboundByClient.set(m.clientId, m.createdAt);
-    }
-  }
-  const unrepliedSeen = new Set<string>();
-  const unreplied: Array<{
-    id: string;
-    preview: string;
-    subtitle: string;
-    href: string;
-  }> = [];
-  for (const m of inboundMessages) {
-    if (!m.clientId || unrepliedSeen.has(m.clientId)) continue;
-    const lastOut = lastOutboundByClient.get(m.clientId) ?? null;
-    if (lastOut !== null && m.createdAt <= lastOut) continue;
-    unrepliedSeen.add(m.clientId);
-    const days = Math.max(
-      0,
-      Math.floor((Date.now() - m.createdAt.getTime()) / (1000 * 60 * 60 * 24)),
-    );
-    const name = nameFor(m.clientId) ?? 'Unknown client';
-    unreplied.push({
-      id: m.id,
-      preview: (m.subject ?? m.body).slice(0, 80),
-      subtitle: `${name} · ${days}d waiting`,
-      href: `${appUrl}/${ws.id}/clients/${m.clientId}`,
-    });
-    if (unreplied.length >= 5) break;
-  }
-
-  // Audit rollup: reuse the same per-client aggregation the
-  // dashboard card uses. Keep only clients with critical/warning
-  // findings (info-only is too quiet for a digest).
-  const nodesByClient = new Map<string, TrackingNodeDto[]>();
-  for (const n of trackingNodeRows) {
-    if (!n.clientId) continue;
-    const list = nodesByClient.get(n.clientId) ?? [];
-    list.push({
-      id: n.id,
-      clientId: n.clientId,
-      workspaceId: n.workspaceId,
-      nodeType: n.nodeType,
-      label: n.label,
-      metadata: (n.metadata as Record<string, unknown>) ?? {},
-      healthStatus: n.healthStatus,
-      lastVerifiedAt: n.lastVerifiedAt,
-      position: n.position ?? null,
-    });
-    nodesByClient.set(n.clientId, list);
-  }
-  const edgesByClient = new Map<string, TrackingEdgeDto[]>();
-  for (const e of trackingEdgeRows) {
-    if (!e.clientId) continue;
-    const list = edgesByClient.get(e.clientId) ?? [];
-    list.push({
-      id: e.id,
-      clientId: e.clientId,
-      workspaceId: e.workspaceId,
-      sourceNodeId: e.sourceNodeId,
-      targetNodeId: e.targetNodeId,
-      edgeType: e.edgeType,
-      label: e.label,
-      metadata: (e.metadata as Record<string, unknown>) ?? {},
-    });
-    edgesByClient.set(e.clientId, list);
-  }
-  const auditDigest: Array<{
-    name: string;
-    criticalCount: number;
-    warningCount: number;
-    href: string;
-  }> = [];
-  for (const c of clientRows) {
-    const findings = auditMap({
-      nodes: nodesByClient.get(c.id) ?? [],
-      edges: edgesByClient.get(c.id) ?? [],
-    });
-    const crit = findings.filter((f) => f.severity === 'critical').length;
-    const warn = findings.filter((f) => f.severity === 'warning').length;
-    if (crit + warn === 0) continue;
-    auditDigest.push({
-      name: c.name,
-      criticalCount: crit,
-      warningCount: warn,
-      href: `${appUrl}/${ws.id}/clients/${c.id}?tab=audit`,
-    });
-  }
-  auditDigest.sort((a, b) => {
-    if (a.criticalCount !== b.criticalCount) {
-      return b.criticalCount - a.criticalCount;
-    }
-    return b.warningCount - a.warningCount;
-  });
-
-  // If nothing actionable anywhere, skip the email. Empty-inbox
-  // mornings shouldn't generate notifications.
-  const totalActionable =
-    overdueTasks.length +
-    dueTodayTasks.length +
-    pendingApprovalTasks.length +
-    unreplied.length +
-    auditDigest.length;
-  if (totalActionable === 0) {
-    return {
-      workspaceId: ws.id,
-      ownerUserId: ws.ownerUserId,
-      sent: false,
-      reason: 'all_clear',
-    };
-  }
 
   const dayName = new Intl.DateTimeFormat('en-US', {
     weekday: 'long',
     timeZone: 'UTC',
-  }).format(now);
+  }).format(shared.now);
+
+  const recipientName =
+    member.displayName?.trim() || member.email || 'there';
 
   try {
     const res = await sendDailyDigest({
-      to: ownerEmail,
+      to: member.email,
       subject: `${dayName} at ${ws.name} — ${totalActionable} item${
         totalActionable === 1 ? '' : 's'
       } on your plate`,
-      recipientName: ownerName,
+      recipientName,
       workspaceName: ws.name,
       dayName,
-      dashboardUrl: `${appUrl}/${ws.id}`,
+      dashboardUrl: `${shared.appUrl}/${ws.id}`,
       overdue: overdueTasks.map((t) => ({
         id: t.id,
         title: t.title,
@@ -499,25 +461,146 @@ async function runDigestForWorkspace(
         subtitle: t.clientId ? nameFor(t.clientId) ?? undefined : undefined,
         href: taskHref(t.clientId, t.id),
       })),
-      unrepliedMessages: unreplied,
-      auditFindings: auditDigest.slice(0, 5),
+      unrepliedMessages: memberUnreplied,
+      auditFindings: memberAudit.slice(0, 5),
     });
     return {
       workspaceId: ws.id,
-      ownerUserId: ws.ownerUserId,
+      membershipId: member.id,
       sent: res.sent,
       reason: res.sent ? undefined : 'resend_not_configured',
     };
   } catch (err) {
-    // Swallow + log — one workspace's send failure shouldn't block
-    // the cron from processing the rest. Inngest will surface the
-    // step error in its UI.
-    console.error('[daily-digest] send failed', ws.id, err);
+    console.error('[daily-digest] send failed', ws.id, member.id, err);
     return {
       workspaceId: ws.id,
-      ownerUserId: ws.ownerUserId,
+      membershipId: member.id,
       sent: false,
       reason: `send_error: ${(err as Error).message}`,
     };
   }
+}
+
+function computeUnreplied(input: {
+  inboundMessages: Array<{
+    id: string;
+    clientId: string | null;
+    createdAt: Date;
+    subject: string | null;
+    body: string;
+  }>;
+  outboundMessages: Array<{ clientId: string | null; createdAt: Date }>;
+  clientName: Map<string, string>;
+  appUrl: string;
+  workspaceId: string;
+}): Array<{ id: string; preview: string; subtitle: string; href: string }> {
+  const lastOutboundByClient = new Map<string, Date>();
+  for (const m of input.outboundMessages) {
+    if (!m.clientId) continue;
+    const existing = lastOutboundByClient.get(m.clientId);
+    if (!existing || m.createdAt > existing) {
+      lastOutboundByClient.set(m.clientId, m.createdAt);
+    }
+  }
+  const seen = new Set<string>();
+  const unreplied: Array<{
+    id: string;
+    preview: string;
+    subtitle: string;
+    href: string;
+  }> = [];
+  for (const m of input.inboundMessages) {
+    if (!m.clientId || seen.has(m.clientId)) continue;
+    const lastOut = lastOutboundByClient.get(m.clientId) ?? null;
+    if (lastOut !== null && m.createdAt <= lastOut) continue;
+    seen.add(m.clientId);
+    const days = Math.max(
+      0,
+      Math.floor((Date.now() - m.createdAt.getTime()) / (1000 * 60 * 60 * 24)),
+    );
+    const name = input.clientName.get(m.clientId) ?? 'Unknown client';
+    unreplied.push({
+      id: m.id,
+      preview: (m.subject ?? m.body).slice(0, 80),
+      subtitle: `${name} · ${days}d waiting`,
+      href: `${input.appUrl}/${input.workspaceId}/clients/${m.clientId}`,
+    });
+    if (unreplied.length >= 5) break;
+  }
+  return unreplied;
+}
+
+function computeAuditDigest(input: {
+  clientRows: Array<{ id: string; name: string }>;
+  trackingNodeRows: Array<typeof schema.trackingNodes.$inferSelect>;
+  trackingEdgeRows: Array<typeof schema.trackingEdges.$inferSelect>;
+  appUrl: string;
+  workspaceId: string;
+}): Array<{
+  name: string;
+  criticalCount: number;
+  warningCount: number;
+  href: string;
+}> {
+  const nodesByClient = new Map<string, TrackingNodeDto[]>();
+  for (const n of input.trackingNodeRows) {
+    if (!n.clientId) continue;
+    const list = nodesByClient.get(n.clientId) ?? [];
+    list.push({
+      id: n.id,
+      clientId: n.clientId,
+      workspaceId: n.workspaceId,
+      nodeType: n.nodeType,
+      label: n.label,
+      metadata: (n.metadata as Record<string, unknown>) ?? {},
+      healthStatus: n.healthStatus,
+      lastVerifiedAt: n.lastVerifiedAt,
+      position: n.position ?? null,
+    });
+    nodesByClient.set(n.clientId, list);
+  }
+  const edgesByClient = new Map<string, TrackingEdgeDto[]>();
+  for (const e of input.trackingEdgeRows) {
+    if (!e.clientId) continue;
+    const list = edgesByClient.get(e.clientId) ?? [];
+    list.push({
+      id: e.id,
+      clientId: e.clientId,
+      workspaceId: e.workspaceId,
+      sourceNodeId: e.sourceNodeId,
+      targetNodeId: e.targetNodeId,
+      edgeType: e.edgeType,
+      label: e.label,
+      metadata: (e.metadata as Record<string, unknown>) ?? {},
+    });
+    edgesByClient.set(e.clientId, list);
+  }
+  const out: Array<{
+    name: string;
+    criticalCount: number;
+    warningCount: number;
+    href: string;
+  }> = [];
+  for (const c of input.clientRows) {
+    const findings = auditMap({
+      nodes: nodesByClient.get(c.id) ?? [],
+      edges: edgesByClient.get(c.id) ?? [],
+    });
+    const crit = findings.filter((f) => f.severity === 'critical').length;
+    const warn = findings.filter((f) => f.severity === 'warning').length;
+    if (crit + warn === 0) continue;
+    out.push({
+      name: c.name,
+      criticalCount: crit,
+      warningCount: warn,
+      href: `${input.appUrl}/${input.workspaceId}/clients/${c.id}?tab=audit`,
+    });
+  }
+  out.sort((a, b) => {
+    if (a.criticalCount !== b.criticalCount) {
+      return b.criticalCount - a.criticalCount;
+    }
+    return b.warningCount - a.warningCount;
+  });
+  return out;
 }

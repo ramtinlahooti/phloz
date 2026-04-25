@@ -1,4 +1,4 @@
-import { index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { Role } from '@phloz/config';
 
 import { pkUuid, userIdRef } from './_helpers';
@@ -27,6 +27,12 @@ export const workspaceMembers = pgTable(
      * value that mutates rarely.
      */
     email: text('email'),
+    /**
+     * Per-member opt-in for the daily digest email. Defaults to true so
+     * existing memberships keep getting it — explicitly off only when the
+     * user disabled it from Settings → Notifications.
+     */
+    digestEnabled: boolean('digest_enabled').notNull().default(true),
     invitedAt: timestamp('invited_at', { withTimezone: true, mode: 'date' }),
     acceptedAt: timestamp('accepted_at', { withTimezone: true, mode: 'date' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
