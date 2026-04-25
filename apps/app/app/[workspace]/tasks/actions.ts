@@ -1,6 +1,6 @@
 'use server';
 
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -70,6 +70,7 @@ export async function createTaskAction(
   // so we do it here. Also scope the parent fetch to the same
   // workspace — belt and braces against cross-tenant trickery.
   let resolvedClientId: string | null = parsed.data.clientId;
+  let nextSortOrder = 0;
   if (parsed.data.parentTaskId) {
     const parent = await db
       .select({
@@ -97,6 +98,21 @@ export async function createTaskAction(
     }
     // Subtasks always share their parent's client.
     resolvedClientId = parent.clientId;
+    // Place the new subtask at the end of its sibling group. 1024 step
+    // leaves room for fractional inserts before the next reorder
+    // normalises the values back to a 1024-spaced sequence.
+    const [maxRow] = await db
+      .select({
+        maxOrder: sql<number>`coalesce(max(${schema.tasks.sortOrder}), -1)`,
+      })
+      .from(schema.tasks)
+      .where(
+        and(
+          eq(schema.tasks.workspaceId, parsed.data.workspaceId),
+          eq(schema.tasks.parentTaskId, parsed.data.parentTaskId),
+        ),
+      );
+    nextSortOrder = (maxRow?.maxOrder ?? -1) + 1024;
   }
 
   const [row] = await db
@@ -113,6 +129,7 @@ export async function createTaskAction(
       visibility: parsed.data.visibility,
       dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
       assigneeId: parsed.data.assigneeMembershipId ?? null,
+      sortOrder: nextSortOrder,
       createdBy: user.id,
     })
     .returning({ id: schema.tasks.id });
@@ -432,7 +449,7 @@ export async function listSubtasksAction(
         eq(schema.tasks.parentTaskId, parsed.data.parentTaskId),
       ),
     )
-    .orderBy(schema.tasks.createdAt);
+    .orderBy(schema.tasks.sortOrder, schema.tasks.createdAt);
 
   return {
     ok: true,
@@ -442,6 +459,76 @@ export async function listSubtasksAction(
       status: r.status as TaskStatus,
     })),
   };
+}
+
+const reorderSubtasksSchema = z.object({
+  workspaceId: uuid,
+  parentTaskId: uuid,
+  orderedIds: z.array(uuid).min(1).max(200),
+});
+
+/**
+ * Persist a new sibling order for the subtasks under a parent.
+ * Caller passes the full list of subtask ids in their new top-to-
+ * bottom order; the server normalises `sort_order` to 0, 1024, 2048,
+ * ... so subsequent fractional inserts have room to slot in.
+ *
+ * Validates that every supplied id is a subtask of the named parent
+ * in the same workspace before writing — drops by-id mismatches
+ * silently rather than emitting half-written orders. RLS still
+ * backstops cross-tenant attempts even on the service-role path.
+ */
+export async function reorderSubtasksAction(
+  input: z.infer<typeof reorderSubtasksSchema>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = reorderSubtasksSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'invalid_input' };
+
+  try {
+    await requireRole(parsed.data.workspaceId, ['owner', 'admin', 'member']);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const db = getDb();
+  const existing = await db
+    .select({ id: schema.tasks.id })
+    .from(schema.tasks)
+    .where(
+      and(
+        eq(schema.tasks.workspaceId, parsed.data.workspaceId),
+        eq(schema.tasks.parentTaskId, parsed.data.parentTaskId),
+      ),
+    );
+  const validIds = new Set(existing.map((r) => r.id));
+  const filtered = parsed.data.orderedIds.filter((id) => validIds.has(id));
+  if (filtered.length === 0) {
+    return { ok: false, error: 'no_matching_subtasks' };
+  }
+
+  // Single CASE-based UPDATE keeps the reorder atomic and avoids N
+  // round-trips. `sort_order` step is 1024 (matches insert path), so
+  // the values are 0, 1024, 2048, …
+  const orderCases = filtered
+    .map((id, idx) => sql`when ${schema.tasks.id} = ${id} then ${idx * 1024}`)
+    .reduce((acc, cur) => sql`${acc} ${cur}`, sql``);
+
+  await db
+    .update(schema.tasks)
+    .set({
+      sortOrder: sql`case ${orderCases} else ${schema.tasks.sortOrder} end`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(schema.tasks.workspaceId, parsed.data.workspaceId),
+        eq(schema.tasks.parentTaskId, parsed.data.parentTaskId),
+        inArray(schema.tasks.id, filtered),
+      ),
+    );
+
+  revalidatePath(`/${parsed.data.workspaceId}/tasks`);
+  return { ok: true };
 }
 
 /**

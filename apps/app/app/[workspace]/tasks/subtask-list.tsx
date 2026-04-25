@@ -1,6 +1,6 @@
 'use client';
 
-import { ListTodo, Plus, Trash2 } from 'lucide-react';
+import { GripVertical, ListTodo, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState, useTransition } from 'react';
 
 import { toast } from '@phloz/ui';
@@ -9,6 +9,7 @@ import {
   createTaskAction,
   deleteTaskAction,
   listSubtasksAction,
+  reorderSubtasksAction,
   toggleSubtaskAction,
   type SubtaskView,
 } from './actions';
@@ -21,9 +22,12 @@ import {
  * - Checkbox toggles between `todo` and `done` via `toggleSubtaskAction`.
  *   Optimistic: the checkbox flips immediately; on server error we
  *   revert and toast.
+ * - Drag the grip handle to reorder. The reorder is optimistic — the
+ *   list rearranges immediately on drop and `reorderSubtasksAction`
+ *   persists the new sequence; on error we revert + toast.
  * - "Add subtask" row creates a new child via `createTaskAction` with
- *   `parentTaskId` set. Defaults inherit from the parent (client/
- *   department/etc.) — subtask only needs a title.
+ *   `parentTaskId` set; the server places new subtasks at the end of
+ *   the sibling group via `MAX(sort_order) + 1024`.
  * - Delete icon on each row; confirms via `window.confirm`.
  *
  * Keeps the interface tight intentionally: subtasks are checklist
@@ -48,6 +52,8 @@ export function SubtaskList({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [adding, setAdding] = useState(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   useEffect(() => {
@@ -150,6 +156,58 @@ export function SubtaskList({
     });
   }
 
+  // ---- DnD --------------------------------------------------------------
+
+  function onDragStart(id: string) {
+    return (e: React.DragEvent) => {
+      setDraggingId(id);
+      e.dataTransfer.effectAllowed = 'move';
+      // Some browsers refuse to fire drag events without payload.
+      e.dataTransfer.setData('text/plain', id);
+    };
+  }
+
+  function onDragOver(id: string) {
+    return (e: React.DragEvent) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (overId !== id) setOverId(id);
+    };
+  }
+
+  function onDrop(targetId: string) {
+    return (e: React.DragEvent) => {
+      e.preventDefault();
+      const sourceId = draggingId;
+      setDraggingId(null);
+      setOverId(null);
+      if (!sourceId || sourceId === targetId || !subtasks) return;
+
+      const fromIdx = subtasks.findIndex((s) => s.id === sourceId);
+      const toIdx = subtasks.findIndex((s) => s.id === targetId);
+      if (fromIdx === -1 || toIdx === -1) return;
+
+      const next = subtasks.slice();
+      const [moved] = next.splice(fromIdx, 1);
+      if (!moved) return;
+      next.splice(toIdx, 0, moved);
+
+      const previous = subtasks;
+      setSubtasks(next);
+      startTransition(async () => {
+        const res = await reorderSubtasksAction({
+          workspaceId,
+          parentTaskId,
+          orderedIds: next.map((s) => s.id),
+        });
+        if (!res.ok) {
+          toast.error(res.error);
+          setSubtasks(previous);
+        }
+      });
+    };
+  }
+
   if (loadError) {
     return (
       <p className="rounded-md border border-border bg-card/30 p-3 text-sm text-[var(--color-destructive)]">
@@ -184,11 +242,33 @@ export function SubtaskList({
         <ul className="space-y-1">
           {subtasks.map((s) => {
             const done = s.status === 'done';
+            const isDragging = draggingId === s.id;
+            const isDragTarget = overId === s.id && draggingId !== s.id;
             return (
               <li
                 key={s.id}
-                className="group flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50"
+                draggable
+                onDragStart={onDragStart(s.id)}
+                onDragOver={onDragOver(s.id)}
+                onDrop={onDrop(s.id)}
+                onDragEnd={() => {
+                  setDraggingId(null);
+                  setOverId(null);
+                }}
+                className={`group flex items-start gap-2 rounded-md px-1 py-1.5 transition-colors ${
+                  isDragging
+                    ? 'opacity-40'
+                    : isDragTarget
+                      ? 'bg-primary/10'
+                      : 'hover:bg-muted/50'
+                }`}
               >
+                <span
+                  className="mt-0.5 cursor-grab text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 active:cursor-grabbing"
+                  aria-hidden
+                >
+                  <GripVertical className="size-3.5" />
+                </span>
                 <input
                   type="checkbox"
                   checked={done}

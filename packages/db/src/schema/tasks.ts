@@ -1,4 +1,12 @@
-import { index, pgTable, text, timestamp, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import {
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  type AnyPgColumn,
+} from 'drizzle-orm/pg-core';
 import type {
   ApprovalState,
   Department,
@@ -43,6 +51,14 @@ export const tasks = pgTable(
     }),
     relatedMessageId: uuid('related_message_id'),
     completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * Display order within a sibling group (parent_task_id). Subtasks
+     * use this for drag-to-reorder inside the task-detail dialog.
+     * Top-level tasks ignore it — they sort by priority + due date —
+     * but the column is on every row so the bulk-update path doesn't
+     * need to special-case parent vs. subtask.
+     */
+    sortOrder: integer('sort_order').notNull().default(0),
     approvalState: text('approval_state').$type<ApprovalState>().notNull().default('none'),
     approvalComment: text('approval_comment'),
     approvalUpdatedAt: timestamp('approval_updated_at', { withTimezone: true, mode: 'date' }),
