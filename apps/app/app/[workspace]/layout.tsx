@@ -9,6 +9,7 @@ import { AnalyticsIdentify } from '@/components/analytics-identify';
 import { CommandPalette } from '@/components/command-palette';
 import { DashboardShell } from '@/components/dashboard-shell';
 import { KeyboardShortcutsDialog } from '@/components/keyboard-shortcuts-dialog';
+import { VacationBanner } from '@/components/vacation-banner';
 
 type LayoutParams = { workspace: string };
 
@@ -229,6 +230,16 @@ export default async function WorkspaceLayout({
           messages: unrepliedClientCount,
         }}
       >
+        {/* Vacation-mode banner. Layout-level so it appears on
+            every workspace page, not just the dashboard. Hidden
+            unless the calling user has paused notifications + the
+            timestamp is still in the future. */}
+        {membership.pausedUntil && membership.pausedUntil > new Date() && (
+          <VacationBanner
+            workspaceId={workspace.id}
+            pausedUntil={membership.pausedUntil.toISOString()}
+          />
+        )}
         {children}
       </DashboardShell>
     </>
