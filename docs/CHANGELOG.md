@@ -91,6 +91,26 @@ dialog — queued in NEXT-STEPS.
 - `apps/app/app/[workspace]/settings/page.tsx` (load prefs + mutes
   + active clients; pass to the form)
 
+### Added — Per-task mute toggle in the task detail dialog
+
+Bell / BellOff button next to Edit. Lazy-fetches the calling
+user's mute state on dialog open (parallel with the existing
+comments fetch). Toggle disables itself until the read resolves
+so a click can't race the state. Optimistic flip + revert on
+error. Toast copy explains the scope is personal, not team-wide.
+
+### Added — Per-client mute toggle in the client detail header
+
+Bell / BellOff button next to Archive. Page query gains a small
+join that returns the mute state server-side, so the button
+primes its initial render without a loading flash. Same action,
+same table, same toast pattern as the per-task version.
+
+Together with the Settings panel's "Muted clients" list, every
+"too noisy" surface now has a one-click mute that respects the
+same `notification_subscriptions` table — three surfaces, one
+source of truth.
+
 ### Verified
 
 - `pnpm check` — 29/29 green.
