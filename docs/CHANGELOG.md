@@ -4,6 +4,60 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-26 — Playwright smoke tests for the marketing site
+
+### Added — `apps/web` Playwright scaffold + 11 smoke tests
+
+First Playwright pass, scoped to the marketing site (auth-gated app
+tests need a test DB + seeded fixtures — deferred to a focused
+session). Eleven tests cover the SEO-critical surfaces:
+
+  - **Homepage**: title + H1 + at least one product CTA
+  - **/pricing**: 5 public tier cards (Starter/Pro/Growth/Business/
+    Scale), comparison-matrix rows present, FAQ section. Asserts
+    Enterprise is intentionally hidden.
+  - **/blog** index: 200 + H1
+  - **/robots.txt**: 200 + references sitemap
+  - **/sitemap.xml**: 200 + xml content-type
+  - **/llms.txt**: 200 + non-empty body
+  - Programmatic SEO routes: `/use-cases/[slug]`,
+    `/integrations/[slug]`
+
+Each test is intentionally minimal — load the page, check a few
+must-have elements. The goal is a fast green/red "is the site up"
+signal, not detailed UI coverage; component-level tests belong in
+their own Vitest files.
+
+Config:
+  - `apps/web/playwright.config.ts` with a webServer block that
+    spins up `next dev` for local runs. CI / preview runs can
+    override with `PLAYWRIGHT_BASE_URL` to point at a deployed URL.
+  - chromium-only for now; cross-browser DOM differences aren't
+    where the marketing-site bugs hide.
+  - retain-on-failure traces + screenshots so a CI failure surfaces
+    enough context to debug without a re-run.
+
+Run locally:
+```bash
+pnpm --filter @phloz/web test:e2e:install   # one-time, ~92 MiB
+pnpm --filter @phloz/web test:e2e
+```
+
+11/11 green locally in ~14s on chromium-headless-shell.
+
+### Files touched
+
+- `apps/web/package.json` (`@playwright/test` devDep + scripts)
+- `apps/web/playwright.config.ts` (new)
+- `apps/web/e2e/marketing.spec.ts` (new)
+
+### Verified
+
+- `pnpm check` — 29/29 green, 0 lint warnings.
+- `pnpm --filter @phloz/web test:e2e` — 11/11 passed in 14s.
+
+---
+
 ## 2026-04-26 — Inbox star/pin with `s` keyboard shortcut
 
 ### Added — `messages.starred` column + inbox star toggle
