@@ -4,6 +4,91 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-25 — Calendar drag-to-reschedule + per-member digest hour
+
+### Added — Drag-to-reschedule on `/tasks/calendar`
+
+Pills on the month grid can now be dragged onto a different cell to
+reschedule. New `<CalendarMonthGrid />` client component owns the
+DnD: optimistically moves the task to the target cell, calls
+`updateTaskAction` with a new `dueDate` that **preserves the
+original time-of-day** (so a "due 5pm" task doesn't silently shift
+to midnight when moved), reverts + toasts on server error.
+
+Done and archived tasks are not draggable — clicking still opens
+the dialog as before. Tasks beyond the visible "+N more" overflow
+fall through to the dialog (we deliberately don't re-implement the
+date picker inside the calendar).
+
+Native HTML5 drag-and-drop, same primitive the subtask checklist
+uses — no extra dep. Cell hover highlights with a primary tinted
+ring + bg during drag. Mobile/touch falls through to the dialog
+(no DnD on touch devices).
+
+The page stays a server component for the data fetch + month nav
+and delegates the grid render to the client component. Removed the
+unused `monthEnd` constant in the same pass.
+
+### Added — Per-member preferred digest hour-of-day
+
+`workspace_members.digest_hour smallint` (NULL or 0–23) lets each
+member pick when the daily digest arrives in the workspace
+timezone. NULL means "use the workspace default" (9 AM today),
+matching previous behaviour for every existing membership.
+
+Cron loop change: the workspace no longer skips itself based on a
+single global hour. Instead it always enters `runDigestForWorkspace`
+and members are filtered by `(m.digestHour ?? DIGEST_DEFAULT_HOUR)
+=== localHour`. The manual `digest/send-daily` event still bypasses
+entirely so "Send digest now" works at any hour.
+
+Settings → Notifications gains a new selector under the existing
+"Send me the daily digest" toggle. Disabled when the digest is off.
+Default option is "Workspace default (9 AM)" so users only override
+when they want something different. Hour rendering uses 12-hour
+AM/PM. Helper line names the workspace timezone explicitly so
+members in another tz aren't surprised by the time.
+
+Migration #10 (`0010_workspace_members_digest_hour.sql`) adds the
+column + a CHECK constraint enforcing the 0–23 range. Must be
+applied to Supabase before the cron change takes effect.
+
+### Fixed — Last remaining lint warning
+
+Dropped the unused `asc` import on
+`apps/app/app/[workspace]/clients/page.tsx` (NEXT-STEPS #6 from
+the previous session). Combined with the `monthEnd` cleanup in the
+calendar refactor, the app now lints clean — zero warnings.
+
+### Files touched
+
+- `packages/db/migrations/0010_workspace_members_digest_hour.sql`
+  (new)
+- `packages/db/src/schema/workspace-members.ts` (digestHour column)
+- `apps/app/inngest/functions/send-daily-digest.ts` (per-member
+  hour filter, DIGEST_DEFAULT_HOUR, opts.localHour pass-through)
+- `apps/app/app/[workspace]/settings/notifications-actions.ts`
+  (new `setDigestHourAction`)
+- `apps/app/app/[workspace]/settings/notifications-form.tsx`
+  (hour selector + dynamic copy)
+- `apps/app/app/[workspace]/settings/page.tsx` (extra column on
+  membership query + workspaceTimezone prop)
+- `apps/app/app/[workspace]/tasks/calendar/page.tsx` (delegate to
+  CalendarMonthGrid)
+- `apps/app/app/[workspace]/tasks/calendar/calendar-grid.tsx` (new
+  client component with HTML5 DnD)
+- `apps/app/app/[workspace]/clients/page.tsx` (drop unused asc)
+
+### Verified
+
+- `pnpm check` — 29/29 green, **0 lint warnings** (down from 2 at
+  session start).
+- `pnpm --filter @phloz/app build` — clean. Settings + calendar
+  routes still server-rendered.
+- Migration #10 file is queued; not yet applied to Supabase.
+
+---
+
 ## 2026-04-25 — Per-client audit history + pricing matrix + activity pagination
 
 ### Added — Per-client audit history timeline
