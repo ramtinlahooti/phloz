@@ -54,6 +54,16 @@ export const workspaceMembers = pgTable(
      */
     digestHour: smallint('digest_hour'),
     /**
+     * Vacation mode. While set in the future, the digest cron and any
+     * per-event notification helpers skip this member entirely. Null
+     * (the default) means "not paused". Members clear it explicitly
+     * via Settings → Notifications, or set it to a date and forget.
+     */
+    pausedUntil: timestamp('paused_until', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    /**
      * Per-member auto-applied saved view for `/tasks`. When set, a
      * bare `/tasks` landing redirects to `/tasks?<view.searchParams>`
      * (the "All" pill goes to `/tasks?view=all` to bypass).

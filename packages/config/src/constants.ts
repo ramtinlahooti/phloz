@@ -134,3 +134,58 @@ export type AuthorType = (typeof AUTHOR_TYPES)[number];
 // --- Comments ---
 export const COMMENT_PARENT_TYPES = ['task', 'tracking_node', 'message', 'client'] as const;
 export type CommentParentType = (typeof COMMENT_PARENT_TYPES)[number];
+
+// --- Notification preferences ---
+//
+// One row in `notification_preferences` per (member, eventType) at
+// most. Absence of a row means "use the default" (which is enabled).
+// Adding a new event kind means adding a new entry here AND wiring
+// the cron / per-event helper to consult the flag — no migration
+// needed (the column is plain text).
+//
+// Order is the order the Settings UI renders them, top → bottom.
+// `daily_digest` is intentionally NOT in this list — the existing
+// `workspace_members.digest_enabled` column owns that toggle, and
+// having two switches for the same thing confuses users. The cron
+// consults the column directly.
+export const NOTIFICATION_EVENT_TYPES = [
+  'task_assignment',
+  'task_mention',
+  'inbound_message',
+  'task_approval',
+  'recurring_task_created',
+] as const;
+export type NotificationEventType = (typeof NOTIFICATION_EVENT_TYPES)[number];
+
+/** Human-readable copy for each event type. Source of truth for the
+ *  Settings UI labels + the per-event "you turned off X" toasts. */
+export const NOTIFICATION_EVENT_LABELS: Record<
+  NotificationEventType,
+  { title: string; description: string }
+> = {
+  task_assignment: {
+    title: 'Task assigned to you',
+    description:
+      'Email when a teammate (or a recurring template) assigns you a task.',
+  },
+  task_mention: {
+    title: 'You’re @mentioned',
+    description:
+      'Email when someone @mentions you in a task, message, or tracking-node comment.',
+  },
+  inbound_message: {
+    title: 'Client emails',
+    description:
+      'Email when a client replies via the inbound address. Owners and admins only.',
+  },
+  task_approval: {
+    title: 'Client approval changes',
+    description:
+      'Email when a client approves, rejects, or requests changes on one of your tasks.',
+  },
+  recurring_task_created: {
+    title: 'Recurring task created',
+    description:
+      'Email when one of your recurring templates spawns a new task instance.',
+  },
+};

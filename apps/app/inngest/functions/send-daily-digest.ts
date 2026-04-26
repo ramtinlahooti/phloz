@@ -208,19 +208,31 @@ async function runDigestForWorkspace(
       email: schema.workspaceMembers.email,
       displayName: schema.workspaceMembers.displayName,
       digestHour: schema.workspaceMembers.digestHour,
+      pausedUntil: schema.workspaceMembers.pausedUntil,
     })
     .from(schema.workspaceMembers)
     .where(memberFilter);
+
+  const now = new Date();
 
   // Cron path: filter to members whose preferred hour matches the
   // workspace's current local hour. Members with NULL digestHour fall
   // back to the workspace default. Manual path bypasses entirely so
   // the preview button always sends.
-  const members = opts.isManual
+  let members = opts.isManual
     ? allMembers
     : allMembers.filter(
         (m) => (m.digestHour ?? DIGEST_DEFAULT_HOUR) === opts.localHour,
       );
+
+  // Cron path: also skip members in vacation mode (`paused_until > now`).
+  // Manual path bypasses so a paused user can still preview their own
+  // digest from Settings → Notifications.
+  if (!opts.isManual) {
+    members = members.filter(
+      (m) => !m.pausedUntil || m.pausedUntil <= now,
+    );
+  }
 
   if (members.length === 0) {
     // No eligible members at this hour. Cron-path returns empty so
@@ -229,7 +241,74 @@ async function runDigestForWorkspace(
     return [];
   }
 
-  const now = new Date();
+  // Per-(member, event) opt-out flags for the eligible members. Cron
+  // path consults `daily_digest`; the per-event helpers consult their
+  // own kinds. We fetch in one round-trip then bucket by member.
+  const memberIds = members.map((m) => m.id);
+  const prefRows =
+    memberIds.length > 0
+      ? await db
+          .select({
+            workspaceMemberId: schema.notificationPreferences.workspaceMemberId,
+            eventType: schema.notificationPreferences.eventType,
+            enabled: schema.notificationPreferences.enabled,
+          })
+          .from(schema.notificationPreferences)
+          .where(
+            and(
+              eq(schema.notificationPreferences.workspaceId, ws.id),
+              inArray(
+                schema.notificationPreferences.workspaceMemberId,
+                memberIds,
+              ),
+            ),
+          )
+      : [];
+  const eventDisabledByMember = new Map<string, Set<string>>();
+  for (const r of prefRows) {
+    if (r.enabled) continue;
+    const set = eventDisabledByMember.get(r.workspaceMemberId) ?? new Set<string>();
+    set.add(r.eventType);
+    eventDisabledByMember.set(r.workspaceMemberId, set);
+  }
+
+  // The `digest_enabled` column already gates digest opt-out (see
+  // memberFilter above). Per-event-type prefs cover the OTHER kinds
+  // — task_assignment, task_mention, inbound_message,
+  // task_approval, recurring_task_created — which don't fire from
+  // this cron. The map is computed here so per-event helpers (added
+  // later) can borrow the same shape.
+  void eventDisabledByMember;
+
+  // Per-member client mutes — the cron will filter unreplied
+  // messages, audit findings, and overdue/due-today task lists by
+  // these. One round-trip; bucket in JS.
+  const muteRows =
+    memberIds.length > 0
+      ? await db
+          .select({
+            workspaceMemberId: schema.notificationSubscriptions.workspaceMemberId,
+            entityId: schema.notificationSubscriptions.entityId,
+          })
+          .from(schema.notificationSubscriptions)
+          .where(
+            and(
+              eq(schema.notificationSubscriptions.workspaceId, ws.id),
+              eq(schema.notificationSubscriptions.entityType, 'client'),
+              eq(schema.notificationSubscriptions.mode, 'mute'),
+              inArray(
+                schema.notificationSubscriptions.workspaceMemberId,
+                memberIds,
+              ),
+            ),
+          )
+      : [];
+  const mutedClientsByMember = new Map<string, Set<string>>();
+  for (const r of muteRows) {
+    const set = mutedClientsByMember.get(r.workspaceMemberId) ?? new Set<string>();
+    set.add(r.entityId);
+    mutedClientsByMember.set(r.workspaceMemberId, set);
+  }
 
   // Workspace-wide payload — fetched once, used for owner/admin and as
   // the client-name lookup for every member's personal task list.
@@ -316,6 +395,7 @@ async function runDigestForWorkspace(
       auditDigest,
       appUrl,
       now,
+      mutedClientIds: mutedClientsByMember.get(m.id) ?? new Set<string>(),
     });
     results.push(result);
   }
@@ -328,6 +408,11 @@ interface SharedDigestPayload {
   auditDigest: ReturnType<typeof computeAuditDigest>;
   appUrl: string;
   now: Date;
+  /** Client IDs this member has muted via notification_subscriptions.
+   *  The cron drops every digest item linked to one of these clients
+   *  (unreplied messages, audit findings, overdue/due-today/pending
+   *  approval tasks). */
+  mutedClientIds: Set<string>;
 }
 
 async function runDigestForMember(
@@ -418,13 +503,35 @@ async function runDigestForMember(
       .limit(10),
   ]);
 
-  const memberUnreplied = isPrivileged ? shared.unreplied : [];
-  const memberAudit = isPrivileged ? shared.auditDigest : [];
+  // Drop muted-client items from every dimension. Workspace-wide
+  // payloads (unreplied / auditDigest) are computed once at the
+  // workspace level and shared; per-member task lists are filtered
+  // here. The mute set is empty for members who haven't customised
+  // anything — this is a no-op fast path.
+  const muted = shared.mutedClientIds;
+  const filterByMute = <T extends { clientId?: string | null }>(rows: T[]) =>
+    muted.size === 0
+      ? rows
+      : rows.filter((r) => !r.clientId || !muted.has(r.clientId));
+  const overdueVisible = filterByMute(overdueTasks);
+  const dueTodayVisible = filterByMute(dueTodayTasks);
+  const pendingApprovalVisible = filterByMute(pendingApprovalTasks);
+
+  const memberUnreplied = isPrivileged
+    ? muted.size === 0
+      ? shared.unreplied
+      : shared.unreplied.filter((u) => !muted.has(u.clientId))
+    : [];
+  const memberAudit = isPrivileged
+    ? muted.size === 0
+      ? shared.auditDigest
+      : shared.auditDigest.filter((a) => !muted.has(a.clientId))
+    : [];
 
   const totalActionable =
-    overdueTasks.length +
-    dueTodayTasks.length +
-    pendingApprovalTasks.length +
+    overdueVisible.length +
+    dueTodayVisible.length +
+    pendingApprovalVisible.length +
     memberUnreplied.length +
     memberAudit.length;
 
@@ -478,19 +585,19 @@ async function runDigestForMember(
       workspaceName: ws.name,
       dayName,
       dashboardUrl: `${shared.appUrl}/${ws.id}`,
-      overdue: overdueTasks.map((t) => ({
+      overdue: overdueVisible.map((t) => ({
         id: t.id,
         title: t.title,
         subtitle: formatDueSubtitle(t.dueDate, t.clientId, 'overdue'),
         href: taskHref(t.clientId, t.id),
       })),
-      dueToday: dueTodayTasks.map((t) => ({
+      dueToday: dueTodayVisible.map((t) => ({
         id: t.id,
         title: t.title,
         subtitle: formatDueSubtitle(t.dueDate, t.clientId, 'due-today'),
         href: taskHref(t.clientId, t.id),
       })),
-      pendingApproval: pendingApprovalTasks.map((t) => ({
+      pendingApproval: pendingApprovalVisible.map((t) => ({
         id: t.id,
         title: t.title,
         subtitle: t.clientId ? nameFor(t.clientId) ?? undefined : undefined,
@@ -528,7 +635,14 @@ function computeUnreplied(input: {
   clientName: Map<string, string>;
   appUrl: string;
   workspaceId: string;
-}): Array<{ id: string; preview: string; subtitle: string; href: string }> {
+}): Array<{
+  id: string;
+  /** Carried so per-member mutes can filter without parsing href. */
+  clientId: string;
+  preview: string;
+  subtitle: string;
+  href: string;
+}> {
   const lastOutboundByClient = new Map<string, Date>();
   for (const m of input.outboundMessages) {
     if (!m.clientId) continue;
@@ -540,6 +654,7 @@ function computeUnreplied(input: {
   const seen = new Set<string>();
   const unreplied: Array<{
     id: string;
+    clientId: string;
     preview: string;
     subtitle: string;
     href: string;
@@ -556,6 +671,7 @@ function computeUnreplied(input: {
     const name = input.clientName.get(m.clientId) ?? 'Unknown client';
     unreplied.push({
       id: m.id,
+      clientId: m.clientId,
       preview: (m.subject ?? m.body).slice(0, 80),
       subtitle: `${name} · ${days}d waiting`,
       href: `${input.appUrl}/${input.workspaceId}/clients/${m.clientId}`,
@@ -572,6 +688,8 @@ function computeAuditDigest(input: {
   appUrl: string;
   workspaceId: string;
 }): Array<{
+  /** Carried so per-member mutes can filter without parsing href. */
+  clientId: string;
   name: string;
   criticalCount: number;
   warningCount: number;
@@ -611,6 +729,8 @@ function computeAuditDigest(input: {
     edgesByClient.set(e.clientId, list);
   }
   const out: Array<{
+    /** Carried so per-member mutes can filter without parsing href. */
+    clientId: string;
     name: string;
     criticalCount: number;
     warningCount: number;
@@ -625,6 +745,7 @@ function computeAuditDigest(input: {
     const warn = findings.filter((f) => f.severity === 'warning').length;
     if (crit + warn === 0) continue;
     out.push({
+      clientId: c.id,
       name: c.name,
       criticalCount: crit,
       warningCount: warn,

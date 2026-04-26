@@ -24,6 +24,8 @@ export * from './audit-suppressions';
 export * from './billing-events';
 export * from './newsletter-subscribers';
 export * from './saved-views';
+export * from './notification-preferences';
+export * from './notification-subscriptions';
 
 // --- V2 tables (scaffolded stubs; see ARCHITECTURE.md §5.4) ---
 export * from './ad-platform-accounts';
