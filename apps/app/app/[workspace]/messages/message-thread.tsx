@@ -1,7 +1,7 @@
 'use client';
 
 import { Mail, MessageSquare, StickyNote } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { MessageChannel, MessageDirection } from '@phloz/config';
 import {
@@ -172,6 +172,58 @@ function ComposeForm({
   );
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
+  const [restoredDraft, setRestoredDraft] = useState(false);
+
+  // Per-(workspace, client, mode) draft key. Separate slot for email
+  // vs internal note so a half-written reply doesn't get clobbered
+  // when the user toggles the tab to jot a quick note.
+  const draftKey = `phloz.draft.${workspaceId}.${clientId}.${mode}`;
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Restore-on-mount + on tab switch. Only swaps the body in when
+  // it's currently empty so we don't overwrite an in-progress edit
+  // that started before the restore returned.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = window.localStorage.getItem(draftKey);
+      if (stored && stored.trim().length > 0) {
+        setBody((prev) => (prev.length === 0 ? stored : prev));
+        setRestoredDraft(true);
+      } else {
+        setRestoredDraft(false);
+      }
+    } catch {
+      // Ignore — Safari private mode + storage quota errors fall
+      // through to "no draft restored", which is fine.
+    }
+    // Re-runs when the (workspace, client, mode) draft key changes;
+    // we intentionally don't depend on `body` so the restore only
+    // fires once per key.
+  }, [draftKey]);
+
+  // Debounced auto-save. 500ms keeps the disk-write rate sane while
+  // still feeling instant when the user pauses typing. Empty bodies
+  // remove the key entirely so the next mount doesn't restore a
+  // stale "" draft.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      try {
+        if (body.length === 0) {
+          window.localStorage.removeItem(draftKey);
+        } else {
+          window.localStorage.setItem(draftKey, body);
+        }
+      } catch {
+        // Quota / permissions errors are non-fatal.
+      }
+    }, 500);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [body, draftKey]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -210,8 +262,24 @@ function ComposeForm({
         toast.success('Note posted');
       }
       setBody('');
+      setRestoredDraft(false);
+      try {
+        window.localStorage.removeItem(draftKey);
+      } catch {
+        // Non-fatal.
+      }
     } finally {
       setSending(false);
+    }
+  }
+
+  function clearDraft() {
+    setBody('');
+    setRestoredDraft(false);
+    try {
+      window.localStorage.removeItem(draftKey);
+    } catch {
+      // Non-fatal.
     }
   }
 
@@ -257,7 +325,10 @@ function ComposeForm({
 
       <textarea
         value={body}
-        onChange={(e) => setBody(e.target.value)}
+        onChange={(e) => {
+          setBody(e.target.value);
+          if (restoredDraft) setRestoredDraft(false);
+        }}
         rows={4}
         placeholder={
           mode === 'email'
@@ -267,7 +338,25 @@ function ComposeForm({
         className="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
       />
 
-      <div className="mt-3 flex justify-end">
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="text-[11px] text-muted-foreground">
+          {restoredDraft ? (
+            <span className="flex items-center gap-2">
+              Draft restored
+              <button
+                type="button"
+                onClick={clearDraft}
+                className="underline-offset-2 hover:underline"
+              >
+                Clear
+              </button>
+            </span>
+          ) : body.length > 0 ? (
+            <span>Draft saved locally</span>
+          ) : (
+            <span>&nbsp;</span>
+          )}
+        </div>
         <Button type="submit" size="sm" disabled={sending || !body.trim()}>
           {sending
             ? mode === 'email'
