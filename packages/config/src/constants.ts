@@ -171,7 +171,7 @@ export const NOTIFICATION_EVENT_LABELS: Record<
   task_mention: {
     title: 'You’re @mentioned',
     description:
-      'Email when someone @mentions you in a task, message, or tracking-node comment.',
+      'Email when someone @mentions you in a task comment or an internal note on a client thread. Suppress here to mute every @-mention notification, regardless of where it was tagged.',
   },
   inbound_message: {
     title: 'Client emails',

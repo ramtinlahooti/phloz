@@ -75,6 +75,53 @@ three; call sites are queued in NEXT-STEPS.
 
 ---
 
+## 2026-04-26 — Mention fan-out from internal notes + shared parser
+
+### Added — Internal-note `@`-mentions fire emails
+
+Typing `@alex` in an internal note now sends Alex an email,
+gated by the same three checks as task-comment mentions:
+`paused_until` → per-event `task_mention` pref → per-client
+mute. Plain-email send (subject
+`[ClientName] {actor} mentioned you in a note` + the note
+excerpt + an "Open the thread" link) — a third React template
+felt like debt for one sender path. The user-facing behaviour
+is identical to task comments.
+
+The `task_mention` preference is reused intentionally: the user's
+mental model is "I was @-mentioned somewhere" not "I was @-
+mentioned in a comment vs a note". One toggle, every mention
+surface. Settings → Notifications copy updated to clarify that
+the toggle covers both.
+
+### Refactored — Shared mention helper
+
+Extracted `extractMentionTokens` + `resolveMentionTokens` to
+`apps/app/lib/mentions.ts` so the comments path and the
+internal-note path use one source of truth. The resolver does a
+single workspace-member fetch + JS-side filter (full-email match
+or local-part match — `@alex` matches `alex@agency.com`).
+comments-actions refactored to use the shared helper; the
+private duplicate dropped.
+
+### Files touched
+
+- `apps/app/lib/mentions.ts` (new shared helper)
+- `apps/app/app/[workspace]/tasks/comments-actions.ts`
+  (use shared helper, drop private copy)
+- `apps/app/app/[workspace]/messages/actions.ts`
+  (`fanOutNoteMentions` + integration in `postInternalNoteAction`)
+- `packages/config/src/constants.ts` (clarified
+  `task_mention` description)
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean.
+- `pnpm --filter @phloz/app test:e2e` — 7/7 still green.
+
+---
+
 ## 2026-04-26 — `@`-mention autocomplete
 
 ### Added — `<MentionComposer />` shared component

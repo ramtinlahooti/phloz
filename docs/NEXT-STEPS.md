@@ -1,10 +1,15 @@
-# Next Steps (as of 2026-04-26 v16)
+# Next Steps (as of 2026-04-26 v17)
 
 ## Branch state
 
 `claude/inspiring-wright-2ca122` is the active feature branch and
-sits 50 commits ahead of `main`. Latest HEAD: `81976d4`
-(@-mention autocomplete in internal-note composer).
+sits 52 commits ahead of `main`. Latest HEAD: `1ba9b30` (mention
+fan-out from internal notes + shared parser).
+
+**`@`-mentions are now end-to-end on every text surface that
+supports them** — task comments AND internal notes both fire
+emails through the shared parser and gate. One Settings toggle
+controls the lot.
 
 **Notifications surface is comprehensive** —
   - Five event types wired end-to-end (task_assignment,
@@ -46,14 +51,12 @@ locally on chromium-headless-shell. CI runs both via a matrixed
    per-client Access flow + invite + accept-with-pre-assignments
    are now non-trivial state machines worth automating. Needs the
    test-DB + Supabase Auth setup queued in earlier sessions.
-3. **Mention fan-out from internal notes.** Today's parser only
-   fires `task_mention` emails when the comment lives on a task.
-   Internal notes on the message thread now get the autocomplete
-   UI, but a `@`-mention there doesn't trigger an email yet — the
-   send-message paths skip the parser. Wiring it would close the
-   loop: an internal note on Client X mentioning @alex emails
-   Alex with a `task_mention`-style template (or a new
-   `note_mention` variant).
+3. **"Mentioned me" inbox** — a dedicated page that lists every
+   comment + internal note that has the calling user in
+   `comments.mentions` or `messages.body` matching their email.
+   Closes the loop on the receiving end (today the only feedback
+   path is the email). Reads exist; needs a route, a query, and
+   a small list view.
 2. **Authenticated Playwright tests for `apps/app`.** Need a test
    DB + seeded fixtures + a Playwright auth setup that signs into
    a known test account once and reuses storage state. Approach:
