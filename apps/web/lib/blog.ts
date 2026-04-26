@@ -79,3 +79,34 @@ export async function getAllPostSlugs(): Promise<string[]> {
   const posts = await getAllPosts();
   return posts.map((p) => p.slug);
 }
+
+/**
+ * Pick up to `n` posts most thematically related to `current`. The
+ * heuristic: same category first, then highest tag-overlap with the
+ * current post, with the current post itself filtered out. Falls
+ * back to "newest other posts" when nothing else matches — better
+ * than rendering an empty section on a fresh blog with three posts.
+ */
+export async function getRelatedPosts(
+  current: BlogPost,
+  n = 3,
+): Promise<BlogPost[]> {
+  const posts = await getAllPosts();
+  const others = posts.filter((p) => p.slug !== current.slug);
+  if (others.length === 0) return [];
+
+  const currentTags = new Set(current.tags ?? []);
+  const scored = others.map((p) => {
+    let score = 0;
+    if (p.category === current.category) score += 5;
+    for (const t of p.tags ?? []) {
+      if (currentTags.has(t)) score += 2;
+    }
+    return { post: p, score };
+  });
+  scored.sort((a, b) => {
+    if (a.score !== b.score) return b.score - a.score;
+    return a.post.publishedAt < b.post.publishedAt ? 1 : -1;
+  });
+  return scored.slice(0, n).map((x) => x.post);
+}

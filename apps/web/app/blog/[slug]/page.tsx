@@ -7,7 +7,8 @@ import remarkGfm from 'remark-gfm';
 
 import { TrackOnMount } from '@/components/analytics/track-on-mount';
 import { NewsletterForm } from '@/components/newsletter-form';
-import { getAllPosts, getPostBySlug } from '@/lib/blog';
+import { ReadingProgress } from '@/components/reading-progress';
+import { getAllPosts, getPostBySlug, getRelatedPosts } from '@/lib/blog';
 import { buildMetadata } from '@/lib/metadata';
 import { SITE_CONFIG } from '@/lib/site-config';
 
@@ -44,6 +45,8 @@ export default async function BlogPostPage({
   const post = await getPostBySlug(slug);
   if (!post) notFound();
 
+  const related = await getRelatedPosts(post, 3);
+
   const articleJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Article',
@@ -64,72 +67,110 @@ export default async function BlogPostPage({
   };
 
   return (
-    <article className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
-      <TrackOnMount
-        event="blog_post_view"
-        params={{ post_slug: post.slug, post_category: post.category }}
-      />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
-      />
-
-      <nav className="mb-8 text-sm">
-        <Link
-          href="/blog"
-          className="text-muted-foreground transition-colors hover:text-foreground"
-        >
-          ← All posts
-        </Link>
-      </nav>
-
-      <header className="mb-12">
-        <div className="mb-3 flex items-center gap-3 text-xs text-muted-foreground">
-          <time dateTime={post.publishedAt}>
-            {new Date(post.publishedAt).toLocaleDateString('en-US', {
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            })}
-          </time>
-          <span>·</span>
-          <span>{post.readingMinutes} min read</span>
-          <span>·</span>
-          <span>By {post.author}</span>
-        </div>
-        <h1 className="text-balance text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-          {post.title}
-        </h1>
-        <p className="mt-4 text-lg text-muted-foreground">{post.description}</p>
-      </header>
-
-      <div className="phloz-prose">
-        <MDXRemote
-          source={post.content}
-          options={{
-            mdxOptions: {
-              remarkPlugins: [remarkGfm],
-              rehypePlugins: [
-                rehypeSlug,
-                [rehypeAutolinkHeadings, { behavior: 'wrap' }],
-              ],
-            },
-          }}
+    <>
+      <ReadingProgress />
+      <article className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+        <TrackOnMount
+          event="blog_post_view"
+          params={{ post_slug: post.slug, post_category: post.category }}
         />
-      </div>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
+        />
 
-      <aside className="mt-16 rounded-xl border border-border/60 bg-card/30 p-6 sm:p-8">
-        <h2 className="text-lg font-semibold text-foreground">
-          More like this?
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Short, practical essays on agency ops + tracking infrastructure.
-          Two a month.
-        </p>
-        <div className="mt-4">
-          <NewsletterForm source={`blog_${post.category}`} />
+        <nav className="mb-8 text-sm">
+          <Link
+            href="/blog"
+            className="text-muted-foreground transition-colors hover:text-foreground"
+          >
+            ← All posts
+          </Link>
+        </nav>
+
+        <header className="mb-12">
+          <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span className="rounded-full border border-border bg-card/40 px-2 py-0.5 capitalize">
+              {post.category.replace(/-/g, ' ')}
+            </span>
+            <span aria-hidden>·</span>
+            <time dateTime={post.publishedAt}>
+              {new Date(post.publishedAt).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+              })}
+            </time>
+            <span aria-hidden>·</span>
+            <span>{post.readingMinutes} min read</span>
+            <span aria-hidden>·</span>
+            <span>By {post.author}</span>
+          </div>
+          <h1 className="text-balance text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+            {post.title}
+          </h1>
+          <p className="mt-4 text-lg text-muted-foreground">{post.description}</p>
+        </header>
+
+        <div className="phloz-prose">
+          <MDXRemote
+            source={post.content}
+            options={{
+              mdxOptions: {
+                remarkPlugins: [remarkGfm],
+                rehypePlugins: [
+                  rehypeSlug,
+                  [rehypeAutolinkHeadings, { behavior: 'wrap' }],
+                ],
+              },
+            }}
+          />
         </div>
-      </aside>
-    </article>
+
+        {related.length > 0 && (
+          <aside className="mt-16 border-t border-border/60 pt-10">
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Related reads
+            </h2>
+            <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {related.map((r) => (
+                <li
+                  key={r.slug}
+                  className="rounded-lg border border-border/60 bg-card/30 p-5 transition-colors hover:border-primary/60"
+                >
+                  <Link href={`/blog/${r.slug}`} className="block">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {r.category.replace(/-/g, ' ')}
+                    </p>
+                    <h3 className="mt-1 text-base font-semibold text-foreground">
+                      {r.title}
+                    </h3>
+                    <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">
+                      {r.description}
+                    </p>
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      {r.readingMinutes} min read
+                    </p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </aside>
+        )}
+
+        <aside className="mt-16 rounded-xl border border-border/60 bg-card/30 p-6 sm:p-8">
+          <h2 className="text-lg font-semibold text-foreground">
+            More like this?
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Short, practical essays on agency ops + tracking infrastructure.
+            Two a month.
+          </p>
+          <div className="mt-4">
+            <NewsletterForm source={`blog_${post.category}`} />
+          </div>
+        </aside>
+      </article>
+    </>
   );
 }
