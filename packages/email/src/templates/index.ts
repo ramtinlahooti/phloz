@@ -15,3 +15,8 @@ export {
   type DigestMessageItem,
   type DigestAuditItem,
 } from './daily-digest';
+export {
+  TaskNotificationEmail,
+  type TaskNotificationEmailProps,
+  type TaskNotificationVariant,
+} from './task-notification';

@@ -10,6 +10,8 @@ import {
   type PasswordResetEmailProps,
   PortalMagicLinkEmail,
   type PortalMagicLinkEmailProps,
+  TaskNotificationEmail,
+  type TaskNotificationEmailProps,
 } from './templates';
 
 export interface SendResult {
@@ -119,6 +121,49 @@ export async function sendDailyDigest(
     react: React.createElement(DailyDigestEmail, templateProps),
     tags: [{ name: 'category', value: 'daily_digest' }],
   });
+}
+
+/**
+ * Send a per-task notification email. The caller (a server action
+ * or Inngest function) is responsible for the recipient + the
+ * preference checks BEFORE calling this. Subject derives from the
+ * variant + task title so the inbox row reads correctly without
+ * the caller composing it. `tags.event_type` mirrors the variant
+ * so Resend's analytics can break down volume per kind.
+ */
+export async function sendTaskNotification(
+  input: BaseSendInput & TaskNotificationEmailProps,
+): Promise<SendResult> {
+  const { to, from, replyTo, ...templateProps } = input;
+  const subject = buildTaskNotificationSubject(templateProps);
+  return sendReactEmail({
+    to,
+    from: from ?? defaultFromAddress(),
+    replyTo,
+    subject,
+    react: React.createElement(TaskNotificationEmail, templateProps),
+    tags: [
+      { name: 'category', value: 'task_notification' },
+      { name: 'event_type', value: templateProps.variant },
+    ],
+  });
+}
+
+function buildTaskNotificationSubject(p: TaskNotificationEmailProps): string {
+  switch (p.variant) {
+    case 'task_assignment':
+      return p.actorName
+        ? `${p.actorName} assigned you "${p.taskTitle}"`
+        : `New task: "${p.taskTitle}"`;
+    case 'task_mention':
+      return p.actorName
+        ? `${p.actorName} mentioned you on "${p.taskTitle}"`
+        : `You were mentioned on "${p.taskTitle}"`;
+    case 'task_approval':
+      return `Approval update — "${p.taskTitle}"`;
+    case 'recurring_task_created':
+      return `Recurring task ready — "${p.taskTitle}"`;
+  }
 }
 
 /** Send a Supabase-backed password reset link. */
