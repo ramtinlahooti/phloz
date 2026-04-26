@@ -4,6 +4,94 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-25 — Audit "Run now" + per-client sparkline + Team digest-hour badge
+
+### Added — "Run audit now" button on the dashboard rollup card
+
+Owners and admins get a small "Run now" button next to the Tracking
+audit title on the dashboard. Fires the same `audit/run-weekly`
+Inngest event the cron uses, scoped to the current workspace via
+`event.data.workspaceId` (the cron already supports the per-workspace
+target — no audit-weekly.ts change needed).
+
+Member/viewer don't see the button. Action re-checks role
+server-side as defence in depth. Optimistic toast tells the user
+the audit is queued; a page reload after a minute surfaces the new
+snapshot. Mirrors the existing "Send digest now" / "Preview today's
+digest" pattern so the manual-cron-trigger UX is consistent across
+audit + digest features.
+
+### Added — Inline sparkline on the per-client Audit history
+
+When 2+ weekly snapshots exist for a client, a 160×28 SVG sparkline
+renders above the History list in the per-client Audit tab. Same
+two-line shape as the dashboard rollup (critical on top, warnings
+below, last-point dot anchors "now"). Skipped when fewer than 2
+datapoints — a single bar isn't a trend.
+
+### Changed — Extracted AuditSparkline to a shared component
+
+Moved out of `apps/app/app/[workspace]/page.tsx` into
+`apps/app/components/audit-sparkline.tsx` so the per-client view
+reuses it without duplicating ~50 lines of SVG. Width/height are
+now optional props with the dashboard-matching defaults. The `mt-2`
+that lived inside the component moves to a wrapper div at each
+call site, keeping the visual identical.
+
+### Added — Per-member digest-hour badge on the Team page
+
+Owners spot-check who's getting the digest at non-9-AM times
+without opening each member's profile. Badge renders only when the
+member has explicitly chosen a different hour (digestHour set AND
+differs from DEFAULT_DIGEST_HOUR). Default-9 and unset both
+suppress the badge to keep the row scannable. Hidden when digest
+is off entirely.
+
+Read-only — toggling another member's preference is intentionally
+not exposed; preference is personal. Tooltip points admins back to
+the member's own Settings → Notifications.
+
+Extracted `formatHour` + `DEFAULT_DIGEST_HOUR` to a new shared
+helper at `apps/app/lib/format-hour.ts` so the Settings selector
+and the Team badge speak the same language and the workspace
+default constant lives in one place.
+
+### Operational
+
+- **Inngest dashboard sync confirmed** — endpoint reports 7
+  functions registered, both keys present, cloud mode.
+- **Migration #10 applied to Supabase** — `digest_hour smallint`
+  column live with the 0–23 CHECK constraint. Verified column
+  exists; security advisors show no new findings.
+
+### Files touched
+
+- `apps/app/components/audit-sparkline.tsx` (new shared component)
+- `apps/app/lib/format-hour.ts` (new shared helper)
+- `apps/app/app/[workspace]/page.tsx` (import sparkline +
+  RunAuditButton; pass canRunAudit + isPrivileged through)
+- `apps/app/app/[workspace]/audit-actions.ts` (new
+  `runAuditNowAction`)
+- `apps/app/app/[workspace]/run-audit-button.tsx` (new client
+  component)
+- `apps/app/app/[workspace]/clients/[clientId]/page.tsx` (import
+  + render sparkline above the history list)
+- `apps/app/app/[workspace]/team/page.tsx` (pass digestHour
+  through)
+- `apps/app/app/[workspace]/team/member-row.tsx` (Clock badge for
+  non-default hour)
+- `apps/app/app/[workspace]/settings/notifications-form.tsx`
+  (use shared formatHour + DEFAULT_DIGEST_HOUR)
+
+### Verified
+
+- `pnpm check` — 29/29 green, 0 lint warnings.
+- `pnpm --filter @phloz/app build` — clean.
+- Migration #10 verified live on Supabase via MCP.
+- Inngest endpoint healthy (7 functions, cloud mode).
+
+---
+
 ## 2026-04-25 — Calendar drag-to-reschedule + per-member digest hour
 
 ### Added — Drag-to-reschedule on `/tasks/calendar`
