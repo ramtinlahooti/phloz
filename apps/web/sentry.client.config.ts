@@ -9,6 +9,12 @@ Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
   environment:
     process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? 'development',
+  // Vercel auto-populates `NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA` on
+  // every deploy; the public-prefixed twin is what's available
+  // client-side.
+  release:
+    process.env.NEXT_PUBLIC_SENTRY_RELEASE ??
+    process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA,
 
   // Marketing pages are heavily cached — low sample rate is plenty.
   tracesSampleRate: 0.1,
