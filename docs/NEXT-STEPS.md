@@ -1,10 +1,10 @@
-# Next Steps (as of 2026-04-26 v2)
+# Next Steps (as of 2026-04-26 v3)
 
 ## Branch state
 
 `claude/inspiring-wright-2ca122` is the active feature branch and
-sits 16 commits ahead of `main`. Latest HEAD: `d3e0c51` (calendar
-week view).
+sits 18 commits ahead of `main`. Latest HEAD: `f465756` (inbox
+star/pin).
 
 `pnpm check` 29/29 green, **zero lint warnings**. Both apps build
 clean.
@@ -27,18 +27,18 @@ clean.
 1. **Playwright smoke tests.** Surface area now spans audit
    timeline + sparkline + workspace + per-client Run-now, pricing
    matrix, activity pagination, calendar month + week DnD, digest
-   hour selector, Team digest-hour badge, plus prior features
-   (recurring tasks, saved-views, subtask DnD, digest preview/nudge,
-   billing tier-hint redirect, platform-IDs copy, inline tracking
-   map, multi-token client search + bulk-archive, blog
-   reading-progress, keyboard shortcuts, message drafts, inbox
-   j/k). Worth automating the happy paths before the next
-   dogfooding pass.
-2. **Inbox star/pin** — let users mark a thread as needing
-   follow-up so it pins to the top of the messages list across
-   sessions. Adds a `messages.starred boolean default false`
-   column + migration #11. Bigger surface (UI + action + thread
-   sort).
+   hour selector, Team digest-hour badge, inbox star/pin + `s`
+   shortcut, plus prior features (recurring tasks, saved-views,
+   subtask DnD, digest preview/nudge, billing tier-hint redirect,
+   platform-IDs copy, inline tracking map, multi-token client
+   search + bulk-archive, blog reading-progress, keyboard
+   shortcuts, message drafts, inbox j/k). Worth automating the
+   happy paths before the next dogfooding pass.
+2. **Surface starred state on the per-client message thread**
+   so users see the same star they pinned in the inbox when they
+   drill into a client's messages tab. Read-only first pass; the
+   per-client thread already shares schema + UI primitives with
+   the inbox — small wiring change.
 3. **PostHog wiring.** `NEXT_PUBLIC_POSTHOG_KEY` + `POSTHOG_API_KEY`
    in Vercel. Without them, `track()` calls log-only — we have a
    pile of typed events but no funnel data yet.
@@ -70,8 +70,9 @@ clean.
 | `0008_tasks_sort_order.sql` | ✅ |
 | `0009_workspace_members_default_saved_view.sql` | ✅ |
 | `0010_workspace_members_digest_hour.sql` | ✅ |
+| `0011_messages_starred.sql` | ✅ |
 
-All 11 Drizzle migrations applied to Supabase.
+All 12 Drizzle migrations applied to Supabase.
 
 ## Env vars to light up dormant features
 
@@ -102,7 +103,7 @@ pnpm check                     # lint + typecheck + unit tests
 ## Accounts / provisioning status
 
 - ✅ GitHub, Supabase (`tdvzhwhzxuskrsobdyrm`, RLS + JWT hook
-  enabled, 11 migrations applied), GTM, Stripe sandbox (API pinned
+  enabled, 12 migrations applied), GTM, Stripe sandbox (API pinned
   to `2026-04-22.dahlia`), Vercel app project (`phloz`, live at
   `app.phloz.com`, Inngest + Resend env vars set), Vercel marketing
   project (`phloz-web`, live at `phloz.com`), Supabase auth URLs +

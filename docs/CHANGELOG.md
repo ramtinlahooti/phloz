@@ -4,6 +4,66 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-26 — Inbox star/pin with `s` keyboard shortcut
+
+### Added — `messages.starred` column + inbox star toggle
+
+Per-message "needs follow-up" flag. Starred rows pin to the top of
+the inbox so a thread the user flagged for follow-up doesn't get
+pushed off the first page by newer traffic. Per-message rather
+than per-thread by design — the inbox renders flat-by-message, so
+the granularity matches the UI without a thread-aggregation step.
+
+Migration #11 (`0011_messages_starred.sql`) adds the column with
+`default false` + a composite index on `(workspace_id, starred,
+created_at desc)` for the inbox sort. **Applied to Supabase** in
+the same session via the MCP — column shape verified.
+
+The `toggleMessageStarAction` is open to all roles that can see
+the inbox (owner / admin / member / viewer) — starring is a
+personal triage tool, not a state mutation that affects other
+members' workflow.
+
+UI: a small Star icon at the start of each inbox row, filled amber
+when starred. Click toggles optimistically, reverts + toasts on
+server error. `router.refresh()` after success so the new sort
+order lands.
+
+### Added — `?starred=1` filter pill
+
+Filters the inbox to pinned messages only. Sits next to the
+existing Needs reply / Inbound / Outbound / Email / Internal notes
+pills.
+
+### Added — `s` keyboard shortcut
+
+Toggles the star on the focused inbox row, reusing the existing
+`j` / `k` / `Enter` keyboard layer. Cheat sheet updated.
+
+### Files touched
+
+- `packages/db/migrations/0011_messages_starred.sql` (new)
+- `packages/db/src/schema/messages.ts` (starred column +
+  composite index)
+- `apps/app/app/[workspace]/messages/actions.ts`
+  (`toggleMessageStarAction`)
+- `apps/app/app/[workspace]/messages/star-button.tsx` (new client
+  component)
+- `apps/app/app/[workspace]/messages/page.tsx` (sort + filter +
+  row markup with the button)
+- `apps/app/app/[workspace]/messages/inbox-keyboard-nav.tsx`
+  (`s` handler + JSDoc)
+- `apps/app/components/keyboard-shortcuts-dialog.tsx` (cheat-sheet
+  entry)
+
+### Verified
+
+- `pnpm check` — 29/29 green, 0 lint warnings.
+- `pnpm --filter @phloz/app build` — clean.
+- Migration #11 verified live on Supabase via MCP.
+
+---
+
 ## 2026-04-26 — Calendar week view + "Last run X ago" trend anchor
 
 ### Added — Week view at `/tasks/calendar?view=week`
