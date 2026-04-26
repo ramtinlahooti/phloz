@@ -1,22 +1,63 @@
-import { type NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 
 import { updateSession } from '@phloz/auth/middleware';
 
 /**
- * Next.js 16 edge proxy (formerly `middleware`). Runs on every request
- * that matches the config below. Refreshes the Supabase auth session
- * cookie so server components always see a fresh JWT.
+ * Next.js 16 edge proxy (formerly `middleware`). Two responsibilities,
+ * in this order:
  *
- * The actual auth enforcement happens per-route: protected layouts
- * call `requireUser()` from `@phloz/auth`, which redirects to /login
- * if there's no session.
+ *  1. **Refresh the Supabase auth session cookie on every request**
+ *     so server components always see a fresh JWT before it expires.
+ *     `updateSession()` rotates the cookies + returns the current
+ *     user (or null) for the protected-route check.
+ *
+ *  2. **Redirect unauthenticated visits to protected routes** to
+ *     `/login?next=<original-path>` so the user lands back where
+ *     they came from after signing in. Replaces the previous "page
+ *     layout calls requireUser() and throws" pattern, which gave
+ *     visitors a generic error page instead of the login form.
+ *
+ * "Protected" here means anything that isn't on the explicit allow
+ * list below — every workspace dashboard, settings page, tasks
+ * surface, etc. requires a session. The allow list covers the
+ * auth pages themselves, the portal magic-link landing, the
+ * Supabase auth callback, the API webhooks (Stripe / Resend /
+ * Inngest sign their own payloads), and the public root.
  */
+const PUBLIC_PATHS = [
+  '/',
+  '/login',
+  '/signup',
+  '/forgot-password',
+  '/reset-password',
+  '/auth/callback',
+];
+const PUBLIC_PREFIXES = [
+  '/portal/', // Portal magic-link landing — auth via cookie, not Supabase user
+  '/api/webhooks/', // Stripe / Resend / Inngest — signature-verified server-side
+  '/api/inngest', // Inngest's own signed envelope
+];
+
+function isPublicPath(pathname: string): boolean {
+  if (PUBLIC_PATHS.includes(pathname)) return true;
+  return PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
 export default async function proxy(request: NextRequest) {
-  // updateSession returns `{ response, user }` — the proxy only needs
-  // the response (a NextResponse with refreshed Supabase cookies).
-  // Page-level `requireUser()` handles actual auth enforcement.
-  const { response } = await updateSession(request);
-  return response;
+  const { response, user } = await updateSession(request);
+
+  if (user) return response;
+
+  const { pathname, search } = request.nextUrl;
+  if (isPublicPath(pathname)) return response;
+
+  // Unauthenticated visit to a protected path → bounce to /login
+  // with `?next=<original>` so the post-login redirect lands the
+  // user back where they were heading.
+  const loginUrl = request.nextUrl.clone();
+  loginUrl.pathname = '/login';
+  loginUrl.search = `?next=${encodeURIComponent(pathname + search)}`;
+  return NextResponse.redirect(loginUrl);
 }
 
 export const config = {
@@ -27,7 +68,6 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico
      * - images, fonts, static assets
-     * - public files
      */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)',
   ],

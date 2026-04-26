@@ -74,23 +74,30 @@ test.describe('app — /reset-password', () => {
 });
 
 test.describe('app — protected route guard', () => {
-  // A workspace route should never render dashboard content for an
-  // unauthenticated visitor. There's no middleware redirect today —
-  // the dashboard layout calls requireUser() which throws, so an
-  // unauth'd visit results in an error page (not a 200 with the
-  // dashboard content). The proper UX (middleware redirect to
-  // /login with a `?next=` round-trip) is queued in NEXT-STEPS;
-  // this test guards the security invariant in the meantime.
-  test('does not render dashboard content for unauthenticated visit', async ({
+  // The middleware bounces unauthenticated visits to /login with
+  // a `?next=<original>` round-trip parameter. We assert on both
+  // the redirect URL + the absence of dashboard content; the
+  // belt-and-braces approach catches a regression on either layer
+  // (the redirect not happening, or the redirect leaking some
+  // workspace state through into the rendered login page).
+  test('redirects an unauthenticated visit to /login with ?next=', async ({
     page,
   }) => {
     const fakeWorkspace = '00000000-0000-0000-0000-000000000000';
     await page.goto(`/${fakeWorkspace}`);
-    // The dashboard's "Recent activity" heading is the regression
-    // signal — if it appears for an unauth'd visit, RLS got
-    // bypassed somewhere upstream and we have a real bug.
+    await expect(page).toHaveURL(/\/login\?next=/);
+    // The dashboard's "Recent activity" heading must not be
+    // present even after the redirect. Belt and braces.
     await expect(
       page.getByRole('heading', { name: /Recent activity/i }),
     ).toHaveCount(0);
+  });
+
+  test('preserves the original path in the next param', async ({ page }) => {
+    const target = '/00000000-0000-0000-0000-000000000000/clients';
+    await page.goto(target);
+    await expect(page).toHaveURL(
+      new RegExp(`\\/login\\?next=${encodeURIComponent(target).replace(/-/g, '-')}`),
+    );
   });
 });
