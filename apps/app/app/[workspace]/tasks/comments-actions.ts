@@ -9,6 +9,10 @@ import { requireUser } from '@phloz/auth/session';
 import { COMMENT_PARENT_TYPES, TASK_VISIBILITIES } from '@phloz/config';
 import { getDb, schema } from '@phloz/db/client';
 
+import {
+  extractMentionTokens,
+  resolveMentionTokens,
+} from '@/lib/mentions';
 import { sendTaskNotificationToMember } from '@/lib/notify-task';
 
 /**
@@ -268,30 +272,13 @@ async function fanOutMentions(input: {
   const tokens = extractMentionTokens(input.body);
   if (tokens.length === 0) return;
 
-  const db = getDb();
-
-  // Single fetch of every workspace member; the per-workspace
-  // headcount is small enough that filtering in JS is cheaper
-  // than building a SQL OR.
-  const members = await db
-    .select({
-      id: schema.workspaceMembers.id,
-      userId: schema.workspaceMembers.userId,
-      email: schema.workspaceMembers.email,
-    })
-    .from(schema.workspaceMembers)
-    .where(eq(schema.workspaceMembers.workspaceId, input.workspaceId));
-
-  const lowered = new Set(tokens.map((t) => t.toLowerCase()));
-  const matched = members.filter((m) => {
-    if (!m.email) return false;
-    const lc = m.email.toLowerCase();
-    if (lowered.has(lc)) return true;
-    const local = lc.split('@')[0];
-    if (local && lowered.has(local)) return true;
-    return false;
+  const matched = await resolveMentionTokens({
+    workspaceId: input.workspaceId,
+    tokens,
   });
   if (matched.length === 0) return;
+
+  const db = getDb();
 
   // Persist resolved user_ids on the comment row for future
   // surfaces. Filter out null user_ids (members invited but not
@@ -354,7 +341,7 @@ async function fanOutMentions(input: {
     void sendTaskNotificationToMember({
       workspaceId: input.workspaceId,
       workspaceName: workspace.name,
-      recipientMemberId: m.id,
+      recipientMemberId: m.membershipId,
       eventType: 'task_mention',
       task: {
         id: task.id,
@@ -366,27 +353,6 @@ async function fanOutMentions(input: {
       contextLine,
     });
   }
-}
-
-/**
- * Extract `@<token>` mentions from a comment body. Tokens are
- * alphanumeric + dot + hyphen (covers email local-parts, full
- * addresses, and dotted display-names). De-duplicates +
- * lower-cases. Maximum 50 tokens to stop a runaway paste.
- */
-function extractMentionTokens(body: string): string[] {
-  const re = /@([\w.\-+@]+)/g;
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const m of body.matchAll(re)) {
-    const token = m[1]?.toLowerCase();
-    if (!token) continue;
-    if (seen.has(token)) continue;
-    seen.add(token);
-    out.push(token);
-    if (out.length >= 50) break;
-  }
-  return out;
 }
 
 // --- delete ------------------------------------------------------------
