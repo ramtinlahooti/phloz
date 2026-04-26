@@ -75,6 +75,73 @@ three; call sites are queued in NEXT-STEPS.
 
 ---
 
+## 2026-04-26 — Mention + approval + inbound notification paths
+
+### Added — `task_mention` from comment bodies
+
+`createCommentAction` now extracts every `@<token>` from a task
+comment, resolves each against `workspace_members.email` (full
+address OR email local-part — `@alex` matches `alex@agency.com`)
+and fans out `task_mention` emails to matched recipients. Skips
+self-mentions. Persists resolved user_ids onto `comments.mentions`
+so future surfaces ("mentioned me" inbox, audit trail) can read
+them without re-parsing the body. Display-name matching deferred
+until a future autocomplete in the comment composer.
+
+### Added — `task_approval` notification to the assignee
+
+The portal `setClientApprovalAction` (the action a client triggers
+via the magic link to approve / reject / request changes) now
+emails the task's assignee using the preference-aware helper
+alongside the existing plain-text broadcast to the workspace
+owner. Portal user treated as a system actor; comment from the
+portal renders as the email's `contextLine`.
+
+### Added — `inbound_message` template + per-member fan-out
+
+New `MessageNotificationEmail` template (separate from
+`TaskNotificationEmail` — payload differs: client name + subject
++ body preview, not task title + due). New helper
+`apps/app/lib/notify-message.ts` fans out to every owner + admin
+with their personal gates honored
+(`paused_until` / per-event prefs / per-client mute). Wired into:
+  - The Resend inbound webhook (real client emails)
+  - The portal reply action (client-portal replies are
+    functionally equivalent to inbound email)
+
+The webhook returns 200 to Resend before the fan-out finishes —
+otherwise Resend would retry and create duplicate `messages`
+rows.
+
+### Five out of five event types wired
+
+Every `NOTIFICATION_EVENT_TYPES` entry from `@phloz/config` now
+fires end-to-end: `task_assignment`, `task_mention`,
+`inbound_message`, `task_approval`, `recurring_task_created`. The
+Settings → Notifications toggles users see actually do what they
+say.
+
+### Files touched
+
+- `packages/email/src/templates/message-notification.tsx` (new)
+- `packages/email/src/templates/index.ts` (re-export)
+- `packages/email/src/send.ts` (sendMessageNotification)
+- `apps/app/lib/notify-message.ts` (new — preference-aware fan-out)
+- `apps/app/app/[workspace]/tasks/comments-actions.ts` (mention
+  parsing + fan-out + persistence)
+- `apps/app/app/portal/[token]/actions.ts` (approval +
+  portal-reply wirings)
+- `apps/app/app/api/webhooks/resend/inbound/route.ts` (inbound
+  fan-out)
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean.
+- `pnpm --filter @phloz/app test:e2e` — 7/7 still green.
+
+---
+
 ## 2026-04-26 — Comprehensive notification preferences
 
 ### Added — `notification_preferences`, `notification_subscriptions`, `paused_until`

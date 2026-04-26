@@ -1,10 +1,15 @@
-# Next Steps (as of 2026-04-26 v11)
+# Next Steps (as of 2026-04-26 v12)
 
 ## Branch state
 
 `claude/inspiring-wright-2ca122` is the active feature branch and
-sits 41 commits ahead of `main`. Latest HEAD: `860bd19`
-(task_assignment + recurring_task_created emails).
+sits 42 commits ahead of `main`. Latest HEAD: `cc30ef8` (mention +
+approval + inbound notification paths).
+
+**All five notification event types are now wired end-to-end** —
+`task_assignment`, `task_mention`, `inbound_message`,
+`task_approval`, `recurring_task_created`. The Settings →
+Notifications toggles users see actually drive real emails.
 
 `pnpm check` 29/29 green, **zero lint warnings**. Both apps build
 clean. **Playwright** — marketing 11/11 + app 7/7, all green
@@ -24,20 +29,14 @@ locally on chromium-headless-shell. CI runs both via a matrixed
 
 ## Top backlog (next session)
 
-1. **Wire the remaining three notification paths.** Helper +
-   template ship today, plus the assignment + recurring-spawn
-   call sites. Still need:
-     - `task_mention` — extend `createCommentAction` to detect
-       `@username` mentions in the body, resolve to membership ids,
-       fan out via `sendTaskNotificationToMember` with variant
-       `task_mention` + a contextLine excerpt of the comment.
-     - `task_approval` — wire the action that flips
-       `tasks.approval_state` (search `approval_state` callsites).
-       Notify the task assignee + the creator (skip self-edits).
-     - `inbound_message` — extend the Resend inbound webhook to
-       fan out an email to owners + admins of the workspace. Needs
-       its own template (one off the per-task pattern; client
-       name + subject preview + portal-style "Open thread" CTA).
+1. **`@<displayname>` autocomplete in the comment composer.** The
+   mention parser shipped today matches against
+   `workspace_members.email` (full address OR local-part). Most
+   users want to type `@Alex Chen` — that needs an autocomplete
+   widget that resolves to a canonical token before it hits the
+   regex. `comments.mentions` is already populated server-side so
+   the rendering layer (highlighting, hover cards) can come along
+   for the ride.
 2. **Authenticated Playwright tests for `apps/app`.** Need a test
    DB + seeded fixtures + a Playwright auth setup that signs into
    a known test account once and reuses storage state. Approach:
