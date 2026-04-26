@@ -4,6 +4,72 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-25 — Blog polish + team nudge + bulk archive dormant clients
+
+### Added — Blog post polish (reading progress, related posts, category badge)
+
+`/blog/[slug]` was template-thin. Three changes round out the
+individual-post experience:
+
+- **Reading progress bar** — sticky 2px bar at the top fills as the
+  reader scrolls. rAF-throttled, transform-only paint, hidden for
+  `prefers-reduced-motion`.
+- **Related posts strip** — new `getRelatedPosts(current, n=3)`
+  helper ranks other posts by category match (+5) and tag overlap
+  (+2/shared tag), tiebreak by recency. Renders as a 1/2/3-col grid
+  before the newsletter CTA. Falls back to "newest other posts" so
+  the section never renders empty on a small blog.
+- **Category badge** in the metadata strip alongside date / reading
+  time / author.
+
+### Added — Team "Send digest now"
+
+The Team page already showed a "Digest off" badge for muted
+members but had no path to re-engage. New per-row
+**"Send digest now"** menu item fires the cron's manual path
+scoped to that member.
+
+`nudgeMemberDigestAction(workspaceId, memberId)` is owner/admin
+only, validates the target membership belongs to the workspace,
+and fires `digest/send-daily` with `{workspaceId, membershipId}`.
+The cron's manual path filters to the single row even when the
+target has `digest_enabled = false` — a nudge to a muted teammate
+still goes through.
+
+### Added — One-click bulk-archive dormant clients
+
+Most agencies accumulate active client rows for projects that
+never converted. New **"Archive N dormant"** button on the
+`/clients` header surfaces a one-click cleanup for active clients
+with no activity in the last 90 days.
+
+`bulkArchiveDormantClientsAction({ workspaceId, thresholdDays })`
+is owner/admin only and runs a single SQL UPDATE:
+`archived_at IS NULL AND (last_activity_at < cutoff OR
+(last_activity_at IS NULL AND created_at < cutoff))`. Atomic —
+either every match flips or none. `thresholdDays` clamped to
+[30, 365].
+
+The button only renders when at least one client is dormant
+(count computed JS-side from already-fetched rows, no extra
+query). Native `confirm()` shows the count + threshold so the
+action is never silent. Recovery is per-row unarchive on the
+client detail page.
+
+### Files touched
+
+- `apps/web/{lib/blog,components/reading-progress,app/blog/[slug]/page}.{ts,tsx}`
+- `apps/app/app/[workspace]/team/{actions,member-row}.{ts,tsx}`
+- `apps/app/app/[workspace]/clients/{page,bulk-actions,bulk-archive-button}.{ts,tsx}`
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/web build` — 49 marketing pages.
+- `pnpm --filter @phloz/app build` — clean.
+
+---
+
 ## 2026-04-25 — Website inputs, smarter client search, upgrade CTA on tier-limit
 
 ### Changed — Website fields accept bare domains
