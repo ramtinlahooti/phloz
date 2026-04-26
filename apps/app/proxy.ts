@@ -12,10 +12,13 @@ import { updateSession } from '@phloz/auth/middleware';
  *     user (or null) for the protected-route check.
  *
  *  2. **Redirect unauthenticated visits to protected routes** to
- *     `/login?next=<original-path>` so the user lands back where
- *     they came from after signing in. Replaces the previous "page
- *     layout calls requireUser() and throws" pattern, which gave
- *     visitors a generic error page instead of the login form.
+ *     `/login?redirect_to=<original-path>` so the user lands back
+ *     where they came from after signing in. The login form
+ *     already reads `?redirect_to` and calls `router.push` after
+ *     successful auth — wiring the same param here closes the
+ *     loop. Replaces the previous "page layout calls requireUser()
+ *     and throws" pattern, which gave visitors a generic error
+ *     page instead of the login form.
  *
  * "Protected" here means anything that isn't on the explicit allow
  * list below — every workspace dashboard, settings page, tasks
@@ -52,11 +55,13 @@ export default async function proxy(request: NextRequest) {
   if (isPublicPath(pathname)) return response;
 
   // Unauthenticated visit to a protected path → bounce to /login
-  // with `?next=<original>` so the post-login redirect lands the
-  // user back where they were heading.
+  // with `?redirect_to=<original>` so the post-login navigation
+  // lands the user back where they were heading. The login form
+  // reads this same param via `useSearchParams()` and calls
+  // `router.push(redirectTo)` after successful auth.
   const loginUrl = request.nextUrl.clone();
   loginUrl.pathname = '/login';
-  loginUrl.search = `?next=${encodeURIComponent(pathname + search)}`;
+  loginUrl.search = `?redirect_to=${encodeURIComponent(pathname + search)}`;
   return NextResponse.redirect(loginUrl);
 }
 
