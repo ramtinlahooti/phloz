@@ -12,17 +12,31 @@ import {
   CalendarMonthGrid,
   type CalendarTask,
 } from './calendar-grid';
+import { CalendarWeekGrid } from './calendar-week-grid';
 
 export const metadata = buildAppMetadata({ title: 'Task calendar' });
 
 type RouteParams = { workspace: string };
-type CalendarSearchParams = { month?: string };
+type CalendarSearchParams = {
+  month?: string;
+  week?: string;
+  view?: string;
+};
+
+type CalendarView = 'month' | 'week';
+
+const VALID_VIEWS: CalendarView[] = ['month', 'week'];
+
+function parseView(raw: string | undefined): CalendarView {
+  return (VALID_VIEWS as string[]).includes(raw ?? '')
+    ? (raw as CalendarView)
+    : 'month';
+}
 
 /**
  * Parse `?month=YYYY-MM` to a Date pinned at the 1st of that month
- * in the **server's** local time (good enough for the visual grid;
- * we don't need workspace-tz precision here). Falls back to "now"
- * for invalid / missing values.
+ * in the **server's** local time. Falls back to "now" for invalid /
+ * missing values.
  */
 function parseMonth(raw: string | undefined): Date {
   if (raw && /^\d{4}-(?:0[1-9]|1[0-2])$/.test(raw)) {
@@ -31,6 +45,24 @@ function parseMonth(raw: string | undefined): Date {
   }
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 1);
+}
+
+/**
+ * Parse `?week=YYYY-MM-DD` to the Sunday-on-or-before that date.
+ * Falls back to the Sunday-on-or-before today.
+ */
+function parseWeekStart(raw: string | undefined): Date {
+  let anchor: Date;
+  if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [y, m, d] = raw.split('-').map((s) => parseInt(s, 10));
+    anchor = new Date(y!, (m ?? 1) - 1, d ?? 1);
+  } else {
+    anchor = new Date();
+  }
+  const sunday = new Date(anchor);
+  sunday.setHours(0, 0, 0, 0);
+  sunday.setDate(sunday.getDate() - sunday.getDay());
+  return sunday;
 }
 
 function fmtMonthParam(d: Date): string {
@@ -42,10 +74,14 @@ function fmtDateKey(d: Date): string {
 }
 
 /**
- * Month-grid view of every task with a due date in the selected
- * month. Pills click through to the list view's detail dialog and
- * can be dragged onto a different cell to reschedule (handled by the
- * client-side <CalendarMonthGrid />).
+ * Calendar view of every task with a due date in the selected
+ * month or week. Pills click through to the list view's detail
+ * dialog and can be dragged onto a different cell to reschedule
+ * (handled by the client-side grid component).
+ *
+ * View defaults to month. `?view=week` switches to a 7-column
+ * day-of-week grid with full task lists per cell (no overflow cap)
+ * — useful when planning the week's work in detail.
  */
 export default async function TasksCalendarPage({
   params,
@@ -57,15 +93,26 @@ export default async function TasksCalendarPage({
   const { workspace: workspaceId } = await params;
   assertValidWorkspaceId(workspaceId);
   const sp = await searchParams;
-  const monthStart = parseMonth(sp.month);
+  const view = parseView(sp.view);
 
-  // Grid range: from the Sunday-on-or-before monthStart to the
-  // Saturday-on-or-after the last day of the month. Always 6 rows
-  // for visual consistency.
-  const gridStart = new Date(monthStart);
-  gridStart.setDate(monthStart.getDate() - monthStart.getDay());
-  const gridEnd = new Date(gridStart);
-  gridEnd.setDate(gridStart.getDate() + 42); // exclusive end
+  // Compute the date range to fetch based on view.
+  let gridStart: Date;
+  let gridEnd: Date; // exclusive
+  let monthStart: Date | null = null;
+  let weekStart: Date | null = null;
+
+  if (view === 'week') {
+    weekStart = parseWeekStart(sp.week);
+    gridStart = weekStart;
+    gridEnd = new Date(weekStart);
+    gridEnd.setDate(weekStart.getDate() + 7);
+  } else {
+    monthStart = parseMonth(sp.month);
+    gridStart = new Date(monthStart);
+    gridStart.setDate(monthStart.getDate() - monthStart.getDay());
+    gridEnd = new Date(gridStart);
+    gridEnd.setDate(gridStart.getDate() + 42);
+  }
 
   const db = getDb();
   await requireUser();
@@ -86,9 +133,7 @@ export default async function TasksCalendarPage({
         isNotNull(schema.tasks.dueDate),
         gte(schema.tasks.dueDate, gridStart),
         lte(schema.tasks.dueDate, gridEnd),
-        // Exclude subtasks from the calendar — they're checklist
-        // items inside the parent's detail dialog, not standalone
-        // calendar entries.
+        // Subtasks are checklist items inside their parent's dialog.
         isNull(schema.tasks.parentTaskId),
       ),
     )
@@ -99,8 +144,6 @@ export default async function TasksCalendarPage({
     .from(schema.clients)
     .where(eq(schema.clients.workspaceId, workspaceId));
 
-  // Project to serializable shape for the client grid. dueDate is
-  // non-null here (the query filters it).
   const calendarTasks: CalendarTask[] = tasks.map((t) => ({
     id: t.id,
     title: t.title,
@@ -112,15 +155,58 @@ export default async function TasksCalendarPage({
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayKey = fmtDateKey(today);
 
-  const prevMonth = new Date(monthStart);
-  prevMonth.setMonth(prevMonth.getMonth() - 1);
-  const nextMonth = new Date(monthStart);
-  nextMonth.setMonth(nextMonth.getMonth() + 1);
-  const monthLabel = monthStart.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-  });
+  // Header label + nav links depend on the active view.
+  let headerLabel: string;
+  let prevHref: string;
+  let nextHref: string;
+  let todayHref: string;
+  if (view === 'week' && weekStart) {
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    const sameMonth = weekStart.getMonth() === weekEnd.getMonth();
+    headerLabel = sameMonth
+      ? `${weekStart.toLocaleDateString('en-US', {
+          month: 'long',
+          day: 'numeric',
+        })} – ${weekEnd.getDate()}, ${weekEnd.getFullYear()}`
+      : `${weekStart.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+        })} – ${weekEnd.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+        })}, ${weekEnd.getFullYear()}`;
+    const prevWeek = new Date(weekStart);
+    prevWeek.setDate(weekStart.getDate() - 7);
+    const nextWeek = new Date(weekStart);
+    nextWeek.setDate(weekStart.getDate() + 7);
+    prevHref = `/${workspaceId}/tasks/calendar?view=week&week=${fmtDateKey(prevWeek)}`;
+    nextHref = `/${workspaceId}/tasks/calendar?view=week&week=${fmtDateKey(nextWeek)}`;
+    todayHref = `/${workspaceId}/tasks/calendar?view=week`;
+  } else if (monthStart) {
+    headerLabel = monthStart.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+    });
+    const prevMonth = new Date(monthStart);
+    prevMonth.setMonth(prevMonth.getMonth() - 1);
+    const nextMonth = new Date(monthStart);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    prevHref = `/${workspaceId}/tasks/calendar?month=${fmtMonthParam(prevMonth)}`;
+    nextHref = `/${workspaceId}/tasks/calendar?month=${fmtMonthParam(nextMonth)}`;
+    todayHref = `/${workspaceId}/tasks/calendar`;
+  } else {
+    // Defensive — shouldn't reach here. Render today's month.
+    headerLabel = today.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+    });
+    prevHref = `/${workspaceId}/tasks/calendar`;
+    nextHref = `/${workspaceId}/tasks/calendar`;
+    todayHref = `/${workspaceId}/tasks/calendar`;
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
@@ -136,7 +222,7 @@ export default async function TasksCalendarPage({
             / Calendar
           </p>
           <h1 className="text-3xl font-semibold tracking-tight">
-            {monthLabel}
+            {headerLabel}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {tasks.length} task
@@ -144,21 +230,23 @@ export default async function TasksCalendarPage({
             inside their parent.
           </p>
         </div>
-        <nav className="flex items-center gap-2 text-xs">
+        <nav className="flex flex-wrap items-center gap-2 text-xs">
+          <ViewToggle workspaceId={workspaceId} active={view} />
+          <span className="hidden text-border sm:inline">·</span>
           <Link
-            href={`/${workspaceId}/tasks/calendar?month=${fmtMonthParam(prevMonth)}`}
+            href={prevHref}
             className="rounded-md border border-border bg-card px-3 py-1.5 text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground"
           >
             ← Previous
           </Link>
           <Link
-            href={`/${workspaceId}/tasks/calendar`}
+            href={todayHref}
             className="rounded-md border border-border bg-card px-3 py-1.5 text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground"
           >
             Today
           </Link>
           <Link
-            href={`/${workspaceId}/tasks/calendar?month=${fmtMonthParam(nextMonth)}`}
+            href={nextHref}
             className="rounded-md border border-border bg-card px-3 py-1.5 text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground"
           >
             Next →
@@ -166,19 +254,68 @@ export default async function TasksCalendarPage({
         </nav>
       </header>
 
-      <CalendarMonthGrid
-        workspaceId={workspaceId}
-        initialTasks={calendarTasks}
-        clients={clientRows}
-        monthStartKey={fmtDateKey(monthStart)}
-        todayKey={fmtDateKey(today)}
-      />
+      {view === 'week' && weekStart ? (
+        <CalendarWeekGrid
+          workspaceId={workspaceId}
+          initialTasks={calendarTasks}
+          clients={clientRows}
+          weekStartKey={fmtDateKey(weekStart)}
+          todayKey={todayKey}
+        />
+      ) : monthStart ? (
+        <CalendarMonthGrid
+          workspaceId={workspaceId}
+          initialTasks={calendarTasks}
+          clients={clientRows}
+          monthStartKey={fmtDateKey(monthStart)}
+          todayKey={todayKey}
+        />
+      ) : null}
 
       <p className="mt-4 text-xs text-muted-foreground">
         Click a task pill to open it inside the list view. Drag a pill
         to a different day to reschedule. Tasks without a due date
         don&apos;t appear here — set one in the task detail dialog.
       </p>
+    </div>
+  );
+}
+
+/**
+ * Month/Week toggle pill. Always navigates to "today's" period in
+ * the new view — losing context across the toggle is the price of
+ * a simple URL shape; users can navigate prev/next from there.
+ */
+function ViewToggle({
+  workspaceId,
+  active,
+}: {
+  workspaceId: string;
+  active: CalendarView;
+}) {
+  const base = `/${workspaceId}/tasks/calendar`;
+  return (
+    <div className="inline-flex overflow-hidden rounded-md border border-border bg-card text-[11px]">
+      <Link
+        href={base}
+        className={`px-2.5 py-1 transition-colors ${
+          active === 'month'
+            ? 'bg-primary/15 text-foreground'
+            : 'text-muted-foreground hover:text-foreground'
+        }`}
+      >
+        Month
+      </Link>
+      <Link
+        href={`${base}?view=week`}
+        className={`border-l border-border px-2.5 py-1 transition-colors ${
+          active === 'week'
+            ? 'bg-primary/15 text-foreground'
+            : 'text-muted-foreground hover:text-foreground'
+        }`}
+      >
+        Week
+      </Link>
     </div>
   );
 }
