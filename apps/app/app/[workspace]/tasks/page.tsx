@@ -329,6 +329,12 @@ export default async function TasksPage({
             canShare={canShareViews}
           />
           <Link
+            href={`/${workspaceId}/tasks/calendar`}
+            className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/60 hover:text-foreground"
+          >
+            Calendar
+          </Link>
+          <Link
             href={`/${workspaceId}/tasks/recurring`}
             className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-primary/60 hover:text-foreground"
           >
