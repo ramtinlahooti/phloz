@@ -68,7 +68,8 @@ type FeedItem = {
   badge?: { label: string; tone: 'primary' | 'green' | 'red' | 'amber' };
 };
 
-const FEED_LIMIT = 20;
+const ACTIVITY_PAGE_SIZE = 30;
+const ACTIVITY_MAX_SHOW = 240; // 8 pages — anything beyond is rarely useful
 
 type ActivityFilter = 'all' | 'task' | 'message' | 'asset' | 'approval';
 const ACTIVITY_FILTERS: ActivityFilter[] = [
@@ -90,7 +91,18 @@ function isActivityFilter(v: string | undefined): v is ActivityFilter {
   return !!v && (ACTIVITY_FILTERS as string[]).includes(v);
 }
 
-type WorkspaceSearchParams = { activity?: string };
+/** Parse `?activity_show=N`. Clamps to a sensible window so a stray
+ *  hand-typed URL can't ask the server for 100k rows. Defaults to one
+ *  page (30) when missing or malformed. */
+function parseActivityShow(raw: string | undefined): number {
+  const parsed = Number.parseInt(raw ?? '', 10);
+  if (!Number.isFinite(parsed) || parsed < ACTIVITY_PAGE_SIZE) {
+    return ACTIVITY_PAGE_SIZE;
+  }
+  return Math.min(parsed, ACTIVITY_MAX_SHOW);
+}
+
+type WorkspaceSearchParams = { activity?: string; activity_show?: string };
 
 export default async function WorkspaceOverviewPage({
   params,
@@ -109,6 +121,7 @@ export default async function WorkspaceOverviewPage({
   const activityFilter: ActivityFilter = isActivityFilter(sp.activity)
     ? sp.activity
     : 'all';
+  const activityShow = parseActivityShow(sp.activity_show);
   const db = getDb();
 
   const now = new Date();
@@ -179,7 +192,7 @@ export default async function WorkspaceOverviewPage({
         ),
       )
       .orderBy(desc(schema.tasks.updatedAt))
-      .limit(FEED_LIMIT),
+      .limit(activityShow),
     db
       .select({
         id: schema.messages.id,
@@ -193,7 +206,7 @@ export default async function WorkspaceOverviewPage({
       .from(schema.messages)
       .where(eq(schema.messages.workspaceId, workspaceId))
       .orderBy(desc(schema.messages.createdAt))
-      .limit(FEED_LIMIT),
+      .limit(activityShow),
     db
       .select({
         id: schema.clientAssets.id,
@@ -204,7 +217,7 @@ export default async function WorkspaceOverviewPage({
       .from(schema.clientAssets)
       .where(eq(schema.clientAssets.workspaceId, workspaceId))
       .orderBy(desc(schema.clientAssets.createdAt))
-      .limit(FEED_LIMIT),
+      .limit(activityShow),
     db
       .select({
         id: schema.tasks.id,
@@ -227,7 +240,7 @@ export default async function WorkspaceOverviewPage({
         ),
       )
       .orderBy(desc(schema.tasks.approvalUpdatedAt))
-      .limit(FEED_LIMIT),
+      .limit(activityShow),
     // Clients: full rows needed so the health scorer has
     // last_activity_at + archived_at per client.
     db
@@ -730,7 +743,25 @@ export default async function WorkspaceOverviewPage({
     activityFilter === 'all'
       ? feed
       : feed.filter((item) => item.kind === activityFilter);
-  const trimmed = filteredFeed.slice(0, 30);
+  const trimmed = filteredFeed.slice(0, activityShow);
+  // Show the "Show more" affordance when (a) the slice was bounded by
+  // activityShow rather than by exhausted history, and (b) we haven't
+  // already hit the safety cap. The first signal is approximate — we
+  // can't tell server-side whether the source queries themselves were
+  // capped, but if `filteredFeed.length >= activityShow` it's almost
+  // certainly the case that more rows exist somewhere.
+  const hasMoreActivity =
+    filteredFeed.length >= activityShow && activityShow < ACTIVITY_MAX_SHOW;
+  const nextActivityShow = Math.min(
+    activityShow + ACTIVITY_PAGE_SIZE,
+    ACTIVITY_MAX_SHOW,
+  );
+  const moreActivityHref = (() => {
+    const params = new URLSearchParams();
+    if (activityFilter !== 'all') params.set('activity', activityFilter);
+    params.set('activity_show', String(nextActivityShow));
+    return `/${workspaceId}?${params.toString()}`;
+  })();
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
@@ -931,19 +962,42 @@ export default async function WorkspaceOverviewPage({
               }
             />
           ) : (
-            <Card>
-              <CardContent className="p-0">
-                <ul className="divide-y divide-border/60">
-                  {trimmed.map((item) => (
-                    <FeedRow
-                      key={item.id}
-                      item={item}
-                      workspaceId={workspaceId}
-                    />
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
+            <>
+              <Card>
+                <CardContent className="p-0">
+                  <ul className="divide-y divide-border/60">
+                    {trimmed.map((item) => (
+                      <FeedRow
+                        key={item.id}
+                        item={item}
+                        workspaceId={workspaceId}
+                      />
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+              <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                <span>
+                  Showing {trimmed.length}
+                  {activityShow > ACTIVITY_PAGE_SIZE && (
+                    <> of the most recent {activityShow}</>
+                  )}
+                </span>
+                {hasMoreActivity && (
+                  <Link
+                    href={moreActivityHref}
+                    className="rounded-md border border-border bg-card px-3 py-1 hover:border-primary/60 hover:text-foreground"
+                  >
+                    Show {nextActivityShow - activityShow} more
+                  </Link>
+                )}
+                {!hasMoreActivity && activityShow >= ACTIVITY_MAX_SHOW && (
+                  <span className="opacity-70">
+                    Reached the {ACTIVITY_MAX_SHOW}-item view cap
+                  </span>
+                )}
+              </div>
+            </>
           )}
         </div>
 
