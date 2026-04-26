@@ -4,6 +4,83 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-25 — Per-client audit history + pricing matrix + activity pagination
+
+### Added — Per-client audit history timeline
+
+The weekly Inngest audit cron writes one
+`audit_run.client_summary` row per client per pass with
+`{critical, warning, info, suppressed, total_nodes, total_edges}`.
+The client detail Audit tab now reads the eight most recent of those
+rows and renders a History section under the live findings + the
+existing suppressed-rules block.
+
+Each entry shows the run date + counts (e.g. "2 critical · 3
+warnings"), plus a tone-aware delta vs the prior (older) snapshot —
+red for worsening criticals, green for improvement, muted for "no
+change". Info-tier deltas are deliberately ignored, matching the
+dashboard trend line. The empty-state copy adapts: an "all clear"
+client with prior runs still gets the trend; a brand-new workspace
+with zero history stays on the original blank slate.
+
+Eight-row window matches the dashboard sparkline horizon (~2 months
+of weekly history).
+
+### Added — Side-by-side tier comparison table on `/pricing`
+
+Adds a Compare-plans matrix between the existing tier cards and the
+FAQ. Pulls every numeric cap from `publicTiers()` so adding a tier
+or changing a limit in `packages/billing/tiers.ts` updates the table
+for free with no edits to the pricing page.
+
+Eight rows: Active clients, Included paid seats, Extra seat price,
+Recurring task templates, Tracking infrastructure map (✓ on all),
+Client portal users (Unlimited on all), Email + inbound threading
+(paid only), Priority support (Business+). Growth column gets the
+same primary tint as its "Most popular" card so the highlight
+carries over visually. Horizontal scroll on narrow screens preserves
+all columns. Footer points unlimited-need users at `/contact`.
+
+`/pricing` still pre-renders as static.
+
+### Added — Activity feed pagination via `?activity_show=N`
+
+The dashboard's Recent activity feed was hard-capped at 30 with no
+way to look further back. Adds an opt-in `?activity_show=N` query
+param that scales each feed source query's `LIMIT` and the
+post-filter slice, plus a "Show 30 more" link below the feed when
+more rows likely exist.
+
+Clamped to `[30, 240]` so a stray hand-typed URL can't ask the
+server for thousands of rows. Filter changes still reset to the
+first page (the result set semantically changes); explicit "Show
+more" preserves the current filter. Footer line shows "Showing N of
+the most recent N" once the user has paginated, and "Reached the
+240-item view cap" when the safety bound hits — surfaces the limit
+instead of silently hiding it.
+
+### Files touched
+
+- `apps/app/app/[workspace]/clients/[clientId]/page.tsx` (audit
+  history query + AuditPanel `history` prop + AuditHistorySection +
+  formatAuditCounts/Delta helpers)
+- `apps/web/app/pricing/page.tsx` (ComparisonTable + ComparisonRow +
+  CheckCell components)
+- `apps/app/app/[workspace]/page.tsx` (parseActivityShow,
+  ACTIVITY_PAGE_SIZE/MAX_SHOW constants, source-query limit swap,
+  Show-more link + Showing/cap line)
+- `.claude/settings.local.json` (local permission additions)
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean. `/[workspace]` still
+  server-rendered on demand.
+- `pnpm --filter @phloz/web build` — clean. `/pricing` still
+  pre-rendered as static.
+
+---
+
 ## 2026-04-25 — Audit sparkline + per-client tier-gate + inbox shortcuts
 
 ### Added — Audit rollup sparkline

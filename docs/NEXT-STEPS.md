@@ -1,63 +1,65 @@
-# Next Steps (as of 2026-04-25, late evening)
+# Next Steps (as of 2026-04-25, post-evening)
 
 ## Branch state
 
-`claude/stupefied-vaughan-5f394f` is the active feature branch and
-has been mid-session-merged into `main` repeatedly throughout the
-day. Current `main` HEAD: see `git log -1 main` (last few sessions
-have all fast-forwarded cleanly).
+`claude/inspiring-wright-2ca122` is the active feature branch and
+sits 3 commits ahead of `main` after this session
+(`2052f6f` audit history, `67d333e` pricing matrix, `67f1373`
+activity pagination). Earlier sessions today fast-forwarded into
+`main` already.
 
 `pnpm check` 29/29 green. Both apps build clean. 9 Drizzle
-migrations are reconciled with Supabase (0000-0009).
+migrations are reconciled with Supabase (0000-0009). Inngest
+endpoint at `https://app.phloz.com/api/inngest` confirms
+`has_event_key` + `has_signing_key` + `mode: cloud` + 7 functions —
+crons are wired and will start firing on schedule.
 
 Vercel + Supabase + DNS + custom SMTP are wired live —
 `phloz.com` (marketing) and `app.phloz.com` (product) both serving.
 
 ## Top backlog (next session)
 
-1. **Wire `INNGEST_SIGNING_KEY` + `INNGEST_EVENT_KEY`** in Vercel
-   env on the `phloz` project + register the Inngest app at
-   `https://app.phloz.com/api/inngest`. Until that ships,
-   `recompute-active-client-count`, `send-daily-digest`,
-   `process-recurring-tasks`, and the new `audit-weekly` crons all
-   sit dormant. The dashboard's audit trend + sparkline only get
-   real data once the cron runs.
-2. **Playwright smoke tests.** Coverage now spans recurring tasks,
-   saved-views (save / apply / share / rename / star-default),
-   subtask DnD + Cmd-arrow reorder, digest preview + nudge, billing
-   tier-hint redirect, platform-IDs copy, inline tracking map,
-   clients-list multi-token search + bulk-archive, blog reading-
-   progress + related posts, keyboard shortcuts, activity filter,
-   calendar navigation, message drafts, inbox j/k. Worth automating
-   the happy paths before the next dogfooding pass.
-3. **Wire `RESEND_API_KEY` + verify the `phloz.com` domain in Resend**
+1. **Register the Inngest app** in the Inngest dashboard so the
+   crons (`recompute-active-client-count`, `send-daily-digest`,
+   `process-recurring-tasks`, `audit-weekly`) actually fire on
+   schedule. The endpoint is responsive and keys are present, but
+   Inngest still needs to know the app exists. Once registered, the
+   per-client audit history list shipped today starts populating
+   with real production rows.
+2. **Wire `RESEND_API_KEY` + verify the `phloz.com` domain in Resend**
    so transactional emails (invitations, magic links, daily digest,
    recurring-task notifications, "Send digest now" nudges) actually
    deliver. They currently log + no-op without the key.
-4. **Surface the audit_log timeline on a client detail tab.** The
-   weekly cron writes per-client `audit_run.client_summary` rows
-   already; render them as a small history list inside the existing
-   Audit tab so users can see when each finding first appeared.
-5. **Per-tier comparison table on `/pricing`.** The homepage
-   pricing strip + the dedicated `/pricing` cards both list each
-   tier's caps, but a side-by-side feature matrix is missing.
-   Pulls from the same `publicTiers()` source.
-6. **Calendar drag-to-reschedule.** Pills on `/tasks/calendar`
-   currently link to the list view's detail dialog. Dragging a
-   pill onto a different cell could call `updateTaskAction` with
-   the new due date — high-impact UX win that builds on the
-   subtask DnD primitive.
-7. **Activity feed pagination.** Currently capped at 30 items.
-   "Show 30 more" or `?activity_offset=` would let users scroll
-   back further when reviewing what changed.
-8. **Per-member preference: digest hour-of-day.** The digest fires
-   at 9 AM workspace-local. Some members want it earlier or later;
-   a `digest_hour` column on `workspace_members` + a Settings
-   selector would cover that without breaking the cron loop.
+3. **Calendar drag-to-reschedule** on `/tasks/calendar`. Pills
+   currently link to the list view's detail dialog. Dragging a pill
+   onto a different cell would call `updateTaskAction` with the new
+   due date — high-impact UX win that builds on the subtask DnD
+   primitive. Bigger surface area than today's items; deserves a
+   focused session.
+4. **Per-member preference: digest hour-of-day.** The digest fires
+   at 9 AM workspace-local. A `digest_hour` column on
+   `workspace_members` + a Settings selector would let members opt
+   into earlier/later delivery without breaking the cron loop.
+   Needs migration #10.
+5. **Playwright smoke tests.** Coverage now spans recurring tasks,
+   saved-views (save/apply/share/rename/star-default), subtask DnD +
+   Cmd-arrow reorder, digest preview + nudge, billing tier-hint
+   redirect, platform-IDs copy, inline tracking map, clients-list
+   multi-token search + bulk-archive, blog reading-progress + related
+   posts, keyboard shortcuts, activity filter + pagination, calendar
+   navigation, message drafts, inbox j/k, per-client audit history,
+   pricing comparison table. Worth automating the happy paths before
+   the next dogfooding pass.
+6. **Pre-existing lint warnings.** Two unused-import warnings remain:
+   `apps/app/app/[workspace]/clients/page.tsx` (unused `asc`) and
+   `apps/app/app/[workspace]/tasks/calendar/page.tsx` (unused
+   `monthEnd`). Trivial cleanup, not blocking anything.
 
 ## SQL migrations queued
 
 All 9 Drizzle migrations are applied to Supabase. Nothing pending.
+A future migration #10 is queued for the per-member digest-hour
+column above.
 
 | File | Status |
 |---|---|
@@ -74,9 +76,10 @@ All 9 Drizzle migrations are applied to Supabase. Nothing pending.
 
 ## Env vars to light up dormant features
 
-- **Inngest** — `INNGEST_SIGNING_KEY` + `INNGEST_EVENT_KEY`. Cron
-  doesn't fire without them; this is the single biggest "things go
-  silent" risk on production right now.
+- **Inngest** — `INNGEST_SIGNING_KEY` + `INNGEST_EVENT_KEY` are
+  set in Vercel env (the `/api/inngest` payload confirms
+  `has_event_key: true` + `has_signing_key: true`). Just needs the
+  Inngest dashboard "Sync" / register-app step.
 - **Resend** — `RESEND_API_KEY`. Transactional emails + digest +
   nudges all log + no-op without it.
 - **PostHog** — `NEXT_PUBLIC_POSTHOG_KEY` + `POSTHOG_API_KEY`.
@@ -106,9 +109,11 @@ pnpm check                     # lint + typecheck + unit tests
 - ✅ GitHub, Supabase (`tdvzhwhzxuskrsobdyrm`, RLS + JWT hook
   enabled, 10 migrations applied), GTM, Stripe sandbox (API pinned
   to `2026-04-22.dahlia`), Vercel app project (`phloz`, live at
-  `app.phloz.com`), Vercel marketing project (`phloz-web`, live at
-  `phloz.com`), Supabase auth URLs + custom SMTP, DNS apex.
-- ⏳ Resend domain verification, Inngest app registration,
-  PostHog project, Sentry project, GA4 property — these light up
-  dormant features but aren't gating user-visible behaviour beyond
-  email delivery + cron firing.
+  `app.phloz.com`, Inngest env vars set), Vercel marketing project
+  (`phloz-web`, live at `phloz.com`), Supabase auth URLs + custom
+  SMTP, DNS apex.
+- ⏳ Inngest app registration (env vars set; just needs the dashboard
+  sync), Resend domain verification, PostHog project, Sentry
+  project, GA4 property — these light up dormant features but
+  aren't gating user-visible behaviour beyond email delivery + cron
+  firing.
