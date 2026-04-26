@@ -130,6 +130,7 @@ export default async function ClientDetailPage({
     trackingNodeRows,
     trackingEdgeRows,
     auditSuppressionRows,
+    auditHistoryRows,
     recurringTemplateRows,
     workspaceRow,
   ] = await Promise.all([
@@ -270,6 +271,27 @@ export default async function ClientDetailPage({
             eq(schema.auditSuppressions.clientId, clientId),
           ),
         ),
+      // Per-client audit history. The weekly Inngest audit cron
+      // writes one `audit_run.client_summary` row per client per pass
+      // with `{critical, warning, info, suppressed, total_nodes,
+      // total_edges}`. Eight rows ≈ two months of weekly history —
+      // matches the dashboard sparkline window and renders as a small
+      // timeline under the live findings.
+      db
+        .select({
+          metadata: schema.auditLog.metadata,
+          createdAt: schema.auditLog.createdAt,
+        })
+        .from(schema.auditLog)
+        .where(
+          and(
+            eq(schema.auditLog.workspaceId, workspaceId),
+            eq(schema.auditLog.action, 'audit_run.client_summary'),
+            eq(schema.auditLog.entityId, clientId),
+          ),
+        )
+        .orderBy(desc(schema.auditLog.createdAt))
+        .limit(8),
       // Recurring task templates scoped to this client — surfaced in
       // a section above the regular tasks list so agency owners
       // discover them without leaving the client view.
@@ -533,6 +555,24 @@ export default async function ClientDetailPage({
   const warningCount = auditFindings.filter(
     (f) => f.severity === 'warning',
   ).length;
+
+  // Project the raw audit_log rows into typed snapshots for the
+  // History timeline. Drops malformed rows defensively (the metadata
+  // column is `jsonb` so anything could land there in principle).
+  const auditHistory: AuditHistorySnapshot[] = auditHistoryRows
+    .map((row) => {
+      const meta = (row.metadata ?? {}) as {
+        critical?: number;
+        warning?: number;
+        info?: number;
+      };
+      return {
+        at: row.createdAt,
+        critical: typeof meta.critical === 'number' ? meta.critical : 0,
+        warning: typeof meta.warning === 'number' ? meta.warning : 0,
+        info: typeof meta.info === 'number' ? meta.info : 0,
+      };
+    });
 
   return (
     <div className="flex h-full flex-col">
@@ -894,6 +934,7 @@ export default async function ClientDetailPage({
                   reason: s.reason,
                   createdAt: s.createdAt,
                 }))}
+                history={auditHistory}
                 workspaceId={workspaceId}
                 clientId={clientId}
               />
@@ -964,18 +1005,29 @@ type SuppressionView = {
   createdAt: Date;
 };
 
+type AuditHistorySnapshot = {
+  at: Date;
+  critical: number;
+  warning: number;
+  info: number;
+};
+
 /** Renders the audit-engine findings as a triaged list. Critical
  *  first, then warning, then info. Empty state congratulates the
  *  user rather than showing a blank card. Suppressed rules appear
- *  in a separate footer section so users can un-snooze. */
+ *  in a separate footer section so users can un-snooze. The History
+ *  section at the bottom lists the most recent weekly cron snapshots
+ *  so users can see when each finding count first appeared. */
 function AuditPanel({
   findings,
   suppressions,
+  history,
   workspaceId,
   clientId,
 }: {
   findings: Finding[];
   suppressions: SuppressionView[];
+  history: AuditHistorySnapshot[];
   workspaceId: string;
   clientId: string;
 }) {
@@ -983,7 +1035,11 @@ function AuditPanel({
   const warnings = findings.filter((f) => f.severity === 'warning');
   const infos = findings.filter((f) => f.severity === 'info');
 
-  if (findings.length === 0 && suppressions.length === 0) {
+  if (
+    findings.length === 0 &&
+    suppressions.length === 0 &&
+    history.length === 0
+  ) {
     return (
       <Card>
         <CardContent className="space-y-2 p-8 text-center">
@@ -1024,11 +1080,18 @@ function AuditPanel({
             <p className="text-sm font-medium text-[var(--color-health-working)]">
               All clear.
             </p>
-            <p className="text-xs text-muted-foreground">
-              {suppressions.length} suppressed rule
-              {suppressions.length === 1 ? '' : 's'} below — un-snooze any
-              to bring it back.
-            </p>
+            {suppressions.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {suppressions.length} suppressed rule
+                {suppressions.length === 1 ? '' : 's'} below — un-snooze any
+                to bring it back.
+              </p>
+            )}
+            {suppressions.length === 0 && history.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                History below shows the trend across recent weekly runs.
+              </p>
+            )}
           </CardContent>
         </Card>
       )}
@@ -1062,8 +1125,114 @@ function AuditPanel({
           workspaceId={workspaceId}
         />
       )}
+      {history.length > 0 && <AuditHistorySection history={history} />}
     </div>
   );
+}
+
+/** Per-client audit history. The weekly Inngest cron writes one
+ *  `audit_run.client_summary` row per client per pass; we list the
+ *  most recent snapshots newest-first with a delta vs the prior
+ *  (older) row so users can see when each finding count moved. */
+function AuditHistorySection({ history }: { history: AuditHistorySnapshot[] }) {
+  return (
+    <section>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        History
+      </h3>
+      <p className="mb-2 text-[11px] text-muted-foreground">
+        {history.length === 1
+          ? 'One weekly audit snapshot recorded so far.'
+          : `Last ${history.length} weekly audit snapshots.`}{' '}
+        Counts reflect the cron run, not the live findings above.
+      </p>
+      <ul className="space-y-1.5">
+        {history.map((snapshot, idx) => {
+          const prev = history[idx + 1] ?? null;
+          const delta = prev ? formatAuditDelta(snapshot, prev) : null;
+          return (
+            <li
+              key={snapshot.at.toISOString()}
+              className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-card/30 px-3 py-2 text-xs"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <time
+                  className="shrink-0 font-mono text-muted-foreground"
+                  dateTime={snapshot.at.toISOString()}
+                >
+                  {snapshot.at.toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: '2-digit',
+                    year: 'numeric',
+                  })}
+                </time>
+                <span className="truncate text-foreground/80">
+                  {formatAuditCounts(snapshot)}
+                </span>
+              </div>
+              {delta && (
+                <span
+                  className={`shrink-0 ${
+                    delta.tone === 'up'
+                      ? 'text-red-400'
+                      : delta.tone === 'down'
+                        ? 'text-emerald-400'
+                        : 'text-muted-foreground'
+                  }`}
+                >
+                  {delta.label}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+function formatAuditCounts(s: AuditHistorySnapshot): string {
+  const parts: string[] = [];
+  if (s.critical > 0) {
+    parts.push(`${s.critical} critical`);
+  }
+  if (s.warning > 0) {
+    parts.push(`${s.warning} warning${s.warning === 1 ? '' : 's'}`);
+  }
+  if (s.info > 0) parts.push(`${s.info} info`);
+  return parts.length > 0 ? parts.join(' · ') : 'all clear';
+}
+
+/** Compares two snapshots and returns a short delta label + tone.
+ *  Tone is `up` when things got worse (more findings), `down` when
+ *  better, `flat` when both critical and warning stayed put. Info
+ *  is ignored — too noisy and the dashboard trend ignores it too. */
+function formatAuditDelta(
+  curr: AuditHistorySnapshot,
+  prev: AuditHistorySnapshot,
+): { label: string; tone: 'up' | 'down' | 'flat' } {
+  const dCrit = curr.critical - prev.critical;
+  const dWarn = curr.warning - prev.warning;
+  if (dCrit === 0 && dWarn === 0) {
+    return { label: 'no change', tone: 'flat' };
+  }
+  const parts: string[] = [];
+  if (dCrit !== 0) {
+    parts.push(
+      `${dCrit > 0 ? '↑' : '↓'}${Math.abs(dCrit)} critical`,
+    );
+  }
+  if (dWarn !== 0) {
+    parts.push(
+      `${dWarn > 0 ? '↑' : '↓'}${Math.abs(dWarn)} warning${
+        Math.abs(dWarn) === 1 ? '' : 's'
+      }`,
+    );
+  }
+  // Tone is dominated by criticals; warnings only set tone if no crit
+  // delta. Up = worse (red), down = better (green).
+  const sign = dCrit !== 0 ? dCrit : dWarn;
+  return { label: parts.join(', '), tone: sign > 0 ? 'up' : 'down' };
 }
 
 function SuppressedRulesSection({
