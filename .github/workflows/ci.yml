@@ -114,10 +114,14 @@ jobs:
       - name: Assert every tenant table has rowsecurity=true
         run: pnpm --filter @phloz/db check:rls-invariants
 
-  e2e-marketing:
-    name: Playwright — marketing smoke
+  e2e:
+    name: Playwright — ${{ matrix.app }} smoke
     runs-on: ubuntu-latest
     needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [web, app]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -135,7 +139,7 @@ jobs:
       - name: Get Playwright version
         id: pw-version
         run: |
-          version=$(node -p "require('./apps/web/node_modules/@playwright/test/package.json').version")
+          version=$(node -p "require('./apps/${{ matrix.app }}/node_modules/@playwright/test/package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
@@ -147,31 +151,31 @@ jobs:
 
       - name: Install chromium (cache miss only)
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: pnpm --filter @phloz/web exec playwright install --with-deps chromium
+        run: pnpm --filter @phloz/${{ matrix.app }} exec playwright install --with-deps chromium
 
       # System deps for chromium need root even on cache hit (the
       # cached browser binary still needs apt libraries to launch).
       - name: Install system deps for chromium
         if: steps.pw-cache.outputs.cache-hit == 'true'
-        run: pnpm --filter @phloz/web exec playwright install-deps chromium
+        run: pnpm --filter @phloz/${{ matrix.app }} exec playwright install-deps chromium
 
       - name: Run Playwright smoke tests
-        run: pnpm --filter @phloz/web test:e2e
+        run: pnpm --filter @phloz/${{ matrix.app }} test:e2e
 
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
-          path: apps/web/playwright-report/
+          name: playwright-report-${{ matrix.app }}
+          path: apps/${{ matrix.app }}/playwright-report/
           retention-days: 7
 
       - name: Upload trace artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-traces
-          path: apps/web/test-results/
+          name: playwright-traces-${{ matrix.app }}
+          path: apps/${{ matrix.app }}/test-results/
           retention-days: 7
 
   pgtap:
