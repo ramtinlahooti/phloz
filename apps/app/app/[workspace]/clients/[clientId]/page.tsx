@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { requireRole } from '@phloz/auth/roles';
+import { canAddRecurringTemplate, nextTier } from '@phloz/billing';
 import type {
   ApprovalState,
   Department,
@@ -287,7 +288,10 @@ export default async function ClientDetailPage({
       // `workspaces` query were lifted to a Context we could reuse
       // it, but that's a refactor for another day.
       db
-        .select({ timezone: schema.workspaces.timezone })
+        .select({
+          timezone: schema.workspaces.timezone,
+          tier: schema.workspaces.tier,
+        })
         .from(schema.workspaces)
         .where(eq(schema.workspaces.id, workspaceId))
         .limit(1)
@@ -296,6 +300,24 @@ export default async function ClientDetailPage({
 
   const workspaceTimezone = workspaceRow?.timezone ?? 'UTC';
   const recurringNow = new Date();
+
+  // Tier-gate UX for the per-client recurring section. Mirrors the
+  // workspace `/tasks/recurring` page: when the gate denies, the
+  // dialog's New button disables with the gate message + an inline
+  // "Upgrade →" link points at the matching billing-page CTA.
+  const recurringGate = await canAddRecurringTemplate(workspaceId);
+  const recurringAtLimit = !recurringGate.allowed;
+  const recurringLimitMessage = recurringAtLimit
+    ? recurringGate.message
+    : undefined;
+  const recurringUpgradeTier = workspaceRow
+    ? nextTier(workspaceRow.tier)
+    : null;
+  const recurringUpgradeHref = recurringAtLimit
+    ? recurringUpgradeTier && recurringUpgradeTier !== 'enterprise'
+      ? `/${workspaceId}/billing?upgrade=${recurringUpgradeTier}`
+      : `/${workspaceId}/billing`
+    : undefined;
 
   if (!client) notFound();
 
@@ -713,6 +735,9 @@ export default async function ClientDetailPage({
                     workspaceId={workspaceId}
                     clientId={clientId}
                     members={memberOptions}
+                    disabled={recurringAtLimit}
+                    disabledMessage={recurringLimitMessage}
+                    upgradeHref={recurringUpgradeHref}
                   />
                 </div>
                 {recurringTemplateRows.length === 0 ? (
