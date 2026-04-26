@@ -1,15 +1,16 @@
-# Next Steps (as of 2026-04-26 v7)
+# Next Steps (as of 2026-04-26 v8)
 
 ## Branch state
 
 `claude/inspiring-wright-2ca122` is the active feature branch and
-sits 29 commits ahead of `main`. Latest HEAD: `0e030ce`
-(`redirect_to` param alignment).
+sits 33 commits ahead of `main`. Latest HEAD: `2d25559` (Sentry
+user/workspace context tagging).
 
 `pnpm check` 29/29 green, **zero lint warnings**. Both apps build
 clean. **Playwright** — marketing 11/11 + app 7/7, all green
 locally on chromium-headless-shell. CI runs both via a matrixed
-`e2e` job on every PR.
+`e2e` job on every PR. **Sentry** captures now carry release
+(commit SHA) + user ID + workspace context.
 
 ## Operational status
 
@@ -47,13 +48,19 @@ locally on chromium-headless-shell. CI runs both via a matrixed
    tasks stacked in chronological order within each day. A 24-row
    hourly axis with tasks positioned by `dueDate` hour would let
    users plan time-blocked work.
-5. **Sentry wiring** beyond the SDK init — confirm DSN is set in
-   Vercel, set up a release tag in CI, verify sourcemaps upload.
-   Currently configured but never seen a real error event.
-6. **Remove the `requireUser()` calls from layouts** that the
-   proxy now handles. The layouts still throw on null user as a
-   defense-in-depth check, but the redirect should be the primary
-   UX. Audit `apps/app/app/(dashboard)/**/layout.tsx` and similar.
+5. **Sentry source-map upload** via `withSentryConfig` wrapping
+   `next.config.ts` so production events carry de-minified stack
+   traces. Needs `SENTRY_AUTH_TOKEN` + `SENTRY_ORG` +
+   `SENTRY_PROJECT_{APP,WEB}` in Vercel. Release tagging + user
+   context shipped this session, but stack traces are still
+   compressed.
+6. **Audit page-level `requireRole` callsites** for the same
+   throw-vs-redirect concern the layout had. Most pages live
+   under `/[workspace]/` so the layout's redirect runs first, but
+   a session-blip race could still see the page-level
+   `requireRole` throw. Lower priority than the layout fix
+   shipped today (those throws would be hidden behind the
+   layout's earlier redirect 99.9% of the time).
 7. **Pre-existing low-impact known issue:**
    `workspace_members.email` can lag after Supabase email change.
    Documented in KNOWN-ISSUES; deferred until first real agency

@@ -4,6 +4,68 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-26 — Sentry release + user tagging + auth-noise fix
+
+### Fixed — Workspace layout no longer throws on missing user
+
+A real Sentry capture surfaced `AuthError: unauthenticated` thrown
+from `WorkspaceLayout` calling `requireUser()`. The proxy is the
+primary defense (redirects unauth visits to /login) but a
+session-blip race — cookie rotated, refresh token expired between
+proxy check and layout render — can still produce a null user at
+the layout. The throw made that race look like an unhandled error
+to Sentry.
+
+Switched to `getCurrentUser()` + `redirect('/login')`. Same
+defense-in-depth, no Sentry noise. Server actions retain
+`requireUser()` — the throw is correct there because the
+client-side caller handles the error via toast. Only Sentry-
+visible surfaces (layouts, top-level pages) need the soft check.
+
+### Added — Sentry release tagging across all 6 init configs
+
+`apps/app` and `apps/web` × server / client / edge configs all
+now read `release` from
+`SENTRY_RELEASE ?? VERCEL_GIT_COMMIT_SHA` (server/edge) or
+`NEXT_PUBLIC_SENTRY_RELEASE ?? NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA`
+(client). Vercel auto-populates the `*_VERCEL_GIT_COMMIT_SHA`
+vars on every deploy so production events get tagged with no
+extra wiring. Lets us filter Sentry by deploy and watch
+regressions land.
+
+### Added — Sentry user + workspace tagging in the workspace layout
+
+`Sentry.setUser({ id })` + `Sentry.setTag()` calls on every
+workspace layout render so errors below carry: user ID (no
+email — PII that doesn't belong in error reports), `workspace_id`,
+`workspace_tier`, `member_role`. Sentry's Next.js SDK isolates
+scopes per-request via AsyncLocalStorage so concurrent requests
+don't bleed context.
+
+Combined with release tagging, every captured error now answers
+"which deploy + which workspace + which user" out of the box.
+
+### Files touched
+
+- `apps/app/app/[workspace]/layout.tsx` (soft auth check + Sentry
+  context tagging)
+- `apps/app/sentry.{server,client,edge}.config.ts` (release)
+- `apps/web/sentry.{server,client,edge}.config.ts` (release)
+
+### Verified
+
+- `pnpm check` — 29/29 green, 0 lint warnings.
+- `pnpm --filter @phloz/app build` — clean.
+- Local Playwright: 7/7 still green.
+
+### Deferred to next session
+
+Source-map upload via `withSentryConfig` wrapping `next.config.ts`
+needs `SENTRY_AUTH_TOKEN` + the org/project slugs in Vercel.
+Without that, current Sentry events have minified stack traces.
+
+---
+
 ## 2026-04-26 — Proxy redirects unauthenticated visits to `/login`
 
 ### Added — Protected-route enforcement at the edge
