@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nextjs';
 import { and, count, eq, inArray, isNotNull, isNull, lt, not } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
@@ -90,6 +91,18 @@ export default async function WorkspaceLayout({
     .then((rows) => rows[0] ?? null);
 
   if (!workspace) redirect('/onboarding');
+
+  // Tag the current request scope so any errors below this point
+  // (RSC render, dialog open, action invocation) carry the user
+  // + workspace context into Sentry. The SDK isolates scopes
+  // per-request via AsyncLocalStorage so this doesn't leak across
+  // concurrent requests. Email is intentionally omitted — the user
+  // ID is enough for filtering, and email is PII that doesn't
+  // belong in error reports.
+  Sentry.setUser({ id: user.id });
+  Sentry.setTag('workspace_id', workspace.id);
+  Sentry.setTag('workspace_tier', workspace.tier);
+  Sentry.setTag('member_role', membership.role);
 
   // Every workspace the user belongs to — for the switcher.
   // Plus the two sidebar-badge counts (overdue tasks assigned to this
