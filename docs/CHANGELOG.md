@@ -4,6 +4,58 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-25 — Audit sparkline + per-client tier-gate + inbox shortcuts
+
+### Added — Audit rollup sparkline
+
+Eight most-recent `audit_run.workspace_summary` rows feed a 160×28
+inline SVG sparkline below the existing trend line on the dashboard
+audit rollup card. Two stacked paths — critical (red) on top,
+warning (amber) below — both normalised against the same y-domain.
+A small dot marks the latest critical-count datapoint so "now"
+reads at a glance. Skipped when fewer than two snapshots exist.
+
+### Added — Tier-gate UX on the per-client recurring section
+
+Mirrors the workspace `/tasks/recurring` experience: when
+`canAddRecurringTemplate` denies, the per-client New button
+disables with the gate's message + an inline "Upgrade →" link
+points at `/[workspace]/billing?upgrade=<nextTier>`. The client
+detail page now also fetches `workspace.tier` so it can derive the
+upgrade hint from `nextTier()`. Reuses the existing
+`disabled` / `disabledMessage` / `upgradeHref` props on
+`NewRecurringDialog` — no duplication.
+
+### Added — Inbox keyboard navigation (`j` / `k` / `Enter`)
+
+Power-user shortcuts for the messages inbox.
+`InboxKeyboardNav` is an invisible client-side keyboard layer that
+queries `[data-inbox-row]` markers in the DOM and toggles a
+`data-focused` attribute. Rows themselves stay server-rendered.
+Focused row gets a primary-tinted ring + bg via Tailwind's
+`data-[focused=true]:` selectors and scrolls into view.
+Skipped when typing in inputs / textareas / contentEditable;
+modifier keys (Cmd / Ctrl / Alt) bypass so OS shortcuts still
+work.
+
+The global `?` cheat-sheet dialog gains a "Messages inbox" section
+documenting the new bindings.
+
+### Files touched
+
+- `apps/app/app/[workspace]/page.tsx` (sparkline query + render + AuditSparkline)
+- `apps/app/app/[workspace]/clients/[clientId]/page.tsx` (recurring tier-gate wiring)
+- `apps/app/app/[workspace]/messages/page.tsx` (data-inbox-row markers)
+- `apps/app/app/[workspace]/messages/inbox-keyboard-nav.tsx` (new)
+- `apps/app/components/keyboard-shortcuts-dialog.tsx` (Messages inbox section)
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean.
+
+---
+
 ## 2026-04-25 — Audit trend + message drafts + tasks calendar view
 
 ### Added — Audit "trend vs last run" line on the dashboard rollup

@@ -49,6 +49,16 @@ Full React Flow canvas with typed node library, drawer forms, keyboard shortcuts
 - [x] Resend inbound handler fully wired
 - [x] Email digest notification (Inngest) — timezone-aware
 - [x] Recurring task templates (daily/weekly/monthly Inngest cron)
+- [x] Saved filter views on `/tasks` (per-user + workspace-shared)
+- [x] Subtask drag-to-reorder + Cmd/Ctrl-↑/↓ keyboard reorder
+- [x] Per-member daily digest with opt-out + per-member preview
+- [x] Month-grid calendar view at `/tasks/calendar`
+- [x] Inbox keyboard nav (`j`/`k`/`Enter`)
+- [x] Reply-draft auto-save (localStorage)
+- [x] Weekly tracking-map audit cron + dashboard trend + sparkline
+- [x] Bulk-archive dormant clients
+- [x] Activity feed type filter on the dashboard
+- [x] Keyboard shortcuts cheat sheet (`?`)
 
 ## Phase 4 — Client Portal Polish
 
