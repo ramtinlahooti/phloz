@@ -1,10 +1,10 @@
-# Next Steps (as of 2026-04-26 v17)
+# Next Steps (as of 2026-04-26 v18)
 
 ## Branch state
 
 `claude/inspiring-wright-2ca122` is the active feature branch and
-sits 52 commits ahead of `main`. Latest HEAD: `1ba9b30` (mention
-fan-out from internal notes + shared parser).
+sits 55 commits ahead of `main`. Latest HEAD: `f72c4f1`
+("Mentioned me" inbox + messages.mentions column).
 
 **`@`-mentions are now end-to-end on every text surface that
 supports them** — task comments AND internal notes both fire
@@ -51,12 +51,13 @@ locally on chromium-headless-shell. CI runs both via a matrixed
    per-client Access flow + invite + accept-with-pre-assignments
    are now non-trivial state machines worth automating. Needs the
    test-DB + Supabase Auth setup queued in earlier sessions.
-3. **"Mentioned me" inbox** — a dedicated page that lists every
-   comment + internal note that has the calling user in
-   `comments.mentions` or `messages.body` matching their email.
-   Closes the loop on the receiving end (today the only feedback
-   path is the email). Reads exist; needs a route, a query, and
-   a small list view.
+3. **Unread / seen state on the Mentions inbox.** Today the
+   inbox shows the 50 most-recent on each surface, but doesn't
+   distinguish "I've already seen this one" from "new since I
+   last looked". Add a `mentions_seen_at` column on
+   `workspace_members` (single timestamp, updated when the user
+   visits `/mentions`) + a sidebar badge showing
+   `count where createdAt > mentions_seen_at`. Small.
 2. **Authenticated Playwright tests for `apps/app`.** Need a test
    DB + seeded fixtures + a Playwright auth setup that signs into
    a known test account once and reuses storage state. Approach:
@@ -112,8 +113,9 @@ locally on chromium-headless-shell. CI runs both via a matrixed
 | `0011_messages_starred.sql` | ✅ |
 | `0012_notification_preferences.sql` | ✅ |
 | `0013_invitations_pending_client_ids.sql` | ✅ |
+| `0014_messages_mentions.sql` | ✅ |
 
-All 14 Drizzle migrations applied to Supabase.
+All 15 Drizzle migrations applied to Supabase.
 
 ## Env vars to light up dormant features
 

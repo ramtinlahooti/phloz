@@ -75,6 +75,66 @@ three; call sites are queued in NEXT-STEPS.
 
 ---
 
+## 2026-04-26 — "Mentioned me" inbox at `/[workspace]/mentions`
+
+### Added — Unified mentions feed
+
+New page that surfaces every comment + internal note tagging the
+calling user. Closes the loop on the receiving end (the only
+feedback path before today was the notification email itself).
+
+  - Joins `comments.mentions` + `messages.mentions` (both GIN-
+    indexed, both filtered server-side via `@>` arrayContains)
+  - Sorts by createdAt desc, 50 most-recent on each surface
+  - Per-row icon distinguishes task comment vs internal note;
+    notes get an "Internal note" pill for extra clarity
+  - Deep-links into the source (`?task=id` for comments, the
+    client thread for notes)
+  - `MentionBody` chip rendering on each row so the matched
+    token reads correctly inline
+  - Empty-state copy explains the email-first contract + links
+    to Settings → Notifications
+
+RLS-safe via the existing `phloz_is_assigned_to` gate that
+already scopes comments + messages.
+
+### Added — `messages.mentions uuid[]`
+
+Migration #14 mirrors `comments.mentions` on the messages table
+so the inbox query is symmetric across both surfaces. GIN index
+on `messages_mentions_gin_idx` covers the lookup. Applied to
+Supabase via MCP.
+
+`postInternalNoteAction` now resolves `@`-mentions BEFORE the
+insert so the matched user_ids persist alongside the body. The
+fan-out helper takes the pre-resolved mentions as an arg —
+avoids a duplicate parse + member fetch.
+
+### Added — User-menu "My mentions" shortcut
+
+Top-right dropdown gains an `@`-icon entry above
+"Notification preferences", deep-linking to the new inbox. Two
+clicks to get from any email to the mentioned-me view.
+
+### Files touched
+
+- `packages/db/migrations/0014_messages_mentions.sql` (new)
+- `packages/db/src/schema/messages.ts` (mentions column +
+  GIN index)
+- `apps/app/app/[workspace]/messages/actions.ts` (resolve +
+  persist mentions on internal-note insert; pass to fan-out)
+- `apps/app/app/[workspace]/mentions/page.tsx` (new inbox)
+- `apps/app/components/user-menu.tsx` (My mentions item)
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean.
+- `pnpm --filter @phloz/app test:e2e` — 7/7 still green.
+- Migration #14 verified live on Supabase via MCP.
+
+---
+
 ## 2026-04-26 — Mention fan-out from internal notes + shared parser
 
 ### Added — Internal-note `@`-mentions fire emails
