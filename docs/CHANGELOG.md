@@ -4,6 +4,60 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-26 — Calendar week view + "Last run X ago" trend anchor
+
+### Added — Week view at `/tasks/calendar?view=week`
+
+7-column day-of-week grid as a parallel layout to the existing
+month view. Same drag-to-reschedule contract — pills preserve
+time-of-day on drop, optimistic + revert on server error,
+done/archived not draggable. Drops the month grid's 3-pill
+overflow cap so all of a day's tasks render stacked, sorted
+chronologically by dueDate. Each pill shows title + client
+subtitle on its own line.
+
+`?view=week` flips the layout; `?week=YYYY-MM-DD` anchors the
+week (Sunday on/before that date). Defaults: month view, current
+week. Header shows "Apr 19 – 25, 2026" range and prev/next/today
+links that respect the active view. New Month/Week toggle pill
+in the header — always returns to "today's" period in the new
+view to keep the URL shape simple.
+
+Server-side query window narrows to 7 days for week view, keeping
+the fetch tight. Reuses the same `updateTaskAction` primitive as
+the month grid; no cron / schema changes.
+
+### Added — "Last run X ago" line under the audit trend
+
+Pulls `recentAuditSummaries[0].createdAt` (the most recent
+persisted snapshot) and renders a small line below the trend on
+the dashboard's audit rollup card. Disambiguates the trend's
+"from last run" reference now that owners can fire manual Run-now
+buttons throughout the day — without an explicit timestamp the
+trend ambiguously referenced any of: this morning's cron, the
+weekly cron, or a manual Run-now from five minutes ago.
+
+Helper bins to minutes / hours / days under a week, then falls
+through to an absolute "Apr 19" date for older runs. Server-
+rendered with minute granularity (rounds toward "still accurate
+30s after the page loads").
+
+### Files touched
+
+- `apps/app/app/[workspace]/page.tsx` (lastRanAt computation,
+  AuditRollupCard prop, formatRelativeTime helper)
+- `apps/app/app/[workspace]/tasks/calendar/page.tsx` (view + week
+  param parsing, view-aware nav, ViewToggle component)
+- `apps/app/app/[workspace]/tasks/calendar/calendar-week-grid.tsx`
+  (new client component)
+
+### Verified
+
+- `pnpm check` — 29/29 green, 0 lint warnings.
+- `pnpm --filter @phloz/app build` — clean.
+
+---
+
 ## 2026-04-26 — Per-client audit "Run now"
 
 ### Added — `clientId` parameter on the `audit/run-weekly` event

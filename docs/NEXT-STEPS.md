@@ -1,10 +1,10 @@
-# Next Steps (as of 2026-04-26)
+# Next Steps (as of 2026-04-26 v2)
 
 ## Branch state
 
 `claude/inspiring-wright-2ca122` is the active feature branch and
-sits 13 commits ahead of `main` after this session. Latest HEAD:
-`e187b36` (per-client audit Run-now).
+sits 16 commits ahead of `main`. Latest HEAD: `d3e0c51` (calendar
+week view).
 
 `pnpm check` 29/29 green, **zero lint warnings**. Both apps build
 clean.
@@ -24,36 +24,33 @@ clean.
 
 ## Top backlog (next session)
 
-1. **Calendar week view** at `/tasks/calendar?view=week`. The month
-   grid is solid; a 7-column day-of-week (or × 24-row hourly) view
-   would help users with timed tasks. Reuse the same updateTaskAction
-   + CalendarMonthGrid DnD primitive. Add a Month/Week toggle pill in
-   the calendar header.
-2. **"Last ran X ago" suffix on the audit trend line.** With the new
-   manual Run-now buttons firing throughout the day, the implicit
-   "last run" reference in the trend copy gets ambiguous. Pull
-   `recentAuditSummaries[0].createdAt` and append "· last run X
-   minutes/hours/days ago" to the trend line. Tiny addition.
-3. **Playwright smoke tests.** Coverage now spans audit timeline +
-   sparkline + workspace + per-client Run-now, pricing matrix,
-   activity pagination, calendar drag-to-reschedule, digest hour
-   selector, Team digest-hour badge, plus prior features (recurring
-   tasks, saved-views, subtask DnD, digest preview/nudge, billing
-   tier-hint redirect, platform-IDs copy, inline tracking map,
-   multi-token client search + bulk-archive, blog reading-progress,
-   keyboard shortcuts, message drafts, inbox j/k). Worth automating
-   the happy paths before the next dogfooding pass.
-4. **PostHog wiring.** `NEXT_PUBLIC_POSTHOG_KEY` + `POSTHOG_API_KEY`
+1. **Playwright smoke tests.** Surface area now spans audit
+   timeline + sparkline + workspace + per-client Run-now, pricing
+   matrix, activity pagination, calendar month + week DnD, digest
+   hour selector, Team digest-hour badge, plus prior features
+   (recurring tasks, saved-views, subtask DnD, digest preview/nudge,
+   billing tier-hint redirect, platform-IDs copy, inline tracking
+   map, multi-token client search + bulk-archive, blog
+   reading-progress, keyboard shortcuts, message drafts, inbox
+   j/k). Worth automating the happy paths before the next
+   dogfooding pass.
+2. **Inbox star/pin** — let users mark a thread as needing
+   follow-up so it pins to the top of the messages list across
+   sessions. Adds a `messages.starred boolean default false`
+   column + migration #11. Bigger surface (UI + action + thread
+   sort).
+3. **PostHog wiring.** `NEXT_PUBLIC_POSTHOG_KEY` + `POSTHOG_API_KEY`
    in Vercel. Without them, `track()` calls log-only — we have a
    pile of typed events but no funnel data yet.
-5. **GA4 Measurement Protocol** for server-side conversion events
+4. **GA4 Measurement Protocol** for server-side conversion events
    (`upgrade_tier`, `payment_failed`). `GA4_MEASUREMENT_ID` +
    `GA4_API_SECRET` in Vercel.
-6. **Inbox star/pin** — let users mark a thread as needing follow-up
-   so it pins to the top of the messages list across sessions.
-   Adds a `messages.starred boolean default false` column +
-   migration #11. Bigger surface (UI + action + thread sort).
-7. **Pre-existing low-impact known issue:**
+5. **Calendar hourly axis on week view.** Today's week view shows
+   tasks stacked in chronological order within each day. A 24-row
+   hourly axis with tasks positioned by `dueDate` hour would let
+   users plan time-blocked work. Bigger scope — adds an hour
+   dimension to the DnD drop targets.
+6. **Pre-existing low-impact known issue:**
    `workspace_members.email` can lag after Supabase email change.
    Documented in KNOWN-ISSUES; deferred until first real agency
    reports it.
