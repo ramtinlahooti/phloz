@@ -34,6 +34,7 @@ import {
   type TrackingNodeDto,
 } from '@phloz/tracking-map';
 
+import { AuditSparkline } from '@/components/audit-sparkline';
 import {
   HEALTH_COLORS,
   computeClientHealth,
@@ -1133,8 +1134,17 @@ function AuditPanel({
 /** Per-client audit history. The weekly Inngest cron writes one
  *  `audit_run.client_summary` row per client per pass; we list the
  *  most recent snapshots newest-first with a delta vs the prior
- *  (older) row so users can see when each finding count moved. */
+ *  (older) row so users can see when each finding count moved. A
+ *  sparkline above the list visualises the trend at a glance —
+ *  same renderer the dashboard rollup card uses. */
 function AuditHistorySection({ history }: { history: AuditHistorySnapshot[] }) {
+  // Series for the sparkline: oldest → newest, only the dimensions
+  // the renderer plots. Skipped at the call site when fewer than 2.
+  const sparkSeries = history
+    .slice()
+    .reverse()
+    .map((s) => ({ critical: s.critical, warning: s.warning }));
+
   return (
     <section>
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -1146,6 +1156,11 @@ function AuditHistorySection({ history }: { history: AuditHistorySnapshot[] }) {
           : `Last ${history.length} weekly audit snapshots.`}{' '}
         Counts reflect the cron run, not the live findings above.
       </p>
+      {sparkSeries.length >= 2 && (
+        <div className="mb-3">
+          <AuditSparkline series={sparkSeries} />
+        </div>
+      )}
       <ul className="space-y-1.5">
         {history.map((snapshot, idx) => {
           const prev = history[idx + 1] ?? null;
