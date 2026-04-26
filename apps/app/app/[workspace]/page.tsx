@@ -41,6 +41,7 @@ import {
   type TrackingNodeDto,
 } from '@phloz/tracking-map';
 
+import { AuditSparkline } from '@/components/audit-sparkline';
 import {
   HEALTH_COLORS,
   computeClientHealth,
@@ -1329,7 +1330,9 @@ function AuditRollupCard({
           <p className="mt-1 text-[11px] text-muted-foreground">{trendLine}</p>
         )}
         {sparkline && sparkline.length >= 2 && (
-          <AuditSparkline series={sparkline} />
+          <div className="mt-2">
+            <AuditSparkline series={sparkline} />
+          </div>
         )}
       </CardHeader>
       <CardContent className="space-y-2 pt-0">
@@ -1566,65 +1569,4 @@ function renderAuditTrend(
   }
   return `${segments.join(' · ')} from last run`;
 }
-
-/**
- * Tiny SVG sparkline for the audit rollup card. Two stacked lines:
- * critical findings on top (red-ish), warnings below (amber). Both
- * normalised against the same y-domain so the relative magnitude
- * reads correctly. No axis, no legend — the trend line above the
- * sparkline carries the literal numbers; this is just the shape.
- */
-function AuditSparkline({
-  series,
-}: {
-  series: Array<{ critical: number; warning: number }>;
-}) {
-  const w = 160;
-  const h = 28;
-  const padX = 1;
-  const padY = 2;
-  const max = Math.max(
-    1,
-    ...series.flatMap((p) => [p.critical, p.warning]),
-  );
-  const stepX =
-    series.length > 1 ? (w - padX * 2) / (series.length - 1) : 0;
-  const yFor = (v: number) =>
-    h - padY - ((h - padY * 2) * v) / max;
-  const pathFor = (key: 'critical' | 'warning') =>
-    series
-      .map((p, i) => `${i === 0 ? 'M' : 'L'}${padX + i * stepX} ${yFor(p[key])}`)
-      .join(' ');
-  return (
-    <svg
-      viewBox={`0 0 ${w} ${h}`}
-      className="mt-2 h-7 w-full max-w-[12rem]"
-      preserveAspectRatio="none"
-      aria-hidden
-    >
-      <path
-        d={pathFor('warning')}
-        fill="none"
-        stroke="rgb(251 191 36 / 0.6)"
-        strokeWidth={1.25}
-      />
-      <path
-        d={pathFor('critical')}
-        fill="none"
-        stroke="rgb(248 113 113 / 0.9)"
-        strokeWidth={1.5}
-      />
-      {/* Last-point dot for the critical series so the "now" reads. */}
-      {series.length > 0 && (
-        <circle
-          cx={padX + (series.length - 1) * stepX}
-          cy={yFor(series[series.length - 1]!.critical)}
-          r={1.75}
-          fill="rgb(248 113 113)"
-        />
-      )}
-    </svg>
-  );
-}
-
 
