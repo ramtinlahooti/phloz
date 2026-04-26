@@ -4,6 +4,58 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-26 — Per-client audit "Run now"
+
+### Added — `clientId` parameter on the `audit/run-weekly` event
+
+Extends the audit-weekly cron to accept an optional `clientId` in
+the event data. When set (alongside its `workspaceId`),
+`runWorkspaceAudit` narrows every input query — clients, tracking
+nodes, edges, suppressions — to that one client and writes only the
+`audit_run.client_summary` row.
+
+The `audit_run.workspace_summary` row is **skipped** for per-client
+runs. A workspace summary that ignored every other client would
+mislead the dashboard's sparkline (which expects each row to reflect
+the full workspace). `clientId` without `workspaceId` is ignored —
+we need the workspace scope for both auth and the workspace-level
+fetch.
+
+### Added — Owner/admin "Run now" button on the per-client Audit tab
+
+Fires the per-client variant of the same Inngest event. Useful
+after the user fixes a tracking issue and wants the History list
+to immediately reflect the change without re-auditing every client
+in the workspace. Optimistic toast tells them to reload the page
+in a minute.
+
+`runAuditNowAction` accepts an optional `clientId`; the same
+`<RunAuditButton />` component now serves both contexts (workspace
++ per-client). Toast description adapts to the scope so the user
+knows what's being refreshed. Mirrors the workspace-level button
+shipped yesterday — same Inngest event, different filters.
+
+### Files touched
+
+- `apps/app/inngest/functions/audit-weekly.ts` (clientId pass-through
+  on the workspace audit; per-client narrowing on every query;
+  workspace_summary write skipped under client scope)
+- `apps/app/app/[workspace]/audit-actions.ts` (runAuditNowAction
+  accepts optional clientId)
+- `apps/app/app/[workspace]/run-audit-button.tsx` (clientId prop
+  + scope-aware toast)
+- `apps/app/app/[workspace]/clients/[clientId]/page.tsx` (canRunAudit
+  prop on AuditPanel; button rendered in the panel header for both
+  empty and populated states; introduced isPrivileged constant
+  alongside canDeleteRecurring for clarity)
+
+### Verified
+
+- `pnpm check` — 29/29 green, 0 lint warnings.
+- `pnpm --filter @phloz/app build` — clean.
+
+---
+
 ## 2026-04-25 — Audit "Run now" + per-client sparkline + Team digest-hour badge
 
 ### Added — "Run audit now" button on the dashboard rollup card
