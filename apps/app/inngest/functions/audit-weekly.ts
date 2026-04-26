@@ -34,7 +34,11 @@ import { inngest } from '../client';
  * graph that the dashboard will eventually pick up.
  *
  * Cron fires Monday 08:00 UTC. Manual trigger:
- * `audit/run-weekly` event with optional `{ workspaceId }`.
+ * `audit/run-weekly` event with optional `{ workspaceId, clientId }`.
+ * When `clientId` is set (alongside its `workspaceId`), only that one
+ * client is audited and only its `audit_run.client_summary` row is
+ * written — the workspace_summary is skipped to keep the dashboard
+ * sparkline accurate. `clientId` without `workspaceId` is ignored.
  */
 const AUDIT_CRON = 'TZ=UTC 0 8 * * 1';
 
@@ -49,9 +53,19 @@ export const auditWeeklyFunction = inngest.createFunction(
   async ({ event, step }) => {
     const db = getDb();
 
-    const eventData = (event?.data ?? {}) as { workspaceId?: string };
+    const eventData = (event?.data ?? {}) as {
+      workspaceId?: string;
+      clientId?: string;
+    };
     const targeted =
       event?.name === 'audit/run-weekly' ? eventData.workspaceId : undefined;
+    // Per-client targeting requires workspaceId — we use it to scope the
+    // workspace fetch. If only clientId is set without workspaceId, we
+    // ignore it and treat the run as workspace-wide (same as cron).
+    const targetedClient =
+      event?.name === 'audit/run-weekly' && targeted
+        ? eventData.clientId ?? null
+        : null;
 
     const workspaces = await step.run('load-workspaces', async () => {
       const rows = targeted
@@ -75,7 +89,7 @@ export const auditWeeklyFunction = inngest.createFunction(
 
     for (const ws of workspaces) {
       const summary = await step.run(`audit-${ws.id}`, async () => {
-        return runWorkspaceAudit(ws.id);
+        return runWorkspaceAudit(ws.id, { clientId: targetedClient });
       });
       totalClientsAudited += summary.clientsAudited;
       totalCritical += summary.critical;
@@ -101,11 +115,15 @@ interface WorkspaceAuditSummary {
 
 async function runWorkspaceAudit(
   workspaceId: string,
+  opts: { clientId: string | null } = { clientId: null },
 ): Promise<WorkspaceAuditSummary> {
   const db = getDb();
+  const targetClientId = opts.clientId;
 
   // Workspace-wide fetch of every input the audit needs, grouped
-  // client-side so we don't hit the DB once per client.
+  // client-side so we don't hit the DB once per client. When the
+  // run is scoped to a single client, every query narrows further so
+  // we don't pay for nodes/edges/suppressions belonging to siblings.
   const [clientRows, trackingNodeRows, trackingEdgeRows, suppressionRows] =
     await Promise.all([
       db
@@ -115,23 +133,47 @@ async function runWorkspaceAudit(
           and(
             eq(schema.clients.workspaceId, workspaceId),
             isNull(schema.clients.archivedAt),
+            ...(targetClientId
+              ? [eq(schema.clients.id, targetClientId)]
+              : []),
           ),
         ),
       db
         .select()
         .from(schema.trackingNodes)
-        .where(eq(schema.trackingNodes.workspaceId, workspaceId)),
+        .where(
+          and(
+            eq(schema.trackingNodes.workspaceId, workspaceId),
+            ...(targetClientId
+              ? [eq(schema.trackingNodes.clientId, targetClientId)]
+              : []),
+          ),
+        ),
       db
         .select()
         .from(schema.trackingEdges)
-        .where(eq(schema.trackingEdges.workspaceId, workspaceId)),
+        .where(
+          and(
+            eq(schema.trackingEdges.workspaceId, workspaceId),
+            ...(targetClientId
+              ? [eq(schema.trackingEdges.clientId, targetClientId)]
+              : []),
+          ),
+        ),
       db
         .select({
           clientId: schema.auditSuppressions.clientId,
           ruleId: schema.auditSuppressions.ruleId,
         })
         .from(schema.auditSuppressions)
-        .where(eq(schema.auditSuppressions.workspaceId, workspaceId)),
+        .where(
+          and(
+            eq(schema.auditSuppressions.workspaceId, workspaceId),
+            ...(targetClientId
+              ? [eq(schema.auditSuppressions.clientId, targetClientId)]
+              : []),
+          ),
+        ),
     ]);
 
   const nodesByClient = new Map<string, TrackingNodeDto[]>();
@@ -212,20 +254,26 @@ async function runWorkspaceAudit(
 
   // Workspace-level summary closes the run with the rollup the
   // dashboard already shows live — preserved here for trend graphs.
-  summaryRows.push({
-    workspaceId,
-    actorType: 'system',
-    actorId: null,
-    action: 'audit_run.workspace_summary',
-    entityType: 'tracking_map',
-    entityId: null,
-    metadata: {
-      clients_audited: clientRows.length,
-      critical: totalCritical,
-      warning: totalWarning,
-      ran_at: new Date().toISOString(),
-    },
-  });
+  // Skipped when the run is scoped to a single client: a workspace
+  // summary that ignored every other client would mislead the
+  // dashboard sparkline (which expects each row to reflect the full
+  // workspace's findings).
+  if (!targetClientId) {
+    summaryRows.push({
+      workspaceId,
+      actorType: 'system',
+      actorId: null,
+      action: 'audit_run.workspace_summary',
+      entityType: 'tracking_map',
+      entityId: null,
+      metadata: {
+        clients_audited: clientRows.length,
+        critical: totalCritical,
+        warning: totalWarning,
+        ran_at: new Date().toISOString(),
+      },
+    });
+  }
 
   if (summaryRows.length > 0) {
     await db.insert(schema.auditLog).values(summaryRows);

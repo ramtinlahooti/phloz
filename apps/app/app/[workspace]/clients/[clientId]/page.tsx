@@ -42,6 +42,8 @@ import {
 import { buildAppMetadata } from '@/lib/metadata';
 import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
+import { RunAuditButton } from '../../run-audit-button';
+
 import { ArchiveButton } from './archive-button';
 import { ClientOverviewForm } from './client-overview-form';
 import { LazyMapClient } from './map/lazy-map-client';
@@ -117,7 +119,9 @@ export default async function ClientDetailPage({
     'viewer',
   ]);
   const user = actor.user;
-  const canDeleteRecurring = actor.role === 'owner' || actor.role === 'admin';
+  const isPrivileged = actor.role === 'owner' || actor.role === 'admin';
+  const canDeleteRecurring = isPrivileged;
+  const canRunAudit = isPrivileged;
 
   const [
     client,
@@ -938,6 +942,7 @@ export default async function ClientDetailPage({
                 history={auditHistory}
                 workspaceId={workspaceId}
                 clientId={clientId}
+                canRunAudit={canRunAudit}
               />
             </TabsContent>
 
@@ -1018,19 +1023,22 @@ type AuditHistorySnapshot = {
  *  user rather than showing a blank card. Suppressed rules appear
  *  in a separate footer section so users can un-snooze. The History
  *  section at the bottom lists the most recent weekly cron snapshots
- *  so users can see when each finding count first appeared. */
+ *  so users can see when each finding count first appeared. Owners
+ *  and admins get a "Run now" button to trigger a fresh snapshot. */
 function AuditPanel({
   findings,
   suppressions,
   history,
   workspaceId,
   clientId,
+  canRunAudit,
 }: {
   findings: Finding[];
   suppressions: SuppressionView[];
   history: AuditHistorySnapshot[];
   workspaceId: string;
   clientId: string;
+  canRunAudit: boolean;
 }) {
   const criticals = findings.filter((f) => f.severity === 'critical');
   const warnings = findings.filter((f) => f.severity === 'warning');
@@ -1042,18 +1050,28 @@ function AuditPanel({
     history.length === 0
   ) {
     return (
-      <Card>
-        <CardContent className="space-y-2 p-8 text-center">
-          <p className="text-sm font-medium text-[var(--color-health-working)]">
-            All clear.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            The audit engine didn&apos;t find anything wrong with this
-            client&apos;s tracking setup. Re-run anytime — it&apos;s live
-            against the current map.
-          </p>
-        </CardContent>
-      </Card>
+      <div className="space-y-3">
+        {canRunAudit && (
+          <div className="flex justify-end">
+            <RunAuditButton
+              workspaceId={workspaceId}
+              clientId={clientId}
+            />
+          </div>
+        )}
+        <Card>
+          <CardContent className="space-y-2 p-8 text-center">
+            <p className="text-sm font-medium text-[var(--color-health-working)]">
+              All clear.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              The audit engine didn&apos;t find anything wrong with this
+              client&apos;s tracking setup. Re-run anytime — it&apos;s live
+              against the current map.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -1067,15 +1085,23 @@ function AuditPanel({
 
   return (
     <div className="space-y-6">
-      {findings.length > 0 ? (
-        <p className="text-xs text-muted-foreground">
-          {findings.length} active finding{findings.length === 1 ? '' : 's'} ·{' '}
-          {summary}
-          {suppressions.length > 0 && (
-            <> · {suppressions.length} suppressed</>
-          )}
-        </p>
-      ) : (
+      <div className="flex items-center justify-between gap-2">
+        {findings.length > 0 ? (
+          <p className="text-xs text-muted-foreground">
+            {findings.length} active finding{findings.length === 1 ? '' : 's'} ·{' '}
+            {summary}
+            {suppressions.length > 0 && (
+              <> · {suppressions.length} suppressed</>
+            )}
+          </p>
+        ) : (
+          <span className="text-xs text-muted-foreground" />
+        )}
+        {canRunAudit && (
+          <RunAuditButton workspaceId={workspaceId} clientId={clientId} />
+        )}
+      </div>
+      {findings.length === 0 && (
         <Card>
           <CardContent className="space-y-2 p-6 text-center">
             <p className="text-sm font-medium text-[var(--color-health-working)]">
