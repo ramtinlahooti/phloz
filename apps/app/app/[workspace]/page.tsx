@@ -387,10 +387,11 @@ export default async function WorkspaceOverviewPage({
 
   if (!workspace) return null;
 
-  // Two most recent workspace-summary audit_log rows (newest first).
-  // Used by the audit rollup card to render "↓ 3 critical from last
-  // run" — the new weekly cron writes one of these per workspace per
-  // pass. Cheap separate query; keeps the big Promise.all readable.
+  // Last 8 workspace-summary audit_log rows (newest first). Two of
+  // them feed the "↓ N critical from last run" trend line; all 8 feed
+  // the inline sparkline that visualises the trajectory. Eight rows
+  // ≈ two months of weekly history — enough for the sparkline to
+  // mean something without making the card noisy.
   const recentAuditSummaries = await db
     .select({
       metadata: schema.auditLog.metadata,
@@ -404,7 +405,7 @@ export default async function WorkspaceOverviewPage({
       ),
     )
     .orderBy(desc(schema.auditLog.createdAt))
-    .limit(2);
+    .limit(8);
 
   const tier = getTier(workspace.tier);
   const clientName = new Map(clientRows.map((c) => [c.id, c.name]));
@@ -618,6 +619,25 @@ export default async function WorkspaceOverviewPage({
           previousWarning: previousAuditMeta.warning,
           previousAt: previousAuditSnapshot?.createdAt ?? null,
         }
+      : null;
+
+  // Sparkline series: oldest → newest, critical-count per snapshot.
+  // We pull from the same `recentAuditSummaries` (newest-first) and
+  // reverse for chronological order. Skipped when fewer than two
+  // datapoints exist — a single bar isn't a trend.
+  const auditSparkline =
+    recentAuditSummaries.length >= 2
+      ? recentAuditSummaries
+          .slice()
+          .reverse()
+          .map((r) => {
+            const meta =
+              (r.metadata as { critical?: number; warning?: number }) ?? {};
+            return {
+              critical: typeof meta.critical === 'number' ? meta.critical : 0,
+              warning: typeof meta.warning === 'number' ? meta.warning : 0,
+            };
+          })
       : null;
 
   const feed: FeedItem[] = [];
@@ -951,6 +971,7 @@ export default async function WorkspaceOverviewPage({
               totalWarning={totalWarning}
               workspaceId={workspaceId}
               trend={auditTrend}
+              sparkline={auditSparkline}
             />
           )}
           <Card>
@@ -1201,6 +1222,7 @@ function AuditRollupCard({
   totalWarning,
   workspaceId,
   trend,
+  sparkline,
 }: {
   clients: {
     id: string;
@@ -1218,6 +1240,10 @@ function AuditRollupCard({
     previousWarning: number;
     previousAt: Date | null;
   } | null;
+  /** Oldest → newest critical/warning counts from up to 8 recent
+   *  weekly snapshots. Renders an inline SVG sparkline when set
+   *  + length >= 2. */
+  sparkline: Array<{ critical: number; warning: number }> | null;
 }) {
   const summary = [
     totalCritical > 0 &&
@@ -1247,6 +1273,9 @@ function AuditRollupCard({
         <p className="mt-0.5 text-xs text-muted-foreground">{summary}</p>
         {trendLine && (
           <p className="mt-1 text-[11px] text-muted-foreground">{trendLine}</p>
+        )}
+        {sparkline && sparkline.length >= 2 && (
+          <AuditSparkline series={sparkline} />
         )}
       </CardHeader>
       <CardContent className="space-y-2 pt-0">
@@ -1482,6 +1511,66 @@ function renderAuditTrend(
     return 'No change from last run';
   }
   return `${segments.join(' · ')} from last run`;
+}
+
+/**
+ * Tiny SVG sparkline for the audit rollup card. Two stacked lines:
+ * critical findings on top (red-ish), warnings below (amber). Both
+ * normalised against the same y-domain so the relative magnitude
+ * reads correctly. No axis, no legend — the trend line above the
+ * sparkline carries the literal numbers; this is just the shape.
+ */
+function AuditSparkline({
+  series,
+}: {
+  series: Array<{ critical: number; warning: number }>;
+}) {
+  const w = 160;
+  const h = 28;
+  const padX = 1;
+  const padY = 2;
+  const max = Math.max(
+    1,
+    ...series.flatMap((p) => [p.critical, p.warning]),
+  );
+  const stepX =
+    series.length > 1 ? (w - padX * 2) / (series.length - 1) : 0;
+  const yFor = (v: number) =>
+    h - padY - ((h - padY * 2) * v) / max;
+  const pathFor = (key: 'critical' | 'warning') =>
+    series
+      .map((p, i) => `${i === 0 ? 'M' : 'L'}${padX + i * stepX} ${yFor(p[key])}`)
+      .join(' ');
+  return (
+    <svg
+      viewBox={`0 0 ${w} ${h}`}
+      className="mt-2 h-7 w-full max-w-[12rem]"
+      preserveAspectRatio="none"
+      aria-hidden
+    >
+      <path
+        d={pathFor('warning')}
+        fill="none"
+        stroke="rgb(251 191 36 / 0.6)"
+        strokeWidth={1.25}
+      />
+      <path
+        d={pathFor('critical')}
+        fill="none"
+        stroke="rgb(248 113 113 / 0.9)"
+        strokeWidth={1.5}
+      />
+      {/* Last-point dot for the critical series so the "now" reads. */}
+      {series.length > 0 && (
+        <circle
+          cx={padX + (series.length - 1) * stepX}
+          cy={yFor(series[series.length - 1]!.critical)}
+          r={1.75}
+          fill="rgb(248 113 113)"
+        />
+      )}
+    </svg>
+  );
 }
 
 
