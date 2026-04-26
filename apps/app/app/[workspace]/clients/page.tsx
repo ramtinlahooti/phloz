@@ -21,6 +21,7 @@ import { buildAppMetadata } from '@/lib/metadata';
 import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
 import { collectPlatformIds } from './[clientId]/platform-ids';
+import { BulkArchiveDormantButton } from './bulk-archive-button';
 
 export const metadata = buildAppMetadata({ title: 'Clients' });
 
@@ -365,6 +366,19 @@ export default async function ClientsListPage({
     sort !== 'recently_active' ||
     searchQuery !== '';
 
+  // Dormant = active + no activity in the last N days. Computed
+  // in JS over the already-fetched client rows so the button can
+  // render with an accurate count without a second DB query.
+  // Same definition the bulk-archive action uses server-side.
+  const DORMANT_THRESHOLD_DAYS = 90;
+  const dormantCutoff = new Date(
+    Date.now() - DORMANT_THRESHOLD_DAYS * 24 * 60 * 60 * 1000,
+  );
+  const dormantCount = active.filter((c) => {
+    const reference = c.lastActivityAt ?? c.createdAt;
+    return reference < dormantCutoff;
+  }).length;
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
       <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -387,6 +401,11 @@ export default async function ClientsListPage({
           <SearchInput
             placeholder="Search clients…"
             className="w-full sm:w-56"
+          />
+          <BulkArchiveDormantButton
+            workspaceId={workspaceId}
+            dormantCount={dormantCount}
+            thresholdDays={DORMANT_THRESHOLD_DAYS}
           />
           <ExportButton
             route={`/api/workspaces/${workspaceId}/clients/export`}
