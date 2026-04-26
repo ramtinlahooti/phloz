@@ -75,6 +75,65 @@ three; call sites are queued in NEXT-STEPS.
 
 ---
 
+## 2026-04-26 — `@`-mention autocomplete
+
+### Added — `<MentionComposer />` shared component
+
+New textarea-with-popover component that replaces the bare
+`<textarea>` for any composer where `@`-mentions matter. Type
+`@` and a popover appears with up to 6 matching workspace members
+(filtered against email + displayName, case-insensitive).
+Highlight + Enter / Tab inserts `@<email>` so the existing
+mention parser in `createCommentAction` resolves the canonical
+recipient without ambiguity.
+
+Keyboard:
+  - `↑` / `↓` move the highlight
+  - `Enter` / `Tab` insert the highlighted member
+  - `Esc` closes without inserting
+  - whitespace closes (the user typed past the mention)
+
+Match rule mirrors the parser's `(?<!\w)@<token>` so an email
+address mid-text doesn't trip the popover.
+
+### Wired — Two surfaces
+
+  - **Task detail dialog comment composer** — every workspace
+    member is offered. The `createCommentAction` parser then fans
+    out a `task_mention` notification email to each resolved
+    recipient.
+  - **Per-client message-thread internal-note composer** —
+    only when the compose mode is "Internal note" (team-only).
+    Email replies fall through to the plain textarea since the
+    recipient there is the client, not a workspace member, so
+    an `@` autocomplete would mis-suggest.
+
+`memberRows` is projected into a small `{id, displayName, email}`
+shape passed alongside the existing `MemberOption` (which keeps
+its formatted label for the assignee picker).
+
+### Files touched
+
+- `apps/app/components/mention-composer.tsx` (new)
+- `apps/app/app/[workspace]/tasks/task-detail-dialog.tsx`
+  (mentionMembers prop + composer wiring)
+- `apps/app/app/[workspace]/tasks/task-row.tsx` (forward through)
+- `apps/app/app/[workspace]/tasks/task-list-with-selection.tsx`
+  (forward through)
+- `apps/app/app/[workspace]/tasks/page.tsx` (project memberRows)
+- `apps/app/app/[workspace]/clients/[clientId]/page.tsx`
+  (project memberRows + pass to MessageThread)
+- `apps/app/app/[workspace]/messages/message-thread.tsx`
+  (gate on internal-note mode)
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean.
+- `pnpm --filter @phloz/app test:e2e` — 7/7 still green.
+
+---
+
 ## 2026-04-26 — Per-client Access tab + invite-flow pre-assignment
 
 ### Added — Per-client Access tab on the client detail page
