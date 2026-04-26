@@ -129,7 +129,11 @@ export default async function TeamPage({
 
       {canInvite && (
         <div className="mb-8">
-          <InviteMemberCard workspaceId={workspaceId} />
+          <InviteMemberCard
+            workspaceId={workspaceId}
+            clients={allClients}
+            allMembersSeeAllClients={allMembersSeeAllClients}
+          />
         </div>
       )}
 

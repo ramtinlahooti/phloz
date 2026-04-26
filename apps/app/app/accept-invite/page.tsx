@@ -113,15 +113,40 @@ export default async function AcceptInvitePage({ searchParams }: PageProps) {
         ? (user.user_metadata.full_name as string)
         : null;
 
-    await db.insert(schema.workspaceMembers).values({
-      workspaceId: invitation.workspaceId,
-      userId: user.id,
-      role: invitation.role,
-      displayName: fullName,
-      email: user.email ?? null,
-      invitedAt: invitation.createdAt,
-      acceptedAt: new Date(),
-    });
+    const [insertedMember] = await db
+      .insert(schema.workspaceMembers)
+      .values({
+        workspaceId: invitation.workspaceId,
+        userId: user.id,
+        role: invitation.role,
+        displayName: fullName,
+        email: user.email ?? null,
+        invitedAt: invitation.createdAt,
+        acceptedAt: new Date(),
+      })
+      .returning({ id: schema.workspaceMembers.id });
+
+    // Apply pre-selected client assignments (set when the inviter
+    // pre-selected clients on the invite). ON CONFLICT DO NOTHING
+    // covers the rare case where the same client was somehow
+    // pre-assigned twice (shouldn't happen per the API validation,
+    // but defense-in-depth). Insert silently skips any clients that
+    // were deleted between invite + accept.
+    if (
+      insertedMember &&
+      invitation.pendingClientIds &&
+      invitation.pendingClientIds.length > 0
+    ) {
+      await db
+        .insert(schema.workspaceMemberClientAccess)
+        .values(
+          invitation.pendingClientIds.map((clientId) => ({
+            workspaceMemberId: insertedMember.id,
+            clientId,
+          })),
+        )
+        .onConflictDoNothing();
+    }
 
     // Fire the accept event only on the first acceptance. An existing
     // membership means the user clicked the link a second time, which

@@ -44,6 +44,7 @@ import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
 import { RunAuditButton } from '../../run-audit-button';
 
+import { ClientAccessPanel } from './access-panel';
 import { ArchiveButton } from './archive-button';
 import { MuteClientButton } from './mute-client-button';
 import { ClientOverviewForm } from './client-overview-form';
@@ -89,6 +90,7 @@ const VALID_TABS = [
   'map',
   'audit',
   'files',
+  'access',
 ] as const;
 type ClientDetailTab = (typeof VALID_TABS)[number];
 
@@ -140,6 +142,7 @@ export default async function ClientDetailPage({
     recurringTemplateRows,
     workspaceRow,
     clientMuteRow,
+    clientAccessRows,
   ] = await Promise.all([
       db
         .select()
@@ -320,6 +323,7 @@ export default async function ClientDetailPage({
         .select({
           timezone: schema.workspaces.timezone,
           tier: schema.workspaces.tier,
+          settings: schema.workspaces.settings,
         })
         .from(schema.workspaces)
         .where(eq(schema.workspaces.id, workspaceId))
@@ -350,6 +354,14 @@ export default async function ClientDetailPage({
         )
         .limit(1)
         .then((rows) => rows[0] ?? null),
+      // Workspace members who have explicit access to this client.
+      // Owners + admins always see everything regardless; this list
+      // only matters for member + viewer access decisions when the
+      // policy is "Restricted by assignment".
+      db
+        .select({ workspaceMemberId: schema.workspaceMemberClientAccess.workspaceMemberId })
+        .from(schema.workspaceMemberClientAccess)
+        .where(eq(schema.workspaceMemberClientAccess.clientId, clientId)),
     ]);
 
   const workspaceTimezone = workspaceRow?.timezone ?? 'UTC';
@@ -441,6 +453,42 @@ export default async function ClientDetailPage({
     })
     .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
     .map(({ id, label }) => ({ id, label }));
+
+  // Access-tab projection: every workspace member with a flag for
+  // whether they have explicit access to THIS client. Owners +
+  // admins are always granted at the RLS layer regardless; the
+  // panel disables their toggle. Sorted self-first then alpha so
+  // the calling user finds themselves at the top.
+  const accessByMemberId = new Set(
+    clientAccessRows.map((r) => r.workspaceMemberId),
+  );
+  const accessMemberRows = memberRows
+    .map((m) => {
+      const isSelf = m.userId === user.id;
+      const label = isSelf
+        ? 'You'
+        : (m.displayName?.trim() ||
+           m.email?.trim() ||
+           `${(m.userId ?? 'unknown').slice(0, 8)}…`);
+      return {
+        id: m.id,
+        label,
+        email: m.email ?? null,
+        role: m.role,
+        hasAccess: accessByMemberId.has(m.id),
+        sortKey: isSelf ? '' : label.toLowerCase(),
+      };
+    })
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+    .map(({ sortKey: _sortKey, ...rest }) => rest);
+
+  // Workspace policy. Default true (existing behaviour) when the
+  // setting hasn't been touched. Single source of truth for the
+  // access tab's banner + the per-row badge logic.
+  const allMembersSeeAllClients =
+    ((workspaceRow?.settings as Record<string, unknown> | null)?.[
+      'all_members_see_all_clients'
+    ] as boolean | undefined) ?? true;
   const openTasks = tasksAsRows.filter(
     (t) => t.status !== 'done' && t.status !== 'archived',
   );
@@ -746,6 +794,9 @@ export default async function ClientDetailPage({
                 )}
               </TabsTrigger>
               <TabsTrigger value="files">Files</TabsTrigger>
+              {isPrivileged && (
+                <TabsTrigger value="access">Access</TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="overview" className="mt-6 space-y-6">
@@ -986,6 +1037,17 @@ export default async function ClientDetailPage({
                 assets={assetRows}
               />
             </TabsContent>
+
+            {isPrivileged && (
+              <TabsContent value="access" className="mt-6">
+                <ClientAccessPanel
+                  workspaceId={workspaceId}
+                  clientId={clientId}
+                  members={accessMemberRows}
+                  policyEnforced={!allMembersSeeAllClients}
+                />
+              </TabsContent>
+            )}
           </Tabs>
         </div>
 

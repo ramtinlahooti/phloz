@@ -17,6 +17,17 @@ export const invitations = pgTable(
     token: text('token').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * Client IDs the inviter pre-selected. On accept, the flow inserts
+     * one `workspace_member_client_access` row per id. Empty array
+     * (the default) means no pre-assignment — the existing behaviour.
+     * Only meaningful for member + viewer invitations when the
+     * workspace policy is "Restricted by assignment".
+     */
+    pendingClientIds: uuid('pending_client_ids')
+      .array()
+      .notNull()
+      .default([]),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
   },
   (table) => ({

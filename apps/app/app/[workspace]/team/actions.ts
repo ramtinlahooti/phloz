@@ -517,6 +517,91 @@ export async function setMemberClientAccessAction(
   return { ok: true, added: toAdd.length, removed: toRemove.length };
 }
 
+const setPairSchema = z.object({
+  workspaceId: uuid,
+  memberId: uuid,
+  clientId: uuid,
+  /** `true` grants access; `false` revokes. The action upserts /
+   *  deletes a single row of `workspace_member_client_access`. */
+  granted: z.boolean(),
+});
+
+/**
+ * Toggle a single (member, client) access pair. Sister action to
+ * `setMemberClientAccessAction` — that one replaces the full list
+ * for a member; this one is the per-pair toggle the client detail
+ * page's Access section uses (one row, one click).
+ *
+ * Owner/admin only; idempotent — toggling-on an already-granted
+ * pair or toggling-off an already-revoked pair is a no-op (the
+ * unique index + ON CONFLICT DO NOTHING handles that for us).
+ */
+export async function setMemberClientAccessPairAction(
+  input: z.infer<typeof setPairSchema>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = setPairSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.message };
+
+  let actor;
+  try {
+    actor = await requireAdminOrOwner(parsed.data.workspaceId);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const db = getDb();
+
+  // Confirm the target member belongs to this workspace.
+  const [member] = await db
+    .select({ id: schema.workspaceMembers.id })
+    .from(schema.workspaceMembers)
+    .where(
+      and(
+        eq(schema.workspaceMembers.id, parsed.data.memberId),
+        eq(schema.workspaceMembers.workspaceId, parsed.data.workspaceId),
+      ),
+    )
+    .limit(1);
+  if (!member) return { ok: false, error: 'member_not_found' };
+
+  if (parsed.data.granted) {
+    await db
+      .insert(schema.workspaceMemberClientAccess)
+      .values({
+        workspaceMemberId: parsed.data.memberId,
+        clientId: parsed.data.clientId,
+      })
+      .onConflictDoNothing();
+  } else {
+    await db
+      .delete(schema.workspaceMemberClientAccess)
+      .where(
+        and(
+          eq(
+            schema.workspaceMemberClientAccess.workspaceMemberId,
+            parsed.data.memberId,
+          ),
+          eq(
+            schema.workspaceMemberClientAccess.clientId,
+            parsed.data.clientId,
+          ),
+        ),
+      );
+  }
+
+  fireTrack(
+    'client_assigned',
+    { assignee_role: 'member' },
+    serverTrackContext(actor.user.id, parsed.data.workspaceId),
+  );
+
+  revalidatePath(`/${parsed.data.workspaceId}/team`);
+  revalidatePath(
+    `/${parsed.data.workspaceId}/clients/${parsed.data.clientId}`,
+  );
+  return { ok: true };
+}
+
 // ---------------------------------------------------------------------------
 // Workspace setting: all_members_see_all_clients
 // ---------------------------------------------------------------------------
