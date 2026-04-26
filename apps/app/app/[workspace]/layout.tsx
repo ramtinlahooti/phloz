@@ -7,6 +7,7 @@ import { getDb, schema } from '@phloz/db/client';
 import { AnalyticsIdentify } from '@/components/analytics-identify';
 import { CommandPalette } from '@/components/command-palette';
 import { DashboardShell } from '@/components/dashboard-shell';
+import { KeyboardShortcutsDialog } from '@/components/keyboard-shortcuts-dialog';
 
 type LayoutParams = { workspace: string };
 
@@ -177,6 +178,7 @@ export default async function WorkspaceLayout({
         role={membership.role}
       />
       <CommandPalette workspaceId={workspace.id} />
+      <KeyboardShortcutsDialog />
       <DashboardShell
         workspace={{
           id: workspace.id,
