@@ -70,10 +70,34 @@ type FeedItem = {
 
 const FEED_LIMIT = 20;
 
+type ActivityFilter = 'all' | 'task' | 'message' | 'asset' | 'approval';
+const ACTIVITY_FILTERS: ActivityFilter[] = [
+  'all',
+  'task',
+  'message',
+  'asset',
+  'approval',
+];
+const ACTIVITY_LABELS: Record<ActivityFilter, string> = {
+  all: 'All',
+  task: 'Tasks',
+  message: 'Messages',
+  asset: 'Files',
+  approval: 'Approvals',
+};
+
+function isActivityFilter(v: string | undefined): v is ActivityFilter {
+  return !!v && (ACTIVITY_FILTERS as string[]).includes(v);
+}
+
+type WorkspaceSearchParams = { activity?: string };
+
 export default async function WorkspaceOverviewPage({
   params,
+  searchParams,
 }: {
   params: Promise<RouteParams>;
+  searchParams: Promise<WorkspaceSearchParams>;
 }) {
   const { workspace: workspaceId } = await params;
   // Hard guard against stray non-UUID segments (favicon.ico, robots.txt,
@@ -81,6 +105,10 @@ export default async function WorkspaceOverviewPage({
   // parallel — without this the page's Promise.all fires DB queries
   // with a malformed workspace id and burns Supabase pool connections.
   assertValidWorkspaceId(workspaceId);
+  const sp = await searchParams;
+  const activityFilter: ActivityFilter = isActivityFilter(sp.activity)
+    ? sp.activity
+    : 'all';
   const db = getDb();
 
   const now = new Date();
@@ -636,7 +664,14 @@ export default async function WorkspaceOverviewPage({
   }
 
   feed.sort((a, b) => b.at.getTime() - a.at.getTime());
-  const trimmed = feed.slice(0, 30);
+  // Optional kind filter from `?activity=`. Apply BEFORE the slice so
+  // a busy task week doesn't push messages off the feed when the
+  // user has filtered to messages.
+  const filteredFeed =
+    activityFilter === 'all'
+      ? feed
+      : feed.filter((item) => item.kind === activityFilter);
+  const trimmed = filteredFeed.slice(0, 30);
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
@@ -796,13 +831,45 @@ export default async function WorkspaceOverviewPage({
       <section className="mt-10 grid gap-6 md:grid-cols-3">
         {/* Activity feed — 2/3 width on desktop */}
         <div className="md:col-span-2">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Recent activity
-          </h2>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Recent activity
+            </h2>
+            <div className="flex flex-wrap items-center gap-1 text-xs">
+              {ACTIVITY_FILTERS.map((f) => {
+                const isActive = activityFilter === f;
+                const href =
+                  f === 'all'
+                    ? `/${workspaceId}`
+                    : `/${workspaceId}?activity=${f}`;
+                return (
+                  <Link
+                    key={f}
+                    href={href}
+                    className={`rounded-full border px-2.5 py-0.5 transition-colors ${
+                      isActive
+                        ? 'border-primary bg-primary/10 text-foreground'
+                        : 'border-border bg-card text-muted-foreground hover:border-primary/60 hover:text-foreground'
+                    }`}
+                  >
+                    {ACTIVITY_LABELS[f]}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
           {trimmed.length === 0 ? (
             <EmptyState
-              title="Nothing has happened yet"
-              description="Add a client, post a note, upload a file — this feed will catch it."
+              title={
+                activityFilter === 'all'
+                  ? 'Nothing has happened yet'
+                  : `No ${ACTIVITY_LABELS[activityFilter].toLowerCase()} yet`
+              }
+              description={
+                activityFilter === 'all'
+                  ? 'Add a client, post a note, upload a file — this feed will catch it.'
+                  : 'Switch the filter back to All or try a different category.'
+              }
             />
           ) : (
             <Card>
