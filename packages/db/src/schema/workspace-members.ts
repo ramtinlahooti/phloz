@@ -64,6 +64,17 @@ export const workspaceMembers = pgTable(
       mode: 'date',
     }),
     /**
+     * Last time the member visited /[workspace]/mentions. The
+     * sidebar Mentions badge counts comments + internal notes
+     * created after this timestamp. NULL = never visited (every
+     * mention counts as unread until they open the inbox).
+     * Updated by `markMentionsSeenAction` on every visit.
+     */
+    mentionsSeenAt: timestamp('mentions_seen_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    /**
      * Per-member auto-applied saved view for `/tasks`. When set, a
      * bare `/tasks` landing redirects to `/tasks?<view.searchParams>`
      * (the "All" pill goes to `/tasks?view=all` to bypass).

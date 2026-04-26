@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
-import { and, count, eq, inArray, isNotNull, isNull, lt, not } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, isNotNull, isNull, lt, not, or, sql } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
 import { getCurrentUser } from '@phloz/auth/session';
@@ -115,6 +115,7 @@ export default async function WorkspaceLayout({
     overdueMineCountRow,
     inboundMessages,
     outboundMessages,
+    unreadMentionsCountRow,
   ] = await Promise.all([
     db
       .select({
@@ -174,7 +175,35 @@ export default async function WorkspaceLayout({
           not(eq(schema.messages.channel, 'internal_note')),
         ),
       ),
+    // Unread @-mentions count for the sidebar badge. Counts comments
+    // + internal notes mentioning the calling user that were created
+    // after their `mentions_seen_at` (or all of them when seen_at is
+    // null — never visited the inbox). Two cheap GIN-indexed queries
+    // OR'd into one count via a UNION ALL — single round-trip.
+    db
+      .select({ c: count() })
+      .from(
+        sql`(
+          SELECT id, created_at FROM ${schema.comments}
+          WHERE ${schema.comments.workspaceId} = ${workspaceId}
+            AND ${schema.comments.mentions} @> ARRAY[${user.id}]::uuid[]
+            AND (${membership.mentionsSeenAt}::timestamptz IS NULL
+                 OR ${schema.comments.createdAt} > ${membership.mentionsSeenAt}::timestamptz)
+          UNION ALL
+          SELECT id, created_at FROM ${schema.messages}
+          WHERE ${schema.messages.workspaceId} = ${workspaceId}
+            AND ${schema.messages.mentions} @> ARRAY[${user.id}]::uuid[]
+            AND (${membership.mentionsSeenAt}::timestamptz IS NULL
+                 OR ${schema.messages.createdAt} > ${membership.mentionsSeenAt}::timestamptz)
+        ) AS unread_mentions`,
+      )
+      .then((r) => r[0]?.c ?? 0),
   ]);
+
+  // Suppress unused — kept ergonomic for future extension into a
+  // multi-table OR query without re-importing.
+  void or;
+  void gt;
 
   // Unreplied-clients rollup: for each client, does the latest inbound
   // post-date the latest outbound? Same logic as the dashboard
@@ -228,6 +257,7 @@ export default async function WorkspaceLayout({
         navBadges={{
           tasks: overdueMineCountRow,
           messages: unrepliedClientCount,
+          mentions: unreadMentionsCountRow,
         }}
       >
         {/* Vacation-mode banner. Layout-level so it appears on

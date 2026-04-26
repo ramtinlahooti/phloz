@@ -10,6 +10,8 @@ import { MentionBody } from '@/components/mention-body';
 import { buildAppMetadata } from '@/lib/metadata';
 import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
+import { MarkMentionsSeen } from './mark-seen';
+
 export const metadata = buildAppMetadata({ title: 'Mentions' });
 
 type RouteParams = { workspace: string };
@@ -207,6 +209,7 @@ export default async function MentionsInboxPage({
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
+      <MarkMentionsSeen workspaceId={workspaceId} />
       <header className="mb-6">
         <h1 className="text-3xl font-semibold tracking-tight">Mentions</h1>
         <p className="mt-1 text-sm text-muted-foreground">

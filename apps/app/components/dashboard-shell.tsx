@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import {
+  AtSign,
   ExternalLink,
   LayoutDashboard,
   Users,
@@ -30,6 +31,7 @@ export type DashboardShellProps = {
   navBadges?: {
     tasks?: number;
     messages?: number;
+    mentions?: number;
   };
   children: React.ReactNode;
 };
@@ -74,6 +76,14 @@ export function DashboardShell({
       icon: MessagesSquare,
       badgeKey: 'messages',
       badgeTitle: 'Clients waiting on a reply',
+      badgeTone: 'amber',
+    },
+    {
+      label: 'Mentions',
+      href: `${base}/mentions`,
+      icon: AtSign,
+      badgeKey: 'mentions',
+      badgeTitle: 'New @-mentions since you last looked',
       badgeTone: 'amber',
     },
     { label: 'Team', href: `${base}/team`, icon: UsersRound },
