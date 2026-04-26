@@ -15,6 +15,10 @@ import {
 } from '@phloz/ui';
 
 import { MentionBody } from '@/components/mention-body';
+import {
+  MentionComposer,
+  type MentionMember,
+} from '@/components/mention-composer';
 
 import {
   postInternalNoteAction,
@@ -48,12 +52,18 @@ export function MessageThread({
   clientEmail,
   inboundAddress,
   messages,
+  mentionMembers,
 }: {
   workspaceId: string;
   clientId: string;
   clientEmail: string | null;
   inboundAddress: string | null;
   messages: MessageItem[];
+  /** Workspace members for the internal-note composer's `@`
+   *  autocomplete. Email replies don't get autocomplete (the
+   *  recipient is the client, not a teammate). Optional — falls
+   *  back to a plain textarea when omitted. */
+  mentionMembers?: MentionMember[];
 }) {
   // Group by threadId to show multiple conversations.
   const threads = groupThreads(messages);
@@ -105,6 +115,7 @@ export function MessageThread({
         clientEmail={clientEmail}
         defaultSubject={threads[0]?.messages[0]?.subject ?? null}
         threadId={threads[0]?.threadId ?? undefined}
+        mentionMembers={mentionMembers}
       />
     </div>
   );
@@ -180,12 +191,14 @@ function ComposeForm({
   clientEmail,
   defaultSubject,
   threadId,
+  mentionMembers,
 }: {
   workspaceId: string;
   clientId: string;
   clientEmail: string | null;
   defaultSubject: string | null;
   threadId?: string;
+  mentionMembers?: MentionMember[];
 }) {
   const [mode, setMode] = useState<'email' | 'note'>(
     clientEmail ? 'email' : 'note',
@@ -346,20 +359,38 @@ function ComposeForm({
         </TabsContent>
       </Tabs>
 
-      <textarea
-        value={body}
-        onChange={(e) => {
-          setBody(e.target.value);
-          if (restoredDraft) setRestoredDraft(false);
-        }}
-        rows={4}
-        placeholder={
-          mode === 'email'
-            ? 'Write your reply…'
-            : 'Jot down a team-only note…'
-        }
-        className="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
-      />
+      {/* Internal notes get @-mention autocomplete (recipient is the
+          team). Email replies don't — the recipient is the client,
+          not a workspace member, so a mention picker would
+          mis-suggest. */}
+      {mode === 'note' && mentionMembers && mentionMembers.length > 0 ? (
+        <MentionComposer
+          value={body}
+          onChange={(next) => {
+            setBody(next);
+            if (restoredDraft) setRestoredDraft(false);
+          }}
+          members={mentionMembers}
+          rows={4}
+          placeholder="Jot down a team-only note…  Type @ to mention a teammate."
+          className="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+        />
+      ) : (
+        <textarea
+          value={body}
+          onChange={(e) => {
+            setBody(e.target.value);
+            if (restoredDraft) setRestoredDraft(false);
+          }}
+          rows={4}
+          placeholder={
+            mode === 'email'
+              ? 'Write your reply…'
+              : 'Jot down a team-only note…'
+          }
+          className="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+        />
+      )}
 
       <div className="mt-3 flex items-center justify-between gap-3">
         <div className="text-[11px] text-muted-foreground">

@@ -961,6 +961,7 @@ export default async function ClientDetailPage({
                 clientEmail={client.businessEmail ?? null}
                 inboundAddress={inboundAddressRow?.address ?? null}
                 messages={messages}
+                mentionMembers={mentionMembers}
               />
             </TabsContent>
 
