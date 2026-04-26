@@ -1,13 +1,13 @@
-# Next Steps (as of 2026-04-26 v6)
+# Next Steps (as of 2026-04-26 v7)
 
 ## Branch state
 
 `claude/inspiring-wright-2ca122` is the active feature branch and
-sits 26 commits ahead of `main`. Latest HEAD: `8df53cc` (Playwright
-on apps/app unauth routes).
+sits 29 commits ahead of `main`. Latest HEAD: `0e030ce`
+(`redirect_to` param alignment).
 
 `pnpm check` 29/29 green, **zero lint warnings**. Both apps build
-clean. **Playwright** — marketing 11/11 + app 6/6, all green
+clean. **Playwright** — marketing 11/11 + app 7/7, all green
 locally on chromium-headless-shell. CI runs both via a matrixed
 `e2e` job on every PR.
 
@@ -23,16 +23,7 @@ locally on chromium-headless-shell. CI runs both via a matrixed
 
 ## Top backlog (next session)
 
-1. **Middleware redirect to `/login` for unauthenticated visits to
-   protected routes.** Today the dashboard layout throws via
-   `requireUser()` and the user gets a generic error page —
-   acceptable as a security guard, awful as UX. Wire
-   `apps/app/middleware.ts` to call `updateSession()` from
-   `@phloz/auth` (already exported), check the user, and redirect
-   to `/login?next=<original-path>` on miss. Then strengthen the
-   Playwright `protected route guard` test to assert on the
-   redirect URL instead of just absence-of-content.
-2. **Authenticated Playwright tests for `apps/app`.** Need a test
+1. **Authenticated Playwright tests for `apps/app`.** Need a test
    DB + seeded fixtures + a Playwright auth setup that signs into
    a known test account once and reuses storage state. Approach:
    - Either a throwaway Supabase project, or a CI Postgres +
@@ -46,19 +37,23 @@ locally on chromium-headless-shell. CI runs both via a matrixed
    → add client; client portal magic link; billing checkout
    (Stripe test mode); tracking-map node CRUD; audit Run-now →
    cron simulation → snapshot lands.
-3. **PostHog wiring.** `NEXT_PUBLIC_POSTHOG_KEY` + `POSTHOG_API_KEY`
+2. **PostHog wiring.** `NEXT_PUBLIC_POSTHOG_KEY` + `POSTHOG_API_KEY`
    in Vercel. Without them, `track()` calls log-only — we have a
    pile of typed events but no funnel data yet.
-4. **GA4 Measurement Protocol** for server-side conversion events
+3. **GA4 Measurement Protocol** for server-side conversion events
    (`upgrade_tier`, `payment_failed`). `GA4_MEASUREMENT_ID` +
    `GA4_API_SECRET` in Vercel.
-5. **Calendar hourly axis on week view.** Today's week view shows
+4. **Calendar hourly axis on week view.** Today's week view shows
    tasks stacked in chronological order within each day. A 24-row
    hourly axis with tasks positioned by `dueDate` hour would let
    users plan time-blocked work.
-6. **Sentry wiring** beyond the SDK init — confirm DSN is set in
+5. **Sentry wiring** beyond the SDK init — confirm DSN is set in
    Vercel, set up a release tag in CI, verify sourcemaps upload.
    Currently configured but never seen a real error event.
+6. **Remove the `requireUser()` calls from layouts** that the
+   proxy now handles. The layouts still throw on null user as a
+   defense-in-depth check, but the redirect should be the primary
+   UX. Audit `apps/app/app/(dashboard)/**/layout.tsx` and similar.
 7. **Pre-existing low-impact known issue:**
    `workspace_members.email` can lag after Supabase email change.
    Documented in KNOWN-ISSUES; deferred until first real agency

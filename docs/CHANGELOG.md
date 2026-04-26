@@ -4,6 +4,55 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-26 — Proxy redirects unauthenticated visits to `/login`
+
+### Added — Protected-route enforcement at the edge
+
+`apps/app/proxy.ts` now reads the user from `updateSession()` and
+redirects unauthenticated visits to protected paths to
+`/login?redirect_to=<original>`. Replaces the previous "page
+layout calls `requireUser()` and throws" pattern, which gave
+visitors a generic error page instead of the login form. The login
+form already reads `?redirect_to` and calls
+`router.push(redirectTo)` after successful auth — wiring the same
+param at the proxy closes the round-trip.
+
+Allow list (paths that bypass the redirect):
+  - `/`, `/login`, `/signup`, `/forgot-password`, `/reset-password`
+  - `/auth/callback` (Supabase auth handshake)
+  - `/portal/*` (client portal magic-link landing — auth via
+    portal cookie, not Supabase user)
+  - `/api/webhooks/*` (Stripe / Resend / Inngest webhooks —
+    signature-verified server-side)
+  - `/api/inngest` (Inngest's own signed envelope)
+
+The cookie-rotation behaviour from before is preserved — proxy
+still calls `updateSession()` first so an active session refreshes
+on every request.
+
+### Changed — Strengthened the protected-route Playwright test
+
+The smoke test previously asserted only that dashboard content
+wasn't rendered. Now it asserts on the redirect URL match
+(`/\/login\?redirect_to=/`) AND keeps the absence-of-content
+check as belt-and-braces. A second test verifies the original
+path is encoded into the `redirect_to` param so post-login
+navigation lands on the right page.
+
+### Files touched
+
+- `apps/app/proxy.ts` (proxy → redirect on unauth)
+- `apps/app/e2e/auth.spec.ts` (strengthened guard tests)
+
+### Verified
+
+- `pnpm --filter @phloz/app test:e2e` — 7/7 passed in 5.0s.
+- `pnpm --filter @phloz/app build` — clean. `Proxy (Middleware)`
+  registered in the build output.
+- `pnpm check` — 29/29 green.
+
+---
+
 ## 2026-04-26 — Playwright on `apps/app` unauthenticated routes
 
 ### Added — `apps/app` Playwright scaffold + 6 smoke tests
