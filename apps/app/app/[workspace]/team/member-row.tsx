@@ -1,6 +1,14 @@
 'use client';
 
-import { BellOff, Crown, MoreHorizontal, Trash2, UserCog, X } from 'lucide-react';
+import {
+  BellOff,
+  Crown,
+  Mail,
+  MoreHorizontal,
+  Trash2,
+  UserCog,
+  X,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
@@ -21,6 +29,7 @@ import {
 
 import {
   changeMemberRoleAction,
+  nudgeMemberDigestAction,
   removeMemberAction,
   revokeInvitationAction,
 } from './actions';
@@ -107,6 +116,23 @@ export function MemberRow({
     });
   }
 
+  async function nudgeDigest() {
+    startTransition(async () => {
+      const res = await nudgeMemberDigestAction({
+        workspaceId,
+        memberId: member.id,
+      });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success('Digest queued', {
+        description:
+          "They'll get one ad-hoc email even if they've muted the daily digest.",
+      });
+    });
+  }
+
   return (
     <>
       <li className="flex items-center gap-4 px-6 py-4">
@@ -179,6 +205,9 @@ export function MemberRow({
                 </>
               )}
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={nudgeDigest}>
+                <Mail className="size-3.5" /> Send digest now
+              </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={remove}
                 className="text-red-400"

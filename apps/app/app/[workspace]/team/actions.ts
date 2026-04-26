@@ -9,6 +9,7 @@ import { ROLES, type Role } from '@phloz/config';
 import { getDb, schema } from '@phloz/db/client';
 
 import { fireTrack, serverTrackContext } from '@/lib/analytics';
+import { inngest } from '@/inngest';
 
 const uuid = z.string().uuid();
 
@@ -333,5 +334,75 @@ export async function revokeInvitationAction(input: {
     );
 
   revalidatePath(`/${input.workspaceId}/team`);
+  return { ok: true };
+}
+
+const nudgeSchema = z.object({
+  workspaceId: uuid,
+  memberId: uuid,
+});
+
+/**
+ * Send the daily digest to one specific member right now. Owner /
+ * admin only — for nudging a teammate who muted the digest, or just
+ * sharing what the morning email looks like with someone who hasn't
+ * configured it yet.
+ *
+ * Implementation: fires the `digest/send-daily` Inngest event with
+ * the target member's `membershipId`. The cron's manual path
+ * filters its `workspace_members` query to that single row even
+ * when the target has `digest_enabled = false` — a nudge to a muted
+ * teammate still goes through.
+ *
+ * Inngest's API key being absent returns 200 (no-op); `ok: true`
+ * doesn't guarantee delivery. Toast caveat lives in the UI.
+ */
+export async function nudgeMemberDigestAction(
+  input: z.infer<typeof nudgeSchema>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = nudgeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'invalid_input' };
+
+  let actor;
+  try {
+    actor = await requireAdminOrOwner(parsed.data.workspaceId);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  // Validate the target membership belongs to this workspace before
+  // emitting an event — defense-in-depth against a stale UI pushing
+  // a foreign membership id.
+  const db = getDb();
+  const [target] = await db
+    .select({ id: schema.workspaceMembers.id })
+    .from(schema.workspaceMembers)
+    .where(
+      and(
+        eq(schema.workspaceMembers.id, parsed.data.memberId),
+        eq(schema.workspaceMembers.workspaceId, parsed.data.workspaceId),
+      ),
+    )
+    .limit(1);
+  if (!target) {
+    return { ok: false, error: 'member_not_found' };
+  }
+
+  try {
+    await inngest.send({
+      name: 'digest/send-daily',
+      data: {
+        workspaceId: parsed.data.workspaceId,
+        membershipId: target.id,
+      },
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      error: `inngest_send_failed: ${(err as Error).message}`,
+    };
+  }
+
+  void actor;
   return { ok: true };
 }
