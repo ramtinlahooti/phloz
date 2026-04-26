@@ -146,6 +146,8 @@ export default function PricingPage() {
         })}
       </div>
 
+      <ComparisonTable tiers={tiers} />
+
       <section className="mt-24">
         <h2 className="text-center text-2xl font-semibold tracking-tight text-foreground">
           Frequently asked questions
@@ -160,5 +162,180 @@ export default function PricingPage() {
         </dl>
       </section>
     </div>
+  );
+}
+
+/** Side-by-side tier matrix. Pulls every numeric cap from the same
+ *  `publicTiers()` source as the cards above, so adding a tier or
+ *  changing a limit in `packages/billing/tiers.ts` updates this table
+ *  with no edits here. Yes/no rows hardcode the platform features
+ *  that are universal vs gated. Horizontal scroll on narrow screens
+ *  keeps the matrix scannable without truncation. */
+function ComparisonTable({ tiers }: { tiers: TierConfig[] }) {
+  const formatLimit = (limit: number | 'unlimited'): string =>
+    limit === 'unlimited' ? 'Unlimited' : limit.toLocaleString('en-US');
+
+  return (
+    <section className="mt-24">
+      <h2 className="text-center text-2xl font-semibold tracking-tight text-foreground">
+        Compare plans
+      </h2>
+      <p className="mx-auto mt-2 max-w-2xl text-center text-sm text-muted-foreground">
+        Every plan includes the core platform — tracking infrastructure
+        map, agency CRM, unlimited client portal users. Higher tiers
+        raise the caps on clients, seats, and recurring work.
+      </p>
+      <div className="mt-8 overflow-x-auto rounded-xl border border-border/60">
+        <table className="w-full min-w-[640px] border-collapse text-sm">
+          <thead className="bg-card/40">
+            <tr className="border-b border-border/60">
+              <th
+                scope="col"
+                className="px-4 py-3 text-left font-medium text-foreground/80"
+              >
+                Feature
+              </th>
+              {tiers.map((tier) => {
+                const isFeatured = tier.name === 'growth';
+                return (
+                  <th
+                    key={tier.name}
+                    scope="col"
+                    className={`px-4 py-3 text-center font-semibold ${
+                      isFeatured ? 'text-foreground' : 'text-foreground/80'
+                    }`}
+                  >
+                    <div className="flex flex-col items-center gap-0.5">
+                      <span>{tier.displayName}</span>
+                      {isFeatured && (
+                        <span className="text-[10px] font-medium uppercase tracking-wide text-primary">
+                          Most popular
+                        </span>
+                      )}
+                    </div>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody className="[&>tr]:border-t [&>tr]:border-border/60">
+            <ComparisonRow
+              label="Active clients"
+              tiers={tiers}
+              cell={(t) => formatLimit(t.clientLimit)}
+            />
+            <ComparisonRow
+              label="Included paid seats"
+              tiers={tiers}
+              cell={(t) => formatLimit(t.includedSeats)}
+            />
+            <ComparisonRow
+              label="Extra seat price"
+              tiers={tiers}
+              cell={(t) =>
+                t.extraSeatPriceUsd === null
+                  ? '—'
+                  : `${formatUsd(t.extraSeatPriceUsd)}/mo`
+              }
+            />
+            <ComparisonRow
+              label="Recurring task templates"
+              tiers={tiers}
+              cell={(t) => formatLimit(t.recurringTemplateLimit)}
+            />
+            <ComparisonRow
+              label="Tracking infrastructure map"
+              tiers={tiers}
+              cell={() => <CheckCell />}
+            />
+            <ComparisonRow
+              label="Client portal users"
+              tiers={tiers}
+              cell={() => 'Unlimited'}
+            />
+            <ComparisonRow
+              label="Email + inbound threading"
+              tiers={tiers}
+              cell={(t) => (t.name === 'starter' ? '—' : <CheckCell />)}
+            />
+            <ComparisonRow
+              label="Priority support"
+              tiers={tiers}
+              cell={(t) =>
+                t.name === 'business' || t.name === 'scale' ? (
+                  <CheckCell />
+                ) : (
+                  '—'
+                )
+              }
+            />
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-3 text-center text-xs text-muted-foreground">
+        Need more than {formatLimit(tiers[tiers.length - 1]?.clientLimit ?? 'unlimited')}{' '}
+        clients?{' '}
+        <a className="underline hover:text-foreground" href="/contact">
+          Talk to us about Enterprise
+        </a>
+        .
+      </p>
+    </section>
+  );
+}
+
+function ComparisonRow({
+  label,
+  tiers,
+  cell,
+}: {
+  label: string;
+  tiers: TierConfig[];
+  cell: (tier: TierConfig) => React.ReactNode;
+}) {
+  return (
+    <tr>
+      <th
+        scope="row"
+        className="px-4 py-3 text-left font-medium text-foreground/80"
+      >
+        {label}
+      </th>
+      {tiers.map((tier) => (
+        <td
+          key={tier.name}
+          className={`px-4 py-3 text-center ${
+            tier.name === 'growth'
+              ? 'bg-primary/[0.04] text-foreground'
+              : 'text-muted-foreground'
+          }`}
+        >
+          {cell(tier)}
+        </td>
+      ))}
+    </tr>
+  );
+}
+
+function CheckCell() {
+  return (
+    <span
+      className="inline-flex items-center justify-center text-primary"
+      aria-label="Included"
+      title="Included"
+    >
+      <svg
+        viewBox="0 0 20 20"
+        className="size-4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M4 10.5l4 4 8-9" />
+      </svg>
+    </span>
   );
 }
