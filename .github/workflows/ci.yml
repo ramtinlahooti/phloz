@@ -114,6 +114,66 @@ jobs:
       - name: Assert every tenant table has rowsecurity=true
         run: pnpm --filter @phloz/db check:rls-invariants
 
+  e2e-marketing:
+    name: Playwright — marketing smoke
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Browser cache: keyed on Playwright version so a SDK bump
+      # invalidates cleanly. ~92 MiB compressed; first run on a new
+      # version warms the cache for every subsequent run.
+      - name: Get Playwright version
+        id: pw-version
+        run: |
+          version=$(node -p "require('./apps/web/node_modules/@playwright/test/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
+
+      - name: Install chromium (cache miss only)
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter @phloz/web exec playwright install --with-deps chromium
+
+      # System deps for chromium need root even on cache hit (the
+      # cached browser binary still needs apt libraries to launch).
+      - name: Install system deps for chromium
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter @phloz/web exec playwright install-deps chromium
+
+      - name: Run Playwright smoke tests
+        run: pnpm --filter @phloz/web test:e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
+
+      - name: Upload trace artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: apps/web/test-results/
+          retention-days: 7
+
   pgtap:
     name: pgTAP — workspace-isolation
     runs-on: ubuntu-latest
