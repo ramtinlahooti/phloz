@@ -10,6 +10,8 @@ import { SearchInput } from '@/components/search-input';
 import { buildAppMetadata } from '@/lib/metadata';
 import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
+import { InboxKeyboardNav } from './inbox-keyboard-nav';
+
 export const metadata = buildAppMetadata({ title: 'Messages' });
 
 type RouteParams = { workspace: string };
@@ -263,10 +265,15 @@ export default async function MessagesInboxPage({
         />
       ) : (
         <Card>
+          <InboxKeyboardNav />
           <CardContent className="p-0">
             <ul className="divide-y divide-border/60">
               {filteredRows.map((m) => (
-                <li key={m.id}>
+                <li
+                  key={m.id}
+                  data-inbox-row={m.id}
+                  className="data-[focused=true]:bg-primary/5 data-[focused=true]:ring-1 data-[focused=true]:ring-primary/40"
+                >
                   <Link
                     href={`/${workspaceId}/clients/${m.clientId}`}
                     className="flex items-start gap-3 px-4 py-3 hover:bg-muted/50"

@@ -86,6 +86,12 @@ export function KeyboardShortcutsDialog() {
             <Row keys={['Drag the grip']}>Reorder via mouse</Row>
           </Section>
 
+          <Section title="Messages inbox">
+            <Row keys={['j']}>Focus next thread</Row>
+            <Row keys={['k']}>Focus previous thread</Row>
+            <Row keys={['Enter']}>Open the focused thread</Row>
+          </Section>
+
           <Section title="Tracking map (canvas tab + full-screen)">
             <Row keys={['n']}>Add a node</Row>
             <Row keys={['/']}>Search nodes</Row>
