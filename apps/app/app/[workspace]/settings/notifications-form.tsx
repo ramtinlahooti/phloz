@@ -5,6 +5,8 @@ import { useTransition } from 'react';
 
 import { Button, toast } from '@phloz/ui';
 
+import { DEFAULT_DIGEST_HOUR, formatHour } from '@/lib/format-hour';
+
 import {
   previewDigestAction,
   setDigestEnabledAction,
@@ -22,8 +24,6 @@ type Props = {
     digestHour: number | null;
   };
 };
-
-const DEFAULT_DIGEST_HOUR = 9;
 
 /**
  * Per-member notification preferences. Today: daily-digest opt-in,
@@ -160,12 +160,3 @@ export function NotificationsForm({
 }
 
 const HOURS: number[] = Array.from({ length: 24 }, (_, i) => i);
-
-function formatHour(h: number): string {
-  // 12-hour with AM/PM — easier to scan than 24-hour for end users.
-  // Keeps the same convention the existing copy used ("9 AM").
-  if (h === 0) return '12 AM';
-  if (h === 12) return '12 PM';
-  if (h < 12) return `${h} AM`;
-  return `${h - 12} PM`;
-}

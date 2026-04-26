@@ -2,6 +2,7 @@
 
 import {
   BellOff,
+  Clock,
   Crown,
   Mail,
   MoreHorizontal,
@@ -26,6 +27,8 @@ import {
   DropdownMenuTrigger,
   toast,
 } from '@phloz/ui';
+
+import { DEFAULT_DIGEST_HOUR, formatHour } from '@/lib/format-hour';
 
 import {
   changeMemberRoleAction,
@@ -62,6 +65,13 @@ export type MemberRowView = {
    * exposed — preference is personal.
    */
   digestEnabled: boolean;
+  /**
+   * Per-member preferred digest hour-of-day in workspace tz. NULL =
+   * workspace default (9 AM). The badge only renders when this differs
+   * from the default — owners spot-check non-standard preferences
+   * without scanning every row.
+   */
+  digestHour: number | null;
 };
 
 export function MemberRow({
@@ -167,6 +177,18 @@ export function MemberRow({
             Digest off
           </Badge>
         )}
+        {member.digestEnabled &&
+          member.digestHour !== null &&
+          member.digestHour !== DEFAULT_DIGEST_HOUR && (
+            <Badge
+              variant="outline"
+              className="gap-1 text-[10px] text-muted-foreground"
+              title={`This member receives the daily digest at ${formatHour(member.digestHour)} (workspace timezone). Members set this in their own Settings → Notifications.`}
+            >
+              <Clock className="size-3" />
+              {formatHour(member.digestHour)}
+            </Badge>
+          )}
         {canManage && canActOnThisRole && (
           <DropdownMenu>
             <DropdownMenuTrigger className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground">

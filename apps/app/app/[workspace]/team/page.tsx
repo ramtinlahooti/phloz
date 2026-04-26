@@ -59,6 +59,7 @@ export default async function TeamPage({
     isSelf: m.userId === user.id,
     viewerIsOwner,
     digestEnabled: m.digestEnabled,
+    digestHour: m.digestHour,
   }));
 
   return (
