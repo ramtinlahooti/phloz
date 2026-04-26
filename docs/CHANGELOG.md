@@ -75,6 +75,65 @@ three; call sites are queued in NEXT-STEPS.
 
 ---
 
+## 2026-04-26 — Per-member client-access UI (Phase 1)
+
+### Added — Settings → Client access policy toggle
+
+Owner/admin-only card in `/settings#access` with two radio
+options:
+
+  - **Everyone sees everything** (default for new workspaces)
+  - **Restricted by assignment** — members + viewers only see
+    clients they've been explicitly assigned to
+
+Stored in `workspaces.settings.all_members_see_all_clients`. RLS
+already enforces via `phloz_is_assigned_to(client_id)` so flipping
+the toggle takes effect on the next request.
+
+### Added — Team page → Manage client access dialog
+
+Per-member dropdown item that opens a dialog with every active
+workspace client + checkboxes, a typeahead search, and Select-all
+/ Clear shortcuts. Diff-based save (`setMemberClientAccessAction`)
+only INSERTs adds + DELETEs removals so a concurrent reader can't
+briefly see an empty list during a delete-all-then-insert. Toast
+returns `+N/−N` counts so the user verifies the change landed.
+
+### Added — Per-row "N clients" badge
+
+Renders on member + viewer rows when the workspace policy is
+"Restricted by assignment". Owner / admin rows never show it —
+they always see everything regardless of the table.
+
+### Architecture
+
+`docs/DECISIONS.md` gains a new entry documenting Phase 1 + the
+deferred Phase 2 (Teams + Client Groups). Full schema plan +
+access-resolution rule + YAGNI rationale for shipping Phase 1
+first. "Viewer" role naming stays (Linear / Notion / Asana use
+the same term for internal read-only seats).
+
+### Files touched
+
+- `apps/app/app/[workspace]/team/actions.ts` (new
+  `setMemberClientAccessAction`, `setAllMembersSeeAllClientsAction`)
+- `apps/app/app/[workspace]/team/page.tsx` (load clients +
+  access rows + workspace policy)
+- `apps/app/app/[workspace]/team/member-row.tsx` (dropdown item
+  + badge + dialog wiring)
+- `apps/app/app/[workspace]/team/client-access-dialog.tsx` (new)
+- `apps/app/app/[workspace]/settings/page.tsx` (Client access
+  card)
+- `apps/app/app/[workspace]/settings/client-access-form.tsx` (new)
+- `docs/DECISIONS.md` (Phase 1 / Phase 2 record)
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean.
+
+---
+
 ## 2026-04-26 — Notification discoverability + mention rendering
 
 ### Added — Discoverable notification preferences

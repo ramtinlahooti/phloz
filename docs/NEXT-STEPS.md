@@ -1,10 +1,10 @@
-# Next Steps (as of 2026-04-26 v13)
+# Next Steps (as of 2026-04-26 v14)
 
 ## Branch state
 
 `claude/inspiring-wright-2ca122` is the active feature branch and
-sits 45 commits ahead of `main`. Latest HEAD: `c2bb045` (@mention
-rendering as styled chips).
+sits 47 commits ahead of `main`. Latest HEAD: `9e63a07`
+(per-member client-access UI / Phase 1).
 
 **Notifications surface is comprehensive** —
   - Five event types wired end-to-end (task_assignment,
@@ -36,14 +36,25 @@ locally on chromium-headless-shell. CI runs both via a matrixed
 
 ## Top backlog (next session)
 
-1. **`@<displayname>` autocomplete in the comment composer.** The
-   mention parser shipped today matches against
+1. **Per-client "Access" section on the client detail page.**
+   Mirror image of the Team-page dialog: when an owner/admin
+   opens a client, show which members have access + let them
+   add/remove from the same client surface. Same
+   `setMemberClientAccessAction` action; the symmetric edit
+   point reduces context-switching.
+2. **Invite-flow integration.** Today's `InviteMemberCard`
+   sets a role but doesn't pre-assign clients. Extend the
+   invite dialog so inviting a member or viewer can pre-select
+   clients (filtered by the workspace policy — when "Everyone
+   sees everything", the step is hidden).
+3. **`@displayname` autocomplete in the comment composer.** The
+   mention parser shipped earlier matches against
    `workspace_members.email` (full address OR local-part). Most
    users want to type `@Alex Chen` — that needs an autocomplete
    widget that resolves to a canonical token before it hits the
    regex. `comments.mentions` is already populated server-side so
-   the rendering layer (highlighting, hover cards) can come along
-   for the ride.
+   the rendering layer (highlighting, hover cards) can come
+   along for the ride.
 2. **Authenticated Playwright tests for `apps/app`.** Need a test
    DB + seeded fixtures + a Playwright auth setup that signs into
    a known test account once and reuses storage state. Approach:
