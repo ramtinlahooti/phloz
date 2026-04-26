@@ -6,6 +6,10 @@ import { z } from 'zod';
 
 import { requireRole } from '@phloz/auth/roles';
 import { requireUser } from '@phloz/auth/session';
+import {
+  NOTIFICATION_EVENT_TYPES,
+  type NotificationEventType,
+} from '@phloz/config';
 import { getDb, schema } from '@phloz/db/client';
 
 import { inngest } from '@/inngest';
@@ -193,3 +197,252 @@ export async function previewDigestAction(
 
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// Per-event-type opt-out (notification_preferences)
+// ---------------------------------------------------------------------------
+
+const notificationEventTypeSchema = z.enum(NOTIFICATION_EVENT_TYPES);
+
+const setEventPrefSchema = z.object({
+  workspaceId: z.string().uuid(),
+  eventType: notificationEventTypeSchema,
+  enabled: z.boolean(),
+});
+
+/**
+ * Set the calling user's preference for one event type. Idempotent
+ * upsert via ON CONFLICT — re-toggling overwrites the existing row's
+ * `enabled` rather than creating duplicates. Same self-targeting
+ * shape as the other notification actions.
+ */
+export async function setNotificationPreferenceAction(
+  input: z.infer<typeof setEventPrefSchema>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = setEventPrefSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? 'invalid_input',
+    };
+  }
+
+  try {
+    await requireRole(parsed.data.workspaceId, [
+      'owner',
+      'admin',
+      'member',
+      'viewer',
+    ]);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const user = await requireUser();
+  const db = getDb();
+  const [membership] = await db
+    .select({ id: schema.workspaceMembers.id })
+    .from(schema.workspaceMembers)
+    .where(
+      and(
+        eq(schema.workspaceMembers.workspaceId, parsed.data.workspaceId),
+        eq(schema.workspaceMembers.userId, user.id),
+      ),
+    )
+    .limit(1);
+
+  if (!membership) {
+    return { ok: false, error: 'membership_not_found' };
+  }
+
+  await db
+    .insert(schema.notificationPreferences)
+    .values({
+      workspaceId: parsed.data.workspaceId,
+      workspaceMemberId: membership.id,
+      eventType: parsed.data.eventType,
+      enabled: parsed.data.enabled,
+    })
+    .onConflictDoUpdate({
+      target: [
+        schema.notificationPreferences.workspaceMemberId,
+        schema.notificationPreferences.eventType,
+      ],
+      set: {
+        enabled: parsed.data.enabled,
+        updatedAt: new Date(),
+      },
+    });
+
+  revalidatePath(`/${parsed.data.workspaceId}/settings`);
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Per-entity mute / watch (notification_subscriptions)
+// ---------------------------------------------------------------------------
+
+const setSubscriptionSchema = z.object({
+  workspaceId: z.string().uuid(),
+  entityType: z.enum(['client', 'task']),
+  entityId: z.string().uuid(),
+  /** `null` = clear any existing row. */
+  mode: z.enum(['mute', 'watch']).nullable(),
+});
+
+/**
+ * Mute, watch, or clear the calling user's preference for one
+ * client or task. Mute beats default behaviour (the cron skips this
+ * entity's items in their digest + suppresses real-time notifications).
+ * Watch is opt-in surveillance — no UI ships today; the column is
+ * future-proofing for "subscribe to this thread".
+ *
+ * Passing `mode: null` deletes any existing row, restoring default
+ * behaviour. Same self-targeting shape as the other notification
+ * actions.
+ */
+export async function setNotificationSubscriptionAction(
+  input: z.infer<typeof setSubscriptionSchema>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = setSubscriptionSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? 'invalid_input',
+    };
+  }
+
+  try {
+    await requireRole(parsed.data.workspaceId, [
+      'owner',
+      'admin',
+      'member',
+      'viewer',
+    ]);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const user = await requireUser();
+  const db = getDb();
+  const [membership] = await db
+    .select({ id: schema.workspaceMembers.id })
+    .from(schema.workspaceMembers)
+    .where(
+      and(
+        eq(schema.workspaceMembers.workspaceId, parsed.data.workspaceId),
+        eq(schema.workspaceMembers.userId, user.id),
+      ),
+    )
+    .limit(1);
+
+  if (!membership) {
+    return { ok: false, error: 'membership_not_found' };
+  }
+
+  if (parsed.data.mode === null) {
+    await db
+      .delete(schema.notificationSubscriptions)
+      .where(
+        and(
+          eq(schema.notificationSubscriptions.workspaceMemberId, membership.id),
+          eq(schema.notificationSubscriptions.entityType, parsed.data.entityType),
+          eq(schema.notificationSubscriptions.entityId, parsed.data.entityId),
+        ),
+      );
+  } else {
+    // Drop any existing row first so we can switch mute ↔ watch via
+    // the same call. The unique index on
+    // (member, entity_type, entity_id) means we can never have
+    // duplicates; this is just simpler than an ON CONFLICT update.
+    await db
+      .delete(schema.notificationSubscriptions)
+      .where(
+        and(
+          eq(schema.notificationSubscriptions.workspaceMemberId, membership.id),
+          eq(schema.notificationSubscriptions.entityType, parsed.data.entityType),
+          eq(schema.notificationSubscriptions.entityId, parsed.data.entityId),
+        ),
+      );
+    await db.insert(schema.notificationSubscriptions).values({
+      workspaceId: parsed.data.workspaceId,
+      workspaceMemberId: membership.id,
+      entityType: parsed.data.entityType,
+      entityId: parsed.data.entityId,
+      mode: parsed.data.mode,
+    });
+  }
+
+  revalidatePath(`/${parsed.data.workspaceId}/settings`);
+  // Refresh the entity's own surfaces so any "Muted" badges flip.
+  if (parsed.data.entityType === 'client') {
+    revalidatePath(
+      `/${parsed.data.workspaceId}/clients/${parsed.data.entityId}`,
+    );
+  }
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Vacation mode (workspace_members.paused_until)
+// ---------------------------------------------------------------------------
+
+const setPausedUntilSchema = z.object({
+  workspaceId: z.string().uuid(),
+  /** ISO timestamp, or null to clear. */
+  until: z.string().datetime().nullable(),
+});
+
+/**
+ * Set the calling user's vacation-mode timestamp. While
+ * `paused_until > now`, the digest cron skips this member entirely
+ * and per-event helpers suppress real-time emails. `null` clears
+ * the pause.
+ */
+export async function setPausedUntilAction(
+  input: z.infer<typeof setPausedUntilSchema>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = setPausedUntilSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? 'invalid_input',
+    };
+  }
+
+  try {
+    await requireRole(parsed.data.workspaceId, [
+      'owner',
+      'admin',
+      'member',
+      'viewer',
+    ]);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const user = await requireUser();
+  const db = getDb();
+  const result = await db
+    .update(schema.workspaceMembers)
+    .set({
+      pausedUntil: parsed.data.until ? new Date(parsed.data.until) : null,
+    })
+    .where(
+      and(
+        eq(schema.workspaceMembers.workspaceId, parsed.data.workspaceId),
+        eq(schema.workspaceMembers.userId, user.id),
+      ),
+    )
+    .returning({ id: schema.workspaceMembers.id });
+
+  if (result.length === 0) {
+    return { ok: false, error: 'membership_not_found' };
+  }
+
+  revalidatePath(`/${parsed.data.workspaceId}/settings`);
+  return { ok: true };
+}
+
+// Re-export so importers can stay narrow.
+export type { NotificationEventType };

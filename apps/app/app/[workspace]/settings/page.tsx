@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 
 import { requireRole } from '@phloz/auth/roles';
 import { requireUser } from '@phloz/auth/session';
@@ -44,8 +44,10 @@ export default async function SettingsPage({
     requireUser(),
     db
       .select({
+        id: schema.workspaceMembers.id,
         digestEnabled: schema.workspaceMembers.digestEnabled,
         digestHour: schema.workspaceMembers.digestHour,
+        pausedUntil: schema.workspaceMembers.pausedUntil,
       })
       .from(schema.workspaceMembers)
       .where(
@@ -59,6 +61,62 @@ export default async function SettingsPage({
   ]);
 
   if (!workspace) return null;
+
+  // Per-event-type prefs + per-client mutes for the comprehensive
+  // notifications panel. Both are scoped to the calling member;
+  // owners/admins do NOT see other members' rows (RLS enforces).
+  // Active clients are listed for the mute UI; archived clients are
+  // excluded so the picker doesn't grow unbounded.
+  const [eventPrefs, clientMutes, activeClients] = membership
+    ? await Promise.all([
+        db
+          .select({
+            eventType: schema.notificationPreferences.eventType,
+            enabled: schema.notificationPreferences.enabled,
+          })
+          .from(schema.notificationPreferences)
+          .where(
+            eq(
+              schema.notificationPreferences.workspaceMemberId,
+              membership.id,
+            ),
+          ),
+        db
+          .select({
+            entityId: schema.notificationSubscriptions.entityId,
+          })
+          .from(schema.notificationSubscriptions)
+          .where(
+            and(
+              eq(
+                schema.notificationSubscriptions.workspaceMemberId,
+                membership.id,
+              ),
+              eq(schema.notificationSubscriptions.entityType, 'client'),
+              eq(schema.notificationSubscriptions.mode, 'mute'),
+            ),
+          ),
+        db
+          .select({
+            id: schema.clients.id,
+            name: schema.clients.name,
+          })
+          .from(schema.clients)
+          .where(
+            and(
+              eq(schema.clients.workspaceId, workspaceId),
+              isNull(schema.clients.archivedAt),
+            ),
+          )
+          .orderBy(asc(schema.clients.name)),
+      ])
+    : [[], [], []];
+
+  const eventPrefMap = new Map<string, boolean>();
+  for (const p of eventPrefs) {
+    eventPrefMap.set(p.eventType, p.enabled);
+  }
+  const mutedClientIdSet = new Set(clientMutes.map((m) => m.entityId));
 
   const fullName =
     (user.user_metadata?.full_name as string | undefined) ?? '';
@@ -97,7 +155,13 @@ export default async function SettingsPage({
             initial={{
               digestEnabled: membership?.digestEnabled ?? true,
               digestHour: membership?.digestHour ?? null,
+              pausedUntil: membership?.pausedUntil
+                ? membership.pausedUntil.toISOString()
+                : null,
+              eventPrefs: Object.fromEntries(eventPrefMap),
+              mutedClientIds: Array.from(mutedClientIdSet),
             }}
+            clients={activeClients}
           />
         </CardContent>
       </Card>
