@@ -1,4 +1,4 @@
-import { index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import type { AuthorType, MessageChannel, MessageDirection } from '@phloz/config';
 
 import { pkUuid } from './_helpers';
@@ -30,6 +30,14 @@ export const messages = pgTable(
     subject: text('subject'),
     body: text('body').notNull(),
     rawEmail: jsonb('raw_email').$type<Record<string, unknown>>(),
+    /**
+     * "Needs follow-up" flag — starred messages pin to the top of the
+     * inbox so they aren't pushed off the first page by newer
+     * traffic. Per-message rather than per-thread by design: the
+     * inbox renders flat-by-message, so per-message granularity
+     * matches the UI without a thread-aggregation step.
+     */
+    starred: boolean('starred').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
   },
   (table) => ({
@@ -37,6 +45,11 @@ export const messages = pgTable(
     clientIdx: index('messages_client_id_idx').on(table.clientId),
     threadIdx: index('messages_thread_id_idx').on(table.threadId),
     createdAtIdx: index('messages_created_at_idx').on(table.createdAt),
+    starredCreatedAtIdx: index('messages_starred_created_at_idx').on(
+      table.workspaceId,
+      table.starred,
+      table.createdAt,
+    ),
   }),
 );
 

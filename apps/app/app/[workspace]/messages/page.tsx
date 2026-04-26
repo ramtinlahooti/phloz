@@ -1,5 +1,5 @@
 import { and, desc, eq, not } from 'drizzle-orm';
-import { Mail, MailOpen, MessageSquare, StickyNote } from 'lucide-react';
+import { Mail, MailOpen, MessageSquare, Star, StickyNote } from 'lucide-react';
 import Link from 'next/link';
 
 import type { MessageChannel, MessageDirection } from '@phloz/config';
@@ -11,6 +11,7 @@ import { buildAppMetadata } from '@/lib/metadata';
 import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
 import { InboxKeyboardNav } from './inbox-keyboard-nav';
+import { MessageStarButton } from './star-button';
 
 export const metadata = buildAppMetadata({ title: 'Messages' });
 
@@ -24,6 +25,8 @@ type SearchParams = {
    *  response on. Same logic as the dashboard's "Waiting on a reply"
    *  widget. */
   needs_reply?: string;
+  /** `?starred=1` filters to messages the user has explicitly pinned. */
+  starred?: string;
 };
 
 /**
@@ -57,6 +60,7 @@ export default async function MessagesInboxPage({
       : null;
   const searchQuery = (sp.q ?? '').trim().toLowerCase();
   const needsReply = sp.needs_reply === '1';
+  const starredOnly = sp.starred === '1';
 
   const db = getDb();
   const conditions = [eq(schema.messages.workspaceId, workspaceId)];
@@ -64,13 +68,17 @@ export default async function MessagesInboxPage({
     conditions.push(eq(schema.messages.direction, directionFilter));
   if (channelFilter)
     conditions.push(eq(schema.messages.channel, channelFilter));
+  if (starredOnly) conditions.push(eq(schema.messages.starred, true));
 
   const [rows, outboundForNeedsReply, clients] = await Promise.all([
     db
       .select()
       .from(schema.messages)
       .where(and(...conditions))
-      .orderBy(desc(schema.messages.createdAt))
+      // Starred rows pin to the top so a thread the user flagged for
+      // follow-up doesn't get pushed off the first page by newer
+      // traffic. Within each starred-bucket, newest first.
+      .orderBy(desc(schema.messages.starred), desc(schema.messages.createdAt))
       .limit(200),
     // For the needs-reply filter: one row per outbound message
     // (any channel except internal_note, since internal notes aren't
@@ -136,6 +144,7 @@ export default async function MessagesInboxPage({
     directionFilter !== null ||
     channelFilter !== null ||
     needsReply ||
+    starredOnly ||
     searchQuery !== '';
 
   return (
@@ -183,6 +192,23 @@ export default async function MessagesInboxPage({
           <span className="inline-flex items-center gap-1">
             <MailOpen className="size-3" />
             Needs reply
+          </span>
+        </FilterPill>
+        <FilterPill
+          href={hrefWith(
+            workspaceId,
+            sp,
+            'starred',
+            starredOnly ? null : '1',
+          )}
+          active={starredOnly}
+        >
+          <span className="inline-flex items-center gap-1">
+            <Star
+              className="size-3"
+              fill={starredOnly ? 'currentColor' : 'none'}
+            />
+            Starred
           </span>
         </FilterPill>
         <span className="mx-1 h-4 w-px bg-border" aria-hidden />
@@ -272,11 +298,18 @@ export default async function MessagesInboxPage({
                 <li
                   key={m.id}
                   data-inbox-row={m.id}
-                  className="data-[focused=true]:bg-primary/5 data-[focused=true]:ring-1 data-[focused=true]:ring-primary/40"
+                  className="flex items-start gap-1 px-1 hover:bg-muted/50 data-[focused=true]:bg-primary/5 data-[focused=true]:ring-1 data-[focused=true]:ring-primary/40"
                 >
+                  <div className="pl-3 pt-3">
+                    <MessageStarButton
+                      workspaceId={workspaceId}
+                      messageId={m.id}
+                      initialStarred={m.starred}
+                    />
+                  </div>
                   <Link
                     href={`/${workspaceId}/clients/${m.clientId}`}
-                    className="flex items-start gap-3 px-4 py-3 hover:bg-muted/50"
+                    className="flex flex-1 items-start gap-3 px-3 py-3"
                   >
                     <ChannelIcon channel={m.channel as MessageChannel} />
                     <div className="min-w-0 flex-1">

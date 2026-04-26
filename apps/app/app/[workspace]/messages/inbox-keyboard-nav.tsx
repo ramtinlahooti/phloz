@@ -3,11 +3,14 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * Invisible keyboard layer for the messages inbox. Listens for `j` /
- * `k` to step through the rendered rows and `Enter` / `o` to open the
- * focused row's link. Uses DOM queries against `[data-inbox-row]`
- * markers so the rows themselves stay server-rendered — no need to
- * lift the list rendering into a client component.
+ * Invisible keyboard layer for the messages inbox. Listens for:
+ *   - `j` / `k` — step through the rendered rows
+ *   - `Enter` / `o` — open the focused row's link
+ *   - `s` — toggle the star on the focused row
+ *
+ * Uses DOM queries against `[data-inbox-row]` markers so the rows
+ * themselves stay server-rendered — no need to lift the list
+ * rendering into a client component.
  *
  * Skipped when typing in inputs / textareas / contentEditable, so
  * the search input on the same page is unaffected.
@@ -69,6 +72,19 @@ export function InboxKeyboardNav() {
       if (link) link.click();
     }
 
+    function toggleStarCurrent() {
+      const id = focusedIdRef.current;
+      if (!id) return;
+      const el = document.querySelector<HTMLElement>(
+        `[data-inbox-row="${CSS.escape(id)}"]`,
+      );
+      // The star is the only button inside the row markup; query
+      // for the first <button> rather than introducing a new
+      // selector contract to the DOM.
+      const button = el?.querySelector<HTMLButtonElement>('button');
+      if (button) button.click();
+    }
+
     function onKey(e: KeyboardEvent) {
       const t = e.target as HTMLElement | null;
       if (
@@ -90,6 +106,11 @@ export function InboxKeyboardNav() {
         if (focusedIdRef.current) {
           e.preventDefault();
           openCurrent();
+        }
+      } else if (e.key === 's') {
+        if (focusedIdRef.current) {
+          e.preventDefault();
+          toggleStarCurrent();
         }
       }
     }

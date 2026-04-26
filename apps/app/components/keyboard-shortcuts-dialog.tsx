@@ -90,6 +90,7 @@ export function KeyboardShortcutsDialog() {
             <Row keys={['j']}>Focus next thread</Row>
             <Row keys={['k']}>Focus previous thread</Row>
             <Row keys={['Enter']}>Open the focused thread</Row>
+            <Row keys={['s']}>Star/unstar the focused thread</Row>
           </Section>
 
           <Section title="Tracking map (canvas tab + full-screen)">

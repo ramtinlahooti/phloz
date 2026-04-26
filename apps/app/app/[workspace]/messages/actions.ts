@@ -194,3 +194,66 @@ export async function postInternalNoteAction(
   revalidatePath(`/${parsed.data.workspaceId}/messages`);
   return { ok: true, id: row.id };
 }
+
+const toggleStarSchema = z.object({
+  workspaceId: uuid,
+  messageId: uuid,
+  starred: z.boolean(),
+});
+
+/**
+ * Toggle a message's `starred` flag. Starred messages pin to the top
+ * of the inbox so they aren't pushed off the first page by newer
+ * traffic. Open to any role that can see the inbox (owner / admin /
+ * member / viewer) — starring is a personal triage tool, not a
+ * mutation that affects other members' workflow.
+ */
+export async function toggleMessageStarAction(
+  input: z.infer<typeof toggleStarSchema>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = toggleStarSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? 'invalid_input',
+    };
+  }
+
+  try {
+    await requireRole(parsed.data.workspaceId, [
+      'owner',
+      'admin',
+      'member',
+      'viewer',
+    ]);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const db = getDb();
+  const result = await db
+    .update(schema.messages)
+    .set({ starred: parsed.data.starred })
+    .where(
+      and(
+        eq(schema.messages.id, parsed.data.messageId),
+        eq(schema.messages.workspaceId, parsed.data.workspaceId),
+      ),
+    )
+    .returning({
+      id: schema.messages.id,
+      clientId: schema.messages.clientId,
+    });
+
+  if (result.length === 0) {
+    return { ok: false, error: 'not_found' };
+  }
+
+  revalidatePath(`/${parsed.data.workspaceId}/messages`);
+  if (result[0]?.clientId) {
+    revalidatePath(
+      `/${parsed.data.workspaceId}/clients/${result[0].clientId}`,
+    );
+  }
+  return { ok: true };
+}
