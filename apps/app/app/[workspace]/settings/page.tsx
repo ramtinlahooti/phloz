@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@phloz/ui';
 import { buildAppMetadata } from '@/lib/metadata';
 import { assertValidWorkspaceId } from '@/lib/workspace-param';
 
+import { ClientAccessForm } from './client-access-form';
 import { NotificationsForm } from './notifications-form';
 import { ProfileForm } from './profile-form';
 import { WorkspaceSettingsForm } from './workspace-settings-form';
@@ -167,23 +168,41 @@ export default async function SettingsPage({
       </Card>
 
       {isPrivileged && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Agency / Workspace</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <WorkspaceSettingsForm
-              workspace={{
-                id: workspace.id,
-                name: workspace.name,
-                slug: workspace.slug,
-                description: workspace.description ?? '',
-                websiteUrl: workspace.websiteUrl ?? '',
-                timezone: workspace.timezone ?? 'UTC',
-              }}
-            />
-          </CardContent>
-        </Card>
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Agency / Workspace</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <WorkspaceSettingsForm
+                workspace={{
+                  id: workspace.id,
+                  name: workspace.name,
+                  slug: workspace.slug,
+                  description: workspace.description ?? '',
+                  websiteUrl: workspace.websiteUrl ?? '',
+                  timezone: workspace.timezone ?? 'UTC',
+                }}
+              />
+            </CardContent>
+          </Card>
+
+          <Card id="access" className="scroll-mt-6">
+            <CardHeader>
+              <CardTitle className="text-base">Client access</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ClientAccessForm
+                workspaceId={workspaceId}
+                allMembersSeeAllClients={
+                  ((workspace.settings as Record<string, unknown> | null)?.[
+                    'all_members_see_all_clients'
+                  ] as boolean | undefined) ?? true
+                }
+              />
+            </CardContent>
+          </Card>
+        </>
       )}
     </div>
   );

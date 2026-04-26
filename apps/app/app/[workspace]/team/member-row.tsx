@@ -7,6 +7,7 @@ import {
   Mail,
   MoreHorizontal,
   Trash2,
+  UserCheck,
   UserCog,
   X,
 } from 'lucide-react';
@@ -36,6 +37,7 @@ import {
   removeMemberAction,
   revokeInvitationAction,
 } from './actions';
+import { ClientAccessDialog } from './client-access-dialog';
 import { TransferOwnershipDialog } from './transfer-ownership-dialog';
 
 function initials(label: string): string {
@@ -72,18 +74,31 @@ export type MemberRowView = {
    * without scanning every row.
    */
   digestHour: number | null;
+  /** Client IDs the member has explicit access to via
+   *  `workspace_member_client_access`. Owners + admins always see
+   *  everything regardless of this list. */
+  assignedClientIds: string[];
 };
 
 export function MemberRow({
   workspaceId,
   member,
+  clients,
+  allMembersSeeAllClients,
 }: {
   workspaceId: string;
   member: MemberRowView;
+  /** Active workspace clients; passed for the access-management
+   *  dialog. */
+  clients: Array<{ id: string; name: string }>;
+  /** Workspace policy. When true, per-member assignments save but
+   *  don't take effect — the dialog tells the user. */
+  allMembersSeeAllClients: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [transferOpen, setTransferOpen] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
 
   const canManage = !member.isSelf;
   // Only an owner can modify another owner.
@@ -167,6 +182,26 @@ export function MemberRow({
         <Badge variant="secondary" className="capitalize">
           {member.role}
         </Badge>
+        {/* Per-member assigned-clients count. Only meaningful for
+            member + viewer + when the workspace policy enforces
+            assignments. Owners + admins always see everything so a
+            count badge would be misleading there. */}
+        {allMembersSeeAllClients === false &&
+          (member.role === 'member' || member.role === 'viewer') && (
+            <Badge
+              variant="outline"
+              className="gap-1 text-[10px] text-muted-foreground"
+              title={
+                member.assignedClientIds.length === 0
+                  ? 'No clients assigned — this member can only see workspace-level surfaces.'
+                  : `Assigned to ${member.assignedClientIds.length} client${member.assignedClientIds.length === 1 ? '' : 's'}.`
+              }
+            >
+              <UserCheck className="size-3" />
+              {member.assignedClientIds.length}{' '}
+              client{member.assignedClientIds.length === 1 ? '' : 's'}
+            </Badge>
+          )}
         {!member.digestEnabled && (
           <Badge
             variant="outline"
@@ -227,6 +262,9 @@ export function MemberRow({
                 </>
               )}
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setAccessOpen(true)}>
+                <UserCheck className="size-3.5" /> Manage client access…
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={nudgeDigest}>
                 <Mail className="size-3.5" /> Send digest now
               </DropdownMenuItem>
@@ -248,6 +286,19 @@ export function MemberRow({
           memberLabel={member.label}
           open={transferOpen}
           onOpenChange={setTransferOpen}
+        />
+      )}
+
+      {canManage && canActOnThisRole && (
+        <ClientAccessDialog
+          workspaceId={workspaceId}
+          memberId={member.id}
+          memberLabel={member.label}
+          clients={clients}
+          initialClientIds={member.assignedClientIds}
+          policyEnforced={!allMembersSeeAllClients}
+          open={accessOpen}
+          onOpenChange={setAccessOpen}
         />
       )}
     </>

@@ -406,3 +406,180 @@ export async function nudgeMemberDigestAction(
   void actor;
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// Per-member client access (workspace_member_client_access)
+// ---------------------------------------------------------------------------
+
+const setClientAccessSchema = z.object({
+  workspaceId: uuid,
+  memberId: uuid,
+  /** Replace the full assignment list. Empty array = no clients
+   *  visible (member sees only workspace-level surfaces). */
+  clientIds: z.array(uuid).max(500),
+});
+
+/**
+ * Replace a member's `workspace_member_client_access` rows with the
+ * supplied `clientIds`. Owner / admin only — same gate as role
+ * changes. Owners + admins are exempt at the RLS layer
+ * (`phloz_is_assigned_to` returns true unconditionally for them) so
+ * setting an access list for an owner/admin is a no-op as far as
+ * visibility goes; we still let the rows be written so a future
+ * downgrade to member surfaces a sensible default.
+ *
+ * Diff-based write: we fetch the current set, compute add/remove
+ * deltas, and only INSERT new rows + DELETE stale ones. Avoids a
+ * delete-all-then-insert pattern that would briefly hide every
+ * client from the member if a concurrent reader sliced through the
+ * gap.
+ */
+export async function setMemberClientAccessAction(
+  input: z.infer<typeof setClientAccessSchema>,
+): Promise<{ ok: true; added: number; removed: number } | { ok: false; error: string }> {
+  const parsed = setClientAccessSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.message };
+
+  let actor;
+  try {
+    actor = await requireAdminOrOwner(parsed.data.workspaceId);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const db = getDb();
+
+  // Confirm the target member belongs to this workspace before we
+  // write — the unique index would catch a cross-workspace mismatch
+  // but we'd silently leak which membership ids exist.
+  const [member] = await db
+    .select({ id: schema.workspaceMembers.id })
+    .from(schema.workspaceMembers)
+    .where(
+      and(
+        eq(schema.workspaceMembers.id, parsed.data.memberId),
+        eq(schema.workspaceMembers.workspaceId, parsed.data.workspaceId),
+      ),
+    )
+    .limit(1);
+  if (!member) return { ok: false, error: 'member_not_found' };
+
+  const existing = await db
+    .select({ clientId: schema.workspaceMemberClientAccess.clientId })
+    .from(schema.workspaceMemberClientAccess)
+    .where(
+      eq(
+        schema.workspaceMemberClientAccess.workspaceMemberId,
+        parsed.data.memberId,
+      ),
+    );
+
+  const existingSet = new Set(existing.map((r) => r.clientId));
+  const targetSet = new Set(parsed.data.clientIds);
+  const toAdd = parsed.data.clientIds.filter((id) => !existingSet.has(id));
+  const toRemove = [...existingSet].filter((id) => !targetSet.has(id));
+
+  if (toAdd.length > 0) {
+    await db
+      .insert(schema.workspaceMemberClientAccess)
+      .values(
+        toAdd.map((clientId) => ({
+          workspaceMemberId: parsed.data.memberId,
+          clientId,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+  if (toRemove.length > 0) {
+    for (const clientId of toRemove) {
+      await db
+        .delete(schema.workspaceMemberClientAccess)
+        .where(
+          and(
+            eq(
+              schema.workspaceMemberClientAccess.workspaceMemberId,
+              parsed.data.memberId,
+            ),
+            eq(schema.workspaceMemberClientAccess.clientId, clientId),
+          ),
+        );
+    }
+  }
+
+  fireTrack(
+    'client_assigned',
+    { assignee_role: 'member' },
+    serverTrackContext(actor.user.id, parsed.data.workspaceId),
+  );
+
+  revalidatePath(`/${parsed.data.workspaceId}/team`);
+  revalidatePath(`/${parsed.data.workspaceId}/clients`);
+  return { ok: true, added: toAdd.length, removed: toRemove.length };
+}
+
+// ---------------------------------------------------------------------------
+// Workspace setting: all_members_see_all_clients
+// ---------------------------------------------------------------------------
+
+const setAllSeeAllSchema = z.object({
+  workspaceId: uuid,
+  enabled: z.boolean(),
+});
+
+/**
+ * Toggle the workspace `settings.all_members_see_all_clients` flag.
+ * When true (the default for new workspaces), every member +
+ * viewer sees every client regardless of explicit assignments —
+ * the simplest model for small agencies. When false, members and
+ * viewers only see clients they've been assigned to via
+ * `setMemberClientAccessAction`. Owner/admin always see everything
+ * regardless.
+ *
+ * Owner/admin gate. The setting lives in `workspaces.settings` (a
+ * JSONB column) so we read-modify-write to avoid clobbering
+ * sibling settings.
+ */
+export async function setAllMembersSeeAllClientsAction(
+  input: z.infer<typeof setAllSeeAllSchema>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = setAllSeeAllSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.message };
+
+  let actor;
+  try {
+    actor = await requireAdminOrOwner(parsed.data.workspaceId);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const db = getDb();
+  const [row] = await db
+    .select({ settings: schema.workspaces.settings })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.id, parsed.data.workspaceId))
+    .limit(1);
+  if (!row) return { ok: false, error: 'workspace_not_found' };
+
+  const currentSettings =
+    (row.settings as Record<string, unknown> | null) ?? {};
+  const nextSettings = {
+    ...currentSettings,
+    all_members_see_all_clients: parsed.data.enabled,
+  };
+
+  await db
+    .update(schema.workspaces)
+    .set({ settings: nextSettings, updatedAt: new Date() })
+    .where(eq(schema.workspaces.id, parsed.data.workspaceId));
+
+  fireTrack(
+    'workspace_settings_updated',
+    { setting_key: 'all_members_see_all_clients' },
+    serverTrackContext(actor.user.id, parsed.data.workspaceId),
+  );
+
+  revalidatePath(`/${parsed.data.workspaceId}/team`);
+  revalidatePath(`/${parsed.data.workspaceId}/settings`);
+  revalidatePath(`/${parsed.data.workspaceId}/clients`);
+  return { ok: true };
+}

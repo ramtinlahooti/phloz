@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { asc, desc, eq, isNull } from 'drizzle-orm';
 
 import { requireUser } from '@phloz/auth/session';
 import type { Role } from '@phloz/config';
@@ -29,16 +29,67 @@ export default async function TeamPage({
   const db = getDb();
   const user = await requireUser();
 
-  const members = await db
-    .select()
-    .from(schema.workspaceMembers)
-    .where(eq(schema.workspaceMembers.workspaceId, workspaceId))
-    .orderBy(desc(schema.workspaceMembers.createdAt));
+  const [members, invitations, allClients, accessRows, workspaceRow] =
+    await Promise.all([
+      db
+        .select()
+        .from(schema.workspaceMembers)
+        .where(eq(schema.workspaceMembers.workspaceId, workspaceId))
+        .orderBy(desc(schema.workspaceMembers.createdAt)),
+      db
+        .select()
+        .from(schema.invitations)
+        .where(eq(schema.invitations.workspaceId, workspaceId)),
+      // Active clients only — archived clients clutter the picker
+      // and don't generate work that needs gated visibility.
+      db
+        .select({ id: schema.clients.id, name: schema.clients.name })
+        .from(schema.clients)
+        .where(
+          eq(schema.clients.workspaceId, workspaceId),
+        )
+        .orderBy(asc(schema.clients.name)),
+      // Per-member access rows. Bucketed by membership in JS for the
+      // dialog's initial-state prop.
+      db
+        .select({
+          workspaceMemberId:
+            schema.workspaceMemberClientAccess.workspaceMemberId,
+          clientId: schema.workspaceMemberClientAccess.clientId,
+        })
+        .from(schema.workspaceMemberClientAccess)
+        .innerJoin(
+          schema.workspaceMembers,
+          eq(
+            schema.workspaceMembers.id,
+            schema.workspaceMemberClientAccess.workspaceMemberId,
+          ),
+        )
+        .where(eq(schema.workspaceMembers.workspaceId, workspaceId)),
+      // Workspace settings for the policy banner. Reading via the
+      // existing workspaces row instead of a layout-context lookup
+      // keeps the page self-contained.
+      db
+        .select({ settings: schema.workspaces.settings })
+        .from(schema.workspaces)
+        .where(eq(schema.workspaces.id, workspaceId))
+        .limit(1)
+        .then((r) => r[0] ?? null),
+    ]);
 
-  const invitations = await db
-    .select()
-    .from(schema.invitations)
-    .where(eq(schema.invitations.workspaceId, workspaceId));
+  // Suppress unused — kept for future "include archived" toggle.
+  void isNull;
+
+  const accessByMember = new Map<string, string[]>();
+  for (const row of accessRows) {
+    const list = accessByMember.get(row.workspaceMemberId) ?? [];
+    list.push(row.clientId);
+    accessByMember.set(row.workspaceMemberId, list);
+  }
+  const allMembersSeeAllClients =
+    ((workspaceRow?.settings as Record<string, unknown> | null)?.[
+      'all_members_see_all_clients'
+    ] as boolean | undefined) ?? true;
 
   const currentMembership = members.find((m) => m.userId === user.id);
   const canInvite =
@@ -60,6 +111,7 @@ export default async function TeamPage({
     viewerIsOwner,
     digestEnabled: m.digestEnabled,
     digestHour: m.digestHour,
+    assignedClientIds: accessByMember.get(m.id) ?? [],
   }));
 
   return (
@@ -89,6 +141,8 @@ export default async function TeamPage({
                 key={member.id}
                 workspaceId={workspaceId}
                 member={member}
+                clients={allClients}
+                allMembersSeeAllClients={allMembersSeeAllClients}
               />
             ))}
           </ul>

@@ -5,6 +5,94 @@ for the template.
 
 ---
 
+## 2026-04-26: Per-member client access (now) + Teams + Client Groups (deferred)
+
+**Status:** Phase 1 accepted; Phase 2 deferred until first agency requests it.
+
+**Context:** A workspace owner asked: "what stops a Viewer from
+seeing every client?" The architecture (§5.1, §6.4) already
+distinguishes the per-member assignment table
+(`workspace_member_client_access`) and a workspace-level toggle
+`all_members_see_all_clients`, but no UI exposed either.
+Separately, a large agency might want to bundle members into Teams
++ clients into Groups so access can be managed at a tier above
+the member↔client edge.
+
+**Decision (Phase 1, now):**
+
+Wire the existing schema's UI:
+
+  - Workspace setting toggle in Settings → Client access:
+    "Everyone sees everything" (default) vs "Restricted by
+    assignment". Stored as
+    `workspaces.settings.all_members_see_all_clients`.
+  - Per-member dialog in Team page → Manage client access… that
+    edits `workspace_member_client_access` rows for one member.
+  - Per-member badge on the team-row showing the assigned
+    client count when the policy is enforced.
+
+RLS already enforces the gate via `phloz_is_assigned_to(client_id)`;
+no schema change needed.
+
+**Decision (Phase 2, deferred):**
+
+Add Teams + Client Groups *only when an agency asks for it*.
+Schema plan when it ships:
+
+```
+teams                          team_memberships
+  id, workspace_id,              team_id, workspace_member_id
+  name (editable), slug,         role_in_team
+  description, color             unique(team, member)
+
+client_groups                  client_group_memberships
+  id, workspace_id,              group_id, client_id
+  name (editable), slug,         unique(group, client)
+  color
+
+team_client_group_access
+  team_id, client_group_id
+  unique(team, group)
+```
+
+Access resolution becomes: *member sees client iff* (workspace
+toggle on) OR (role ∈ {owner, admin}) OR (direct row in
+`workspace_member_client_access`) OR (member ∈ team that has access
+to a group containing the client).
+
+**Rationale:**
+
+Phase 1 covers Phloz's stated user (5–50 person agencies, 5–100
+clients) cleanly. Direct assignment is intuitive at that scale.
+Adding Teams + Groups before they're requested is YAGNI — the
+extra schema, RLS function complexity, and Settings UI surface
+would be debt for the small-agency majority. Phase 2's plan
+exists on paper so any agency that does ask gets a one-session
+ramp-up rather than a re-architecture.
+
+**Consequences:**
+
+- "Viewer" and "Member" roles with the workspace policy off are
+  now manageable in the UI; today the RLS was already correct
+  but the UI didn't surface the toggle.
+- The `workspace_member_client_access` table now has a real UI
+  consumer — its RLS policy stays the canonical gate.
+- Phase 2 can land additively: new tables, no changes to the
+  existing functions/policies. Existing direct assignments
+  continue to work.
+- "Viewer" role naming stays — Linear / Notion / Asana use the
+  same term for internal read-only seats. UI tooltips should
+  disambiguate from external clients (who live in
+  `client_contacts` + `portal_magic_links`, not
+  `workspace_members`).
+
+**Related:** ARCHITECTURE.md §5.1, §6.4;
+`packages/db/src/rls/_functions.sql` (`phloz_is_assigned_to`);
+`apps/app/app/[workspace]/team/actions.ts`
+(`setMemberClientAccessAction`, `setAllMembersSeeAllClientsAction`).
+
+---
+
 ## 2026-04-25: Recurring template tier limits — escalating, not flat
 
 **Status:** Accepted
@@ -332,3 +420,4 @@ constraints in a single migration.
   Zod validation. Service-role code paths are small and reviewed.
 
 **Related:** ARCHITECTURE.md §4.3, `packages/config/src/constants.ts`.
+
