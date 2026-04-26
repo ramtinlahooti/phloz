@@ -1,10 +1,10 @@
-# Next Steps (as of 2026-04-26 v8)
+# Next Steps (as of 2026-04-26 v9)
 
 ## Branch state
 
 `claude/inspiring-wright-2ca122` is the active feature branch and
-sits 33 commits ahead of `main`. Latest HEAD: `2d25559` (Sentry
-user/workspace context tagging).
+sits 35 commits ahead of `main`. Latest HEAD: `d358459`
+(comprehensive notifications panel).
 
 `pnpm check` 29/29 green, **zero lint warnings**. Both apps build
 clean. **Playwright** — marketing 11/11 + app 7/7, all green
@@ -24,7 +24,27 @@ locally on chromium-headless-shell. CI runs both via a matrixed
 
 ## Top backlog (next session)
 
-1. **Authenticated Playwright tests for `apps/app`.** Need a test
+1. **Wire per-event notification helpers** that fire one-off
+   emails (assignment, mention, inbound message, approval,
+   recurring-task-created). Today the cron + new event-pref
+   filter exists, but the actual one-off notifications haven't
+   been built — when a teammate assigns me a task, no email
+   fires regardless of my prefs. Build:
+     - `packages/email` templates for each event kind
+     - A `sendNotificationToMember(eventType, payload)` helper
+       that respects `digest_enabled`, `paused_until`, and the
+       per-event opt-out before calling Resend
+     - Wire each domain action (assignTask, postComment with
+       mention, inbound webhook, approve, recurring spawn) to
+       call the helper
+2. **Per-task mute UI in the task detail dialog.** Schema
+   already supports it (`notification_subscriptions` with
+   `entity_type='task'`); just needs a button + the existing
+   `setNotificationSubscriptionAction` call.
+3. **Per-client mute button on the client detail page header**
+   (next to Archive). Same action; more discoverable than
+   navigating to Settings → Notifications.
+4. **Authenticated Playwright tests for `apps/app`.** Need a test
    DB + seeded fixtures + a Playwright auth setup that signs into
    a known test account once and reuses storage state. Approach:
    - Either a throwaway Supabase project, or a CI Postgres +
@@ -38,17 +58,17 @@ locally on chromium-headless-shell. CI runs both via a matrixed
    → add client; client portal magic link; billing checkout
    (Stripe test mode); tracking-map node CRUD; audit Run-now →
    cron simulation → snapshot lands.
-2. **PostHog wiring.** `NEXT_PUBLIC_POSTHOG_KEY` + `POSTHOG_API_KEY`
+5. **PostHog wiring.** `NEXT_PUBLIC_POSTHOG_KEY` + `POSTHOG_API_KEY`
    in Vercel. Without them, `track()` calls log-only — we have a
    pile of typed events but no funnel data yet.
-3. **GA4 Measurement Protocol** for server-side conversion events
+6. **GA4 Measurement Protocol** for server-side conversion events
    (`upgrade_tier`, `payment_failed`). `GA4_MEASUREMENT_ID` +
    `GA4_API_SECRET` in Vercel.
-4. **Calendar hourly axis on week view.** Today's week view shows
+7. **Calendar hourly axis on week view.** Today's week view shows
    tasks stacked in chronological order within each day. A 24-row
    hourly axis with tasks positioned by `dueDate` hour would let
    users plan time-blocked work.
-5. **Sentry source-map upload** via `withSentryConfig` wrapping
+8. **Sentry source-map upload** via `withSentryConfig` wrapping
    `next.config.ts` so production events carry de-minified stack
    traces. Needs `SENTRY_AUTH_TOKEN` + `SENTRY_ORG` +
    `SENTRY_PROJECT_{APP,WEB}` in Vercel. Release tagging + user
@@ -82,8 +102,9 @@ locally on chromium-headless-shell. CI runs both via a matrixed
 | `0009_workspace_members_default_saved_view.sql` | ✅ |
 | `0010_workspace_members_digest_hour.sql` | ✅ |
 | `0011_messages_starred.sql` | ✅ |
+| `0012_notification_preferences.sql` | ✅ |
 
-All 12 Drizzle migrations applied to Supabase.
+All 13 Drizzle migrations applied to Supabase.
 
 ## Env vars to light up dormant features
 

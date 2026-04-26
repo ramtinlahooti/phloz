@@ -4,6 +4,103 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-26 — Comprehensive notification preferences
+
+### Added — `notification_preferences`, `notification_subscriptions`, `paused_until`
+
+Three new pieces of the notification model, all owned by the
+calling member (RLS enforces — owners and admins do NOT see other
+members' rows):
+
+  1. **notification_preferences** — per-(member, event_type)
+     opt-out flag. Lets a user mute one kind of email without
+     disabling everything. Event types: `task_assignment`,
+     `task_mention`, `inbound_message`, `task_approval`,
+     `recurring_task_created`. (`daily_digest` stays as the
+     existing `workspace_members.digest_enabled` column — a
+     duplicate event-type row would confuse users.)
+
+  2. **notification_subscriptions** — per-(member, entity_type,
+     entity_id, mode) explicit preference. `entity_type` is
+     `'client' | 'task'` (DB CHECK), `mode` is `'mute' | 'watch'`
+     (DB CHECK). Mute beats default behaviour. Watch is opt-in
+     surveillance (column reserved for future "subscribe to a
+     thread" UX).
+
+  3. **workspace_members.paused_until** — vacation mode. While
+     set in the future, the digest cron skips the member.
+
+Migration #12 adds all three with idempotent guards
+(`IF NOT EXISTS`, `EXCEPTION WHEN duplicate_object`), unique
+indexes for the lookup paths, and full RLS. **Applied to
+Supabase** via the MCP this session.
+
+### Changed — `send-daily-digest` cron now respects all three
+
+  - **Pause** filter at the workspace level: members with
+    `paused_until > now` are dropped before the heavy fetch.
+  - **Per-event prefs** loaded into a bucket Map; reserved for
+    per-event helpers (the cron itself uses the existing
+    `digest_enabled` column for digest opt-out).
+  - **Per-member client mutes** filter overdue / due-today /
+    pending-approval task lists + the workspace-shared unreplied
+    + audit digest when each member's email is composed.
+  - `computeUnreplied` and `computeAuditDigest` now carry
+    `clientId` in their returned shape so the per-member mute
+    filter doesn't have to parse hrefs.
+
+Manual previews still bypass the filters — the "Send digest now"
+button works at any hour and for any member regardless of their
+personal toggles.
+
+### Added — Comprehensive notifications panel in Settings
+
+Settings → Notifications goes from one checkbox to a full
+five-section cockpit:
+
+  1. **Vacation mode** — date picker pinned to end-of-day local
+     time + an amber Pause indicator when active.
+  2. **Daily digest** — existing checkbox + hour selector.
+  3. **Email me when…** — five per-event-type toggles, each
+     creating / removing an opt-out row.
+  4. **Muted clients** — list of every active workspace client
+     with per-row Mute / Muted toggles. Optimistic flips with
+     revert-on-error.
+  5. **Preview today's digest** — existing button.
+
+Per-task mute lives at the same `notification_subscriptions`
+table (entity_type='task') and surfaces from the task detail
+dialog — queued in NEXT-STEPS.
+
+### Files touched
+
+- `packages/db/migrations/0012_notification_preferences.sql` (new)
+- `packages/db/src/schema/notification-preferences.ts` (new)
+- `packages/db/src/schema/notification-subscriptions.ts` (new)
+- `packages/db/src/schema/workspace-members.ts` (paused_until)
+- `packages/db/src/schema/index.ts` (barrel exports)
+- `packages/db/src/rls/notification-preferences.sql` (new)
+- `packages/db/src/rls/notification-subscriptions.sql` (new)
+- `packages/config/src/constants.ts` (event-type catalog + labels)
+- `apps/app/inngest/functions/send-daily-digest.ts` (pause +
+  event-pref + client-mute filters; clientId in compute helpers)
+- `apps/app/app/[workspace]/settings/notifications-actions.ts`
+  (3 new actions: preference, subscription, paused_until)
+- `apps/app/app/[workspace]/settings/notifications-form.tsx`
+  (full rewrite into the 5-section panel)
+- `apps/app/app/[workspace]/settings/page.tsx` (load prefs + mutes
+  + active clients; pass to the form)
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean.
+- `pnpm --filter @phloz/app test:e2e` — 7/7 still green
+  (auth-route smoke, no notification-panel coverage yet).
+- Migration #12 verified live on Supabase via MCP.
+
+---
+
 ## 2026-04-26 — Sentry release + user tagging + auth-noise fix
 
 ### Fixed — Workspace layout no longer throws on missing user
