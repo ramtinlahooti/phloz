@@ -1,7 +1,7 @@
 import { and, count, eq, inArray, isNotNull, isNull, lt, not } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
-import { requireUser } from '@phloz/auth/session';
+import { getCurrentUser } from '@phloz/auth/session';
 import { getDb, schema } from '@phloz/db/client';
 
 import { AnalyticsIdentify } from '@/components/analytics-identify';
@@ -23,8 +23,14 @@ const UUID_RE =
  * Workspace layout. Runs on every page under `/[workspace]/...`.
  *
  * Responsibilities:
- * - Require an authenticated user (middleware already refreshes the
- *   session; `requireUser` throws if there is no user at all).
+ * - Require an authenticated user. The proxy is the primary
+ *   defense — it redirects unauth visits to `/login?redirect_to=…`
+ *   before this layout ever runs. This layout's `getCurrentUser()`
+ *   + redirect is belt-and-braces for the rare case where the
+ *   proxy lets through a stale-session request (the cookie-rotate
+ *   path can race against an expired refresh token).
+ *   Critically: we **redirect rather than throw** so a session
+ *   blip isn't captured to Sentry as an unhandled error.
  * - Verify the user is a member of this workspace. If not, redirect
  *   to their active workspace or onboarding.
  * - Load the workspace row + membership role and pass them to the
@@ -44,7 +50,17 @@ export default async function WorkspaceLayout({
   // otherwise, which surfaces to Sentry as a noisy "Failed query".
   if (!UUID_RE.test(workspaceId)) notFound();
 
-  const user = await requireUser();
+  // Soft auth check. Proxy redirect should have caught this case;
+  // if we got here without a user, redirect rather than throw so
+  // Sentry doesn't capture the AuthError as an unhandled exception.
+  // We can't reliably read the original path here (the URL is
+  // already in /[workspace]/... shape and `headers()` doesn't
+  // surface the request URL on every Next.js runtime), so we send
+  // the user to /login bare — the proxy handles redirect_to on
+  // genuine first-visits, and a session-blip user just lands on
+  // their dashboard after re-auth.
+  const user = await getCurrentUser();
+  if (!user) redirect('/login');
 
   const db = getDb();
   const membership = await db
