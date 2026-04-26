@@ -1,6 +1,6 @@
 'use client';
 
-import { MessageSquare, Pencil, Send, Trash2 } from 'lucide-react';
+import { Bell, BellOff, MessageSquare, Pencil, Send, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 
@@ -40,6 +40,10 @@ import {
   type CommentView,
 } from './comments-actions';
 import { updateTaskAction } from './actions';
+import {
+  getTaskMuteStateAction,
+  setNotificationSubscriptionAction,
+} from '../settings/notifications-actions';
 import { SubtaskList } from './subtask-list';
 import type { MemberOption, TaskRowModel } from './task-row';
 
@@ -93,6 +97,13 @@ export function TaskDetailDialog({
   );
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // Per-task mute state. Loaded lazily on dialog open via the
+  // `notification_subscriptions` table (entity_type='task'). `null`
+  // = not yet loaded; the toggle disables itself until we know the
+  // current state so a click can't race the fetch.
+  const [muted, setMuted] = useState<boolean | null>(null);
+  const [muteToggling, setMuteToggling] = useState(false);
+
   useEffect(() => {
     if (!open) return;
     // Reset edit state to reflect the latest task payload every time
@@ -122,6 +133,19 @@ export function TaskDetailDialog({
         setLoadError(res.error);
       }
     })();
+    // Lazy-fetch the calling user's mute state for this task in
+    // parallel with the comments load. Failures resolve to "not
+    // muted" (the action returns `{muted: false}` on any error)
+    // so the toggle can render without surfacing a read error.
+    setMuted(null);
+    (async () => {
+      const res = await getTaskMuteStateAction({
+        workspaceId,
+        taskId: task.id,
+      });
+      if (cancelled) return;
+      setMuted(res.muted);
+    })();
     return () => {
       cancelled = true;
     };
@@ -136,6 +160,33 @@ export function TaskDetailDialog({
     task.dueDate,
     task.assigneeMembershipId,
   ]);
+
+  async function toggleMute() {
+    if (muted === null) return; // not yet loaded — guard against race
+    const next = !muted;
+    setMuted(next);
+    setMuteToggling(true);
+    try {
+      const res = await setNotificationSubscriptionAction({
+        workspaceId,
+        entityType: 'task',
+        entityId: task.id,
+        mode: next ? 'mute' : null,
+      });
+      if (!res.ok) {
+        setMuted(!next);
+        toast.error(`Couldn't ${next ? 'mute' : 'unmute'} task: ${res.error}`);
+        return;
+      }
+      toast.success(
+        next
+          ? "You'll stop getting emails about this task"
+          : "You'll get emails about this task again",
+      );
+    } finally {
+      setMuteToggling(false);
+    }
+  }
 
   async function saveEdit() {
     setSavingEdit(true);
@@ -235,15 +286,41 @@ export function TaskDetailDialog({
               </Badge>
             )}
             {!editMode && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => setEditMode(true)}
-                className="gap-1.5"
-              >
-                <Pencil className="size-3.5" /> Edit
-              </Button>
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={toggleMute}
+                  disabled={muted === null || muteToggling}
+                  className={`gap-1.5 ${muted ? 'text-amber-400' : 'text-muted-foreground'}`}
+                  title={
+                    muted
+                      ? "You're not getting emails about this task. Click to unmute."
+                      : "Click to stop getting emails about this task. Doesn't affect teammates."
+                  }
+                  aria-pressed={muted ?? false}
+                >
+                  {muted ? (
+                    <>
+                      <BellOff className="size-3.5" /> Muted
+                    </>
+                  ) : (
+                    <>
+                      <Bell className="size-3.5" /> Mute
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setEditMode(true)}
+                  className="gap-1.5"
+                >
+                  <Pencil className="size-3.5" /> Edit
+                </Button>
+              </>
             )}
           </DialogTitle>
           {task.clientName && (

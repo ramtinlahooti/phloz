@@ -444,5 +444,68 @@ export async function setPausedUntilAction(
   return { ok: true };
 }
 
+// ---------------------------------------------------------------------------
+// Read-only helper for the task detail dialog
+// ---------------------------------------------------------------------------
+
+const getTaskMuteSchema = z.object({
+  workspaceId: z.string().uuid(),
+  taskId: z.string().uuid(),
+});
+
+/**
+ * Lazy fetcher for "is this task muted by the calling user?". Returns
+ * `{ muted: false }` on any failure (auth, missing membership, etc.)
+ * since the dialog can render the un-muted state cleanly without
+ * surfacing an error toast for a read.
+ */
+export async function getTaskMuteStateAction(
+  input: z.infer<typeof getTaskMuteSchema>,
+): Promise<{ muted: boolean }> {
+  const parsed = getTaskMuteSchema.safeParse(input);
+  if (!parsed.success) return { muted: false };
+
+  try {
+    await requireRole(parsed.data.workspaceId, [
+      'owner',
+      'admin',
+      'member',
+      'viewer',
+    ]);
+  } catch {
+    return { muted: false };
+  }
+
+  const user = await requireUser();
+  const db = getDb();
+  const [membership] = await db
+    .select({ id: schema.workspaceMembers.id })
+    .from(schema.workspaceMembers)
+    .where(
+      and(
+        eq(schema.workspaceMembers.workspaceId, parsed.data.workspaceId),
+        eq(schema.workspaceMembers.userId, user.id),
+      ),
+    )
+    .limit(1);
+
+  if (!membership) return { muted: false };
+
+  const [row] = await db
+    .select({ id: schema.notificationSubscriptions.id })
+    .from(schema.notificationSubscriptions)
+    .where(
+      and(
+        eq(schema.notificationSubscriptions.workspaceMemberId, membership.id),
+        eq(schema.notificationSubscriptions.entityType, 'task'),
+        eq(schema.notificationSubscriptions.entityId, parsed.data.taskId),
+        eq(schema.notificationSubscriptions.mode, 'mute'),
+      ),
+    )
+    .limit(1);
+
+  return { muted: !!row };
+}
+
 // Re-export so importers can stay narrow.
 export type { NotificationEventType };
