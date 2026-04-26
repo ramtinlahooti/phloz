@@ -18,6 +18,7 @@ import {
   postInternalNoteAction,
   sendEmailReplyAction,
 } from './actions';
+import { MessageStarButton } from './star-button';
 
 export type MessageItem = {
   id: string;
@@ -28,6 +29,9 @@ export type MessageItem = {
   body: string;
   fromLabel: string;
   createdAt: Date;
+  /** Mirrors `messages.starred`. The bubble shows the same Star
+   *  toggle the inbox uses, so users see the pin they set there. */
+  starred: boolean;
 };
 
 /**
@@ -81,7 +85,11 @@ export function MessageThread({
               )}
               <ul className="space-y-2">
                 {t.messages.map((m) => (
-                  <MessageBubble key={m.id} message={m} />
+                  <MessageBubble
+                    key={m.id}
+                    message={m}
+                    workspaceId={workspaceId}
+                  />
                 ))}
               </ul>
             </section>
@@ -100,7 +108,13 @@ export function MessageThread({
   );
 }
 
-function MessageBubble({ message }: { message: MessageItem }) {
+function MessageBubble({
+  message,
+  workspaceId,
+}: {
+  message: MessageItem;
+  workspaceId: string;
+}) {
   const isNote = message.channel === 'internal_note';
   const isOutbound = message.direction === 'outbound';
 
@@ -132,6 +146,13 @@ function MessageBubble({ message }: { message: MessageItem }) {
         <time dateTime={message.createdAt.toISOString()}>
           {message.createdAt.toLocaleString()}
         </time>
+        <span className="ml-auto">
+          <MessageStarButton
+            workspaceId={workspaceId}
+            messageId={message.id}
+            initialStarred={message.starred}
+          />
+        </span>
       </div>
       {message.subject && message.channel === 'email' && (
         <div className="mb-1 font-medium">{message.subject}</div>

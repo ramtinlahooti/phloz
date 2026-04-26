@@ -447,6 +447,7 @@ export default async function ClientDetailPage({
           ? client.name
           : 'System',
     createdAt: m.createdAt,
+    starred: m.starred,
   }));
 
   const assetRows: AssetRow[] = clientAssets.map((a) => ({
