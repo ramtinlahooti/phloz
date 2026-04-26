@@ -75,6 +75,53 @@ three; call sites are queued in NEXT-STEPS.
 
 ---
 
+## 2026-04-26 — Unread @-mentions badge in the sidebar
+
+### Added — Per-member mentions-seen state
+
+Migration #15 adds `workspace_members.mentions_seen_at timestamptz`
+(nullable; null = never visited, every mention counts as unread).
+Applied to Supabase via MCP.
+
+  - `markMentionsSeenAction` stamps the column to `now()`.
+    Self-targeting via requireUser. The mentions page renders a
+    tiny `<MarkMentionsSeen />` effect-only client component that
+    fires the action once on mount.
+  - Layout query computes the unread count via a UNION ALL over
+    `comments` + `messages` filtered by
+    `mentions @> ARRAY[user_id]::uuid[]` AND
+    `created_at > mentions_seen_at` (or seen_at IS NULL). One
+    round-trip; both columns are GIN-indexed.
+  - `DashboardShell` gains a "Mentions" nav item (`@`-icon +
+    amber badge). The badge clears the moment the user visits
+    `/mentions`; the action's
+    `revalidatePath('/[workspace]', 'layout')` refreshes the
+    sidebar number immediately.
+
+### Files touched
+
+- `packages/db/migrations/0015_workspace_members_mentions_seen_at.sql`
+  (new)
+- `packages/db/src/schema/workspace-members.ts` (mentionsSeenAt
+  column)
+- `apps/app/app/[workspace]/mentions/actions.ts` (new action)
+- `apps/app/app/[workspace]/mentions/mark-seen.tsx` (new
+  effect-only component)
+- `apps/app/app/[workspace]/mentions/page.tsx` (render the
+  effect)
+- `apps/app/app/[workspace]/layout.tsx` (UNION ALL unread count +
+  navBadges wiring)
+- `apps/app/components/dashboard-shell.tsx` (Mentions nav item)
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean.
+- `pnpm --filter @phloz/app test:e2e` — 7/7 still green.
+- Migration #15 verified live on Supabase via MCP.
+
+---
+
 ## 2026-04-26 — "Mentioned me" inbox at `/[workspace]/mentions`
 
 ### Added — Unified mentions feed

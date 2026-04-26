@@ -1,10 +1,10 @@
-# Next Steps (as of 2026-04-26 v18)
+# Next Steps (as of 2026-04-26 v19)
 
 ## Branch state
 
 `claude/inspiring-wright-2ca122` is the active feature branch and
-sits 55 commits ahead of `main`. Latest HEAD: `f72c4f1`
-("Mentioned me" inbox + messages.mentions column).
+sits 58 commits ahead of `main`. Latest HEAD: `e831b65` (unread
+@-mentions badge in the sidebar).
 
 **`@`-mentions are now end-to-end on every text surface that
 supports them** — task comments AND internal notes both fire
@@ -51,13 +51,11 @@ locally on chromium-headless-shell. CI runs both via a matrixed
    per-client Access flow + invite + accept-with-pre-assignments
    are now non-trivial state machines worth automating. Needs the
    test-DB + Supabase Auth setup queued in earlier sessions.
-3. **Unread / seen state on the Mentions inbox.** Today the
-   inbox shows the 50 most-recent on each surface, but doesn't
-   distinguish "I've already seen this one" from "new since I
-   last looked". Add a `mentions_seen_at` column on
-   `workspace_members` (single timestamp, updated when the user
-   visits `/mentions`) + a sidebar badge showing
-   `count where createdAt > mentions_seen_at`. Small.
+3. **Calendar hourly axis on week view.** Today's week view shows
+   tasks stacked in chronological order within each day. A 24-row
+   hourly axis with tasks positioned by `dueDate` hour would let
+   users plan time-blocked work. Reuses the existing
+   updateTaskAction primitive.
 2. **Authenticated Playwright tests for `apps/app`.** Need a test
    DB + seeded fixtures + a Playwright auth setup that signs into
    a known test account once and reuses storage state. Approach:
@@ -114,8 +112,9 @@ locally on chromium-headless-shell. CI runs both via a matrixed
 | `0012_notification_preferences.sql` | ✅ |
 | `0013_invitations_pending_client_ids.sql` | ✅ |
 | `0014_messages_mentions.sql` | ✅ |
+| `0015_workspace_members_mentions_seen_at.sql` | ✅ |
 
-All 15 Drizzle migrations applied to Supabase.
+All 16 Drizzle migrations applied to Supabase.
 
 ## Env vars to light up dormant features
 
