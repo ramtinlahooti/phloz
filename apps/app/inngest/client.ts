@@ -23,6 +23,11 @@ export const INNGEST_EVENT_NAMES = [
    *  workspace, ignoring the local-hour gate. Cron path uses no
    *  event name. */
   'recurring/process',
+  /** Fired on-demand to run the weekly tracking-map audit for one
+   *  workspace. Cron path runs over every workspace; this manual
+   *  variant is useful for backfills + replays from the Inngest
+   *  dashboard. */
+  'audit/run-weekly',
 ] as const;
 export type PhlozInngestEventName = (typeof INNGEST_EVENT_NAMES)[number];
 
