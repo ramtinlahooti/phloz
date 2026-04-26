@@ -4,6 +4,67 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-25 — Keyboard shortcuts dialog + activity filter + audit cron
+
+### Added — Keyboard shortcuts cheat sheet (press `?`)
+
+Discoverability for the shortcuts that already shipped (⌘K palette,
+Esc to close, ⌘↑/⌘↓ subtask reorder, n / / / Del on the canvas).
+New `KeyboardShortcutsDialog` mounted once in
+`[workspace]/layout.tsx` listens globally for `?` and toggles a
+categorised cheat-sheet modal. Skips when typing in inputs /
+contentEditable so power users don't trigger it mid-note. Detects
+Mac vs PC for the modifier glyph (⌘ vs Ctrl) — same convention as
+the command palette.
+
+### Added — Activity feed filter
+
+Dashboard's Recent activity feed lumped tasks, messages, files,
+and approval state-changes together. Inline pill row above the
+feed now lets users narrow to one type:
+All / Tasks / Messages / Files / Approvals.
+
+URL-backed via `?activity=`. Filter applies before the 30-row trim
+so a busy task week doesn't push messages off the feed when the
+user has narrowed to messages. Empty state copy adapts to the
+active filter. Invalid params fall back to "all" so malformed
+deep-links don't break the page.
+
+### Added — Weekly tracking-map audit cron
+
+The audit engine already ran on every dashboard render — fine for
+realtime correctness, useless for "trend over time" because nothing
+was ever persisted. New `audit-weekly` Inngest function fires
+Mondays at 08:00 UTC, walks every active client in every workspace,
+runs `auditMap()`, applies that client's `audit_suppressions`, and
+writes one `audit_log` row per client with
+`{ critical, warning, info, suppressed, total_nodes, total_edges }`.
+Plus one workspace-level summary row per pass for the eventual
+trend graph.
+
+Implementation: workspace-wide fetch of every input grouped client-
+side, single bulk insert at the end of each workspace pass.
+`actor_type = 'system'` distinguishes cron rows from the existing
+human-initiated audit-log entries (delete client / role change).
+Concurrency capped at 4. Manual replay via `audit/run-weekly`
+event with optional `{ workspaceId }`. Dormant until Inngest signing
+key + DB connection are wired in production env.
+
+### Files touched
+
+- `apps/app/components/keyboard-shortcuts-dialog.tsx` (new)
+- `apps/app/app/[workspace]/layout.tsx`
+- `apps/app/app/[workspace]/page.tsx`
+- `apps/app/inngest/{client,index}.ts`
+- `apps/app/inngest/functions/audit-weekly.ts` (new)
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean.
+
+---
+
 ## 2026-04-25 — Blog polish + team nudge + bulk archive dormant clients
 
 ### Added — Blog post polish (reading progress, related posts, category badge)
