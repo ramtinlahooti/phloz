@@ -1,15 +1,15 @@
-# Next Steps (as of 2026-04-26 v5)
+# Next Steps (as of 2026-04-26 v6)
 
 ## Branch state
 
 `claude/inspiring-wright-2ca122` is the active feature branch and
-sits 24 commits ahead of `main`. Latest HEAD: `d8a0ac1` (star
-toggle on per-client thread).
+sits 26 commits ahead of `main`. Latest HEAD: `8df53cc` (Playwright
+on apps/app unauth routes).
 
 `pnpm check` 29/29 green, **zero lint warnings**. Both apps build
-clean. **Playwright marketing smoke tests 11/11 green** locally
-(chromium-headless-shell, ~14s). CI workflow now runs the suite on
-every PR.
+clean. **Playwright** — marketing 11/11 + app 6/6, all green
+locally on chromium-headless-shell. CI runs both via a matrixed
+`e2e` job on every PR.
 
 ## Operational status
 
@@ -23,31 +23,43 @@ every PR.
 
 ## Top backlog (next session)
 
-1. **App-level Playwright tests for `apps/app`.** Auth-gated tests
-   need a test DB + seeded fixtures — the bigger setup. Approach:
-   a throwaway Supabase project (or a CI Postgres + Supabase Auth
-   emulator) with a fixture seed script, plus a Playwright auth
-   setup that signs into a known test account once and reuses
-   storage state. Critical paths to cover:
-   - signup → create workspace → add client
-   - client portal magic link
-   - billing checkout (Stripe test mode)
-   - tracking-map node CRUD
-   - dashboard audit Run-now → cron simulation → snapshot lands
-2. **PostHog wiring.** `NEXT_PUBLIC_POSTHOG_KEY` + `POSTHOG_API_KEY`
+1. **Middleware redirect to `/login` for unauthenticated visits to
+   protected routes.** Today the dashboard layout throws via
+   `requireUser()` and the user gets a generic error page —
+   acceptable as a security guard, awful as UX. Wire
+   `apps/app/middleware.ts` to call `updateSession()` from
+   `@phloz/auth` (already exported), check the user, and redirect
+   to `/login?next=<original-path>` on miss. Then strengthen the
+   Playwright `protected route guard` test to assert on the
+   redirect URL instead of just absence-of-content.
+2. **Authenticated Playwright tests for `apps/app`.** Need a test
+   DB + seeded fixtures + a Playwright auth setup that signs into
+   a known test account once and reuses storage state. Approach:
+   - Either a throwaway Supabase project, or a CI Postgres +
+     Supabase Auth local-stack (`supabase start`)
+   - Fixture seed script that creates: 1 user, 1 workspace,
+     1 client, a few tasks, a few messages
+   - `apps/app/e2e/global-setup.ts` that signs in via `/login` and
+     persists storage state to a JSON file
+   - Tests reuse `storageState` and bypass auth on each run
+   Critical paths once that's in place: signup → create workspace
+   → add client; client portal magic link; billing checkout
+   (Stripe test mode); tracking-map node CRUD; audit Run-now →
+   cron simulation → snapshot lands.
+3. **PostHog wiring.** `NEXT_PUBLIC_POSTHOG_KEY` + `POSTHOG_API_KEY`
    in Vercel. Without them, `track()` calls log-only — we have a
    pile of typed events but no funnel data yet.
-3. **GA4 Measurement Protocol** for server-side conversion events
+4. **GA4 Measurement Protocol** for server-side conversion events
    (`upgrade_tier`, `payment_failed`). `GA4_MEASUREMENT_ID` +
    `GA4_API_SECRET` in Vercel.
-4. **Calendar hourly axis on week view.** Today's week view shows
+5. **Calendar hourly axis on week view.** Today's week view shows
    tasks stacked in chronological order within each day. A 24-row
    hourly axis with tasks positioned by `dueDate` hour would let
    users plan time-blocked work.
-5. **Sentry wiring** beyond the SDK init — confirm DSN is set in
+6. **Sentry wiring** beyond the SDK init — confirm DSN is set in
    Vercel, set up a release tag in CI, verify sourcemaps upload.
    Currently configured but never seen a real error event.
-6. **Pre-existing low-impact known issue:**
+7. **Pre-existing low-impact known issue:**
    `workspace_members.email` can lag after Supabase email change.
    Documented in KNOWN-ISSUES; deferred until first real agency
    reports it.
@@ -97,7 +109,13 @@ pnpm --filter @phloz/web dev   # marketing on :3000
 pnpm check                                       # lint + typecheck + unit tests
 pnpm --filter @phloz/web test:e2e:install        # one-time, ~92 MiB chromium
 pnpm --filter @phloz/web test:e2e                # 11 marketing smoke tests
+pnpm --filter @phloz/app test:e2e:install        # same chromium reused
+pnpm --filter @phloz/app test:e2e                # 6 app unauth smoke tests
 ```
+
+Note: `apps/app` e2e needs `apps/app/.env.local` for the dev
+server's middleware. In a worktree, symlink from the main
+checkout: `ln -s /path/to/main/apps/app/.env.local apps/app/.env.local`.
 
 ## Accounts / provisioning status
 

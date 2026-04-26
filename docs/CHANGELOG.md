@@ -4,6 +4,60 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-26 — Playwright on `apps/app` unauthenticated routes
+
+### Added — `apps/app` Playwright scaffold + 6 smoke tests
+
+First Playwright pass on the product app, scoped to the public
+auth surfaces — login, signup, forgot-password, reset-password —
+plus a security smoke check that the workspace dashboard isn't
+rendered for unauthenticated visits.
+
+Tests:
+
+  - **/login**: heading, email + password inputs, sign-in button,
+    cross-link to /signup
+  - **/signup**: heading + name/email/password inputs
+  - **/forgot-password**: heading + email input
+  - **/reset-password**: renders without a 500 (the page handles
+    invalid tokens via the Supabase Auth client; server-render
+    must still come up clean)
+  - **Protected route guard**: hitting `/[fake-uuid]` does NOT
+    render the dashboard's "Recent activity" heading. Today this
+    is enforced by the layout calling `requireUser()` which
+    throws — the proper UX (middleware redirect to /login) is
+    queued for next session.
+
+Authenticated tests (signup → workspace → client, portal magic
+link, Stripe checkout, map CRUD) need a test DB + seeded fixtures
++ a Playwright auth setup that signs in once and reuses storage
+state — left for a focused session.
+
+### Changed — CI Playwright job refactored to a matrix
+
+The previous `e2e-marketing` job becomes a single `e2e` job with
+`strategy.matrix.app: [web, app]`. Same browser cache key works
+for both since they share `@playwright/test` version. Failure
+artefacts upload per-app
+(`playwright-report-web` / `playwright-report-app`,
+`playwright-traces-web` / `playwright-traces-app`).
+
+### Files touched
+
+- `apps/app/package.json` (`@playwright/test` devDep + scripts)
+- `apps/app/playwright.config.ts` (new; mirrors web's config but
+  on port 3001 with a longer 180s webServer timeout for cold-boot)
+- `apps/app/e2e/auth.spec.ts` (new)
+- `.github/workflows/ci.yml` (matrixed e2e job)
+
+### Verified
+
+- `pnpm check` — 29/29 green, 0 lint warnings.
+- `pnpm --filter @phloz/app test:e2e` — 6/6 passed in 5.6s.
+- ci.yml YAML parses with all 5 jobs registered.
+
+---
+
 ## 2026-04-26 — Playwright in CI + star toggle on per-client thread
 
 ### Added — `e2e-marketing` job in `.github/workflows/ci.yml`
