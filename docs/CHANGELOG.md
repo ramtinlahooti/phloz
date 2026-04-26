@@ -4,6 +4,77 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-26 — Per-event notification emails (assignment + recurring spawn)
+
+### Added — `@phloz/email` task notification template + sender
+
+Generic `TaskNotificationEmail` template parameterised on a
+`variant` string: `task_assignment`, `task_mention`,
+`task_approval`, `recurring_task_created`. One template with
+variant-specific headline + body copy keeps the visual identity
+consistent and the email package small.
+`sendTaskNotification` composes the subject from variant + task
+title and tags the Resend send with `event_type` so we can break
+down volume per kind in the dashboard.
+
+### Added — Preference-aware sender at `apps/app/lib/notify-task.ts`
+
+One helper that owns the entire "should this email actually fire?"
+gate, in order:
+
+  1. `workspace_members.paused_until` — vacation mode
+  2. `notification_preferences` — per-event opt-out
+  3. `notification_subscriptions, entity_type='client'` — mute
+  4. `notification_subscriptions, entity_type='task'` — mute
+
+Single round-trip via Promise.all; one small extra lookup for the
+client name when needed. Returns `{sent, reason}` for the caller
+to log. Resend failures caught internally so they can't bubble
+into the calling action / cron.
+
+### Wired — Three event paths now fire real emails
+
+  - **createTaskAction** — non-null assignee + not the creator →
+    emails the assignee with `task_assignment`.
+  - **updateTaskAction** — `assigneeId` actually moves (vs idempotent
+    re-save) → emails the new assignee. `prior` query expanded to
+    include the fields needed for email composition.
+  - **process-recurring-tasks Inngest cron** — template spawns a
+    task with a non-null assignee → emails them with
+    `recurring_task_created`. The insert now `.returning({id})` so
+    the email gets the spawned task's id.
+
+All three are fire-and-forget. Self-assign is skipped on both
+task-action paths (a member picking up a task they created
+shouldn't get spammed).
+
+### Files touched
+
+- `packages/email/src/templates/task-notification.tsx` (new)
+- `packages/email/src/templates/index.ts` (re-exports)
+- `packages/email/src/send.ts` (sendTaskNotification + subject
+  helper)
+- `apps/app/lib/notify-task.ts` (new — preference-aware sender)
+- `apps/app/app/[workspace]/tasks/actions.ts` (createTask + update
+  wirings)
+- `apps/app/inngest/functions/process-recurring-tasks.ts`
+  (recurring spawn wiring + .returning)
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean.
+- `pnpm --filter @phloz/app test:e2e` — 7/7 still green.
+
+### Not yet wired
+
+`task_mention` (needs comment-action update + mention parser),
+`inbound_message` (Resend webhook), and `task_approval`
+(approval-state-change action). Schema + helper support all
+three; call sites are queued in NEXT-STEPS.
+
+---
+
 ## 2026-04-26 — Comprehensive notification preferences
 
 ### Added — `notification_preferences`, `notification_subscriptions`, `paused_until`

@@ -1,10 +1,10 @@
-# Next Steps (as of 2026-04-26 v10)
+# Next Steps (as of 2026-04-26 v11)
 
 ## Branch state
 
 `claude/inspiring-wright-2ca122` is the active feature branch and
-sits 38 commits ahead of `main`. Latest HEAD: `dff23c9` (per-client
-mute on the client detail header).
+sits 41 commits ahead of `main`. Latest HEAD: `860bd19`
+(task_assignment + recurring_task_created emails).
 
 `pnpm check` 29/29 green, **zero lint warnings**. Both apps build
 clean. **Playwright** — marketing 11/11 + app 7/7, all green
@@ -24,19 +24,20 @@ locally on chromium-headless-shell. CI runs both via a matrixed
 
 ## Top backlog (next session)
 
-1. **Wire per-event notification helpers** that fire one-off
-   emails (assignment, mention, inbound message, approval,
-   recurring-task-created). Today the cron + new event-pref
-   filter exists, but the actual one-off notifications haven't
-   been built — when a teammate assigns me a task, no email
-   fires regardless of my prefs. Build:
-     - `packages/email` templates for each event kind
-     - A `sendNotificationToMember(eventType, payload)` helper
-       that respects `digest_enabled`, `paused_until`, and the
-       per-event opt-out before calling Resend
-     - Wire each domain action (assignTask, postComment with
-       mention, inbound webhook, approve, recurring spawn) to
-       call the helper
+1. **Wire the remaining three notification paths.** Helper +
+   template ship today, plus the assignment + recurring-spawn
+   call sites. Still need:
+     - `task_mention` — extend `createCommentAction` to detect
+       `@username` mentions in the body, resolve to membership ids,
+       fan out via `sendTaskNotificationToMember` with variant
+       `task_mention` + a contextLine excerpt of the comment.
+     - `task_approval` — wire the action that flips
+       `tasks.approval_state` (search `approval_state` callsites).
+       Notify the task assignee + the creator (skip self-edits).
+     - `inbound_message` — extend the Resend inbound webhook to
+       fan out an email to owners + admins of the workspace. Needs
+       its own template (one off the per-task pattern; client
+       name + subject preview + portal-style "Open thread" CTA).
 2. **Authenticated Playwright tests for `apps/app`.** Need a test
    DB + seeded fixtures + a Playwright auth setup that signs into
    a known test account once and reuses storage state. Approach:
