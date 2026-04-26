@@ -43,7 +43,10 @@ export default async function SettingsPage({
       .then((rows) => rows[0]),
     requireUser(),
     db
-      .select({ digestEnabled: schema.workspaceMembers.digestEnabled })
+      .select({
+        digestEnabled: schema.workspaceMembers.digestEnabled,
+        digestHour: schema.workspaceMembers.digestHour,
+      })
       .from(schema.workspaceMembers)
       .where(
         and(
@@ -90,7 +93,11 @@ export default async function SettingsPage({
         <CardContent>
           <NotificationsForm
             workspaceId={workspaceId}
-            initial={{ digestEnabled: membership?.digestEnabled ?? true }}
+            workspaceTimezone={workspace.timezone ?? 'UTC'}
+            initial={{
+              digestEnabled: membership?.digestEnabled ?? true,
+              digestHour: membership?.digestHour ?? null,
+            }}
           />
         </CardContent>
       </Card>

@@ -67,6 +67,62 @@ export async function setDigestEnabledAction(
   return { ok: true };
 }
 
+const digestHourSchema = z.object({
+  workspaceId: z.string().uuid(),
+  /** 0–23, or null to fall back to the workspace default (9 AM). */
+  hour: z.number().int().min(0).max(23).nullable(),
+});
+
+/**
+ * Set the calling user's preferred digest hour-of-day for one
+ * workspace. Stored on `workspace_members.digest_hour`; null means
+ * "use the workspace default" (the hourly cron treats null as 9 AM).
+ *
+ * Self-targeting only — same shape as `setDigestEnabledAction`.
+ */
+export async function setDigestHourAction(
+  input: z.infer<typeof digestHourSchema>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = digestHourSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? 'invalid_input',
+    };
+  }
+
+  try {
+    await requireRole(parsed.data.workspaceId, [
+      'owner',
+      'admin',
+      'member',
+      'viewer',
+    ]);
+  } catch {
+    return { ok: false, error: 'forbidden' };
+  }
+
+  const user = await requireUser();
+  const db = getDb();
+  const result = await db
+    .update(schema.workspaceMembers)
+    .set({ digestHour: parsed.data.hour })
+    .where(
+      and(
+        eq(schema.workspaceMembers.workspaceId, parsed.data.workspaceId),
+        eq(schema.workspaceMembers.userId, user.id),
+      ),
+    )
+    .returning({ id: schema.workspaceMembers.id });
+
+  if (result.length === 0) {
+    return { ok: false, error: 'membership_not_found' };
+  }
+
+  revalidatePath(`/${parsed.data.workspaceId}/settings`);
+  return { ok: true };
+}
+
 const previewSchema = z.object({
   workspaceId: z.string().uuid(),
 });

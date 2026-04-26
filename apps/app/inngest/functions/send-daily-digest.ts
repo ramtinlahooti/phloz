@@ -22,10 +22,11 @@ import {
 import { inngest } from '../client';
 
 /**
- * Daily digest email. Cron fires every hour; each workspace is
- * processed only when **its local time** is 9 AM. For each workspace
- * we iterate every `workspace_members` row with `digest_enabled = true`
- * and send each member their own personalised digest:
+ * Daily digest email. Cron fires every hour; for each workspace we
+ * iterate every `workspace_members` row with `digest_enabled = true`
+ * and send the digest to members whose preferred hour matches the
+ * **workspace's local hour** for this run. Members with no
+ * `digest_hour` set fall back to the workspace default (9 AM).
  *
  *   - **Owner / admin** receive the full workspace-wide picture: every
  *     overdue / due-today / pending-approval task, plus unreplied client
@@ -39,7 +40,7 @@ import { inngest } from '../client';
  * of local hour — useful for previewing the email.
  */
 const DIGEST_CRON = 'TZ=UTC 0 * * * *'; // hourly
-const DIGEST_LOCAL_HOUR = 9;
+const DIGEST_DEFAULT_HOUR = 9;
 
 export const sendDailyDigestFunction = inngest.createFunction(
   {
@@ -85,14 +86,13 @@ export const sendDailyDigestFunction = inngest.createFunction(
     const allResults: MemberDigestResult[] = [];
 
     for (const ws of workspaces) {
-      // Cron path: skip workspaces whose local hour isn't 9am.
-      // Manual path: always run (useful for previewing the email).
-      if (!isManual) {
-        const localHour = currentHourInTz(now, ws.timezone ?? 'UTC');
-        if (localHour !== DIGEST_LOCAL_HOUR) {
-          continue;
-        }
-      }
+      // Cron path: pass the current local hour so the workspace can
+      // filter its members down to those whose `digest_hour` matches.
+      // Manual path: filter is bypassed (membershipId targeting +
+      // always-send wins).
+      const localHour = isManual
+        ? null
+        : currentHourInTz(now, ws.timezone ?? 'UTC');
 
       const wsResults = await step.run(`digest-${ws.id}`, async () => {
         return runDigestForWorkspace(
@@ -101,7 +101,7 @@ export const sendDailyDigestFunction = inngest.createFunction(
             name: ws.name,
             ownerUserId: ws.ownerUserId,
           },
-          { membershipId: targetedMember },
+          { membershipId: targetedMember, isManual, localHour },
         );
       });
       allResults.push(...wsResults);
@@ -157,6 +157,7 @@ interface MemberInput {
   role: string;
   email: string | null;
   displayName: string | null;
+  digestHour: number | null;
 }
 
 type MemberDigestResult = {
@@ -175,7 +176,12 @@ type MemberDigestResult = {
  */
 async function runDigestForWorkspace(
   ws: WorkspaceInput,
-  opts: { membershipId: string | null } = { membershipId: null },
+  opts: {
+    membershipId: string | null;
+    isManual: boolean;
+    /** Current hour in the workspace's tz (cron path only). */
+    localHour: number | null;
+  } = { membershipId: null, isManual: false, localHour: null },
 ): Promise<MemberDigestResult[]> {
   const db = getDb();
 
@@ -194,26 +200,33 @@ async function runDigestForWorkspace(
         eq(schema.workspaceMembers.digestEnabled, true),
       );
 
-  const members = await db
+  const allMembers = await db
     .select({
       id: schema.workspaceMembers.id,
       userId: schema.workspaceMembers.userId,
       role: schema.workspaceMembers.role,
       email: schema.workspaceMembers.email,
       displayName: schema.workspaceMembers.displayName,
+      digestHour: schema.workspaceMembers.digestHour,
     })
     .from(schema.workspaceMembers)
     .where(memberFilter);
 
+  // Cron path: filter to members whose preferred hour matches the
+  // workspace's current local hour. Members with NULL digestHour fall
+  // back to the workspace default. Manual path bypasses entirely so
+  // the preview button always sends.
+  const members = opts.isManual
+    ? allMembers
+    : allMembers.filter(
+        (m) => (m.digestHour ?? DIGEST_DEFAULT_HOUR) === opts.localHour,
+      );
+
   if (members.length === 0) {
-    return [
-      {
-        workspaceId: ws.id,
-        membershipId: null,
-        sent: false,
-        reason: 'no_enabled_members',
-      },
-    ];
+    // No eligible members at this hour. Cron-path returns empty so
+    // the run summary stays accurate (we don't claim "skipped" on
+    // workspaces that simply have nobody scheduled this hour).
+    return [];
   }
 
   const now = new Date();

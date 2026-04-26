@@ -2,6 +2,7 @@ import {
   boolean,
   index,
   pgTable,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -43,6 +44,15 @@ export const workspaceMembers = pgTable(
      * user disabled it from Settings → Notifications.
      */
     digestEnabled: boolean('digest_enabled').notNull().default(true),
+    /**
+     * Per-member preferred hour-of-day for the daily digest, in the
+     * workspace's timezone. Null means "use the workspace default of
+     * 9 AM" so existing memberships keep their behaviour. The cron
+     * fires hourly and digests members whose `digestHour` matches the
+     * current local hour. CHECK constraint at the DB level keeps the
+     * range valid (0–23).
+     */
+    digestHour: smallint('digest_hour'),
     /**
      * Per-member auto-applied saved view for `/tasks`. When set, a
      * bare `/tasks` landing redirects to `/tasks?<view.searchParams>`
