@@ -22,6 +22,8 @@ import {
 } from '@phloz/ui';
 
 import { bulkUpdateTasksAction } from './actions';
+import type { MentionMember } from '@/components/mention-composer';
+
 import { TaskRow, type MemberOption, type TaskRowModel } from './task-row';
 
 /**
@@ -45,12 +47,16 @@ export function TaskListWithSelection({
   workspaceId,
   groups,
   members,
+  mentionMembers,
 }: {
   workspaceId: string;
   /** Groups rendered top-to-bottom as separate Cards. Empty groups
    *  are pre-filtered by the caller so we don't render empty sections. */
   groups: { status: TaskStatus; tasks: TaskRowModel[] }[];
   members?: MemberOption[];
+  /** Forwarded to each TaskRow → TaskDetailDialog for the comment
+   *  composer's `@` autocomplete. Optional. */
+  mentionMembers?: MentionMember[];
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -203,6 +209,7 @@ export function TaskListWithSelection({
                             workspaceId={workspaceId}
                             task={task}
                             members={members}
+                            mentionMembers={mentionMembers}
                           />
                         </div>
                       </div>

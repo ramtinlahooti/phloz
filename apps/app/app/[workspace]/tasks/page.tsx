@@ -208,6 +208,15 @@ export default async function TasksPage({
     .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
     .map(({ id, label }) => ({ id, label }));
 
+  // Richer member shape for the task-detail dialog's `@`-mention
+  // composer. Same set of memberships, just kept distinct from
+  // memberOptions (which hides email behind the formatted label).
+  const mentionMembers = memberRows.map((m) => ({
+    id: m.id,
+    displayName: m.displayName,
+    email: m.email,
+  }));
+
   // Filter rows.
   const filtered = taskRows.filter((t) => {
     if (departmentFilter && t.department !== departmentFilter) return false;
@@ -425,6 +434,7 @@ export default async function TasksPage({
         <TaskListWithSelection
           workspaceId={workspaceId}
           members={memberOptions}
+          mentionMembers={mentionMembers}
           groups={DISPLAY_GROUPS.flatMap((group) => {
             const rows = byStatus[group];
             if (statusFilter && group !== statusFilter) return [];

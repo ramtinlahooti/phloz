@@ -3,6 +3,10 @@
 import { Bell, BellOff, MessageSquare, Pencil, Send, Trash2 } from 'lucide-react';
 
 import { MentionBody } from '@/components/mention-body';
+import {
+  MentionComposer,
+  type MentionMember,
+} from '@/components/mention-composer';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 
@@ -61,6 +65,7 @@ export function TaskDetailDialog({
   workspaceId,
   task,
   members,
+  mentionMembers,
   open,
   onOpenChange,
 }: {
@@ -70,6 +75,10 @@ export function TaskDetailDialog({
    *  didn't fetch members — the assignee picker is then hidden from edit
    *  mode and assignee stays unchanged on save. */
   members?: MemberOption[];
+  /** Richer member list (id + displayName + email) for the
+   *  comment composer's `@` autocomplete. Optional — when omitted
+   *  the composer falls back to a plain textarea. */
+  mentionMembers?: MentionMember[];
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
@@ -546,14 +555,25 @@ export function TaskDetailDialog({
         </section>
 
         <form onSubmit={submit} className="space-y-2">
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            rows={3}
-            placeholder="Write a comment…"
-            className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
-            maxLength={10_000}
-          />
+          {mentionMembers && mentionMembers.length > 0 ? (
+            <MentionComposer
+              value={body}
+              onChange={setBody}
+              members={mentionMembers}
+              rows={3}
+              maxLength={10_000}
+              placeholder="Write a comment…  Type @ to mention a teammate."
+            />
+          ) : (
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={3}
+              placeholder="Write a comment…"
+              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+              maxLength={10_000}
+            />
+          )}
           <div className="flex items-center justify-between gap-2">
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               <input

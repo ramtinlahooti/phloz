@@ -454,6 +454,15 @@ export default async function ClientDetailPage({
     .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
     .map(({ id, label }) => ({ id, label }));
 
+  // Mention-composer feed for the task detail dialog. Same set of
+  // memberships, just kept distinct from memberOptions (which hides
+  // email behind the formatted label).
+  const mentionMembers = memberRows.map((m) => ({
+    id: m.id,
+    displayName: m.displayName,
+    email: m.email,
+  }));
+
   // Access-tab projection: every workspace member with a flag for
   // whether they have explicit access to THIS client. Owners +
   // admins are always granted at the RLS layer regardless; the
@@ -938,6 +947,7 @@ export default async function ClientDetailPage({
                   <TaskListWithSelection
                     workspaceId={workspaceId}
                     members={memberOptions}
+                    mentionMembers={mentionMembers}
                     groups={tasksByStatus}
                   />
                 )}

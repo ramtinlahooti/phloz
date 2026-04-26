@@ -24,6 +24,8 @@ import type {
 } from '@phloz/config';
 import { TASK_STATUSES } from '@phloz/config';
 
+import type { MentionMember } from '@/components/mention-composer';
+
 import { TaskDetailDialog } from './task-detail-dialog';
 import {
   deleteTaskAction,
@@ -109,12 +111,16 @@ export function TaskRow({
   workspaceId,
   task,
   members,
+  mentionMembers,
 }: {
   workspaceId: string;
   task: TaskRowModel;
   /** Passed to TaskDetailDialog so its edit mode can offer an assignee
    *  picker. Omit when the caller hasn't fetched members (picker hidden). */
   members?: MemberOption[];
+  /** Richer member list for the comment composer's `@` autocomplete.
+   *  Forwarded as-is to TaskDetailDialog. */
+  mentionMembers?: MentionMember[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -357,6 +363,7 @@ export function TaskRow({
       workspaceId={workspaceId}
       task={task}
       members={members}
+      mentionMembers={mentionMembers}
       open={detailOpen}
       onOpenChange={handleOpenChange}
     />
