@@ -4,6 +4,61 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-26 — Playwright in CI + star toggle on per-client thread
+
+### Added — `e2e-marketing` job in `.github/workflows/ci.yml`
+
+Wires the Playwright marketing smoke suite into every PR. Sits in
+parallel with the existing `build` / `rls-invariants` / `pgtap`
+jobs, gated on `check` (lint + typecheck + unit tests) going green.
+
+  - **Browser cache**: `actions/cache@v4` keyed on the
+    `@playwright/test` version so a SDK bump invalidates cleanly
+    and most runs reuse the ~92 MiB chromium download.
+  - **Cache miss**: `playwright install --with-deps chromium`
+    (browser + apt libs).
+  - **Cache hit**: `playwright install-deps chromium` (apt libs
+    only — system deps aren't cached).
+  - **Failure artefacts**: `playwright-report/` (HTML report) and
+    `test-results/` (traces + screenshots from retain-on-failure)
+    upload as 7-day artefacts. Long enough to debug without
+    bloating storage.
+
+`workers: 1` on CI (already in playwright.config.ts) so the dev
+server isn't pounded by parallel requests; the smoke suite is
+small enough that sequential runs finish in ~30s.
+
+### Added — Star toggle on the per-client thread bubbles
+
+Each `MessageBubble` now renders the same Star button the inbox
+uses, right-aligned in the metadata row. Users see the pin they
+set in the inbox when they drill into a client's Messages tab,
+and can toggle from either surface — both call
+`toggleMessageStarAction` against the same `messages.starred`
+column.
+
+`MessageItem` gains a `starred: boolean` field; the per-client
+page passes it through from the existing messages query. No new
+DB query — the column was already added in migration #11. Both
+surfaces revalidate the same paths so toggling from one updates
+the other on next render.
+
+### Files touched
+
+- `.github/workflows/ci.yml` (new e2e-marketing job)
+- `apps/app/app/[workspace]/messages/message-thread.tsx`
+  (`starred` field + star button on each bubble)
+- `apps/app/app/[workspace]/clients/[clientId]/page.tsx`
+  (pass `starred` through to MessageItem)
+
+### Verified
+
+- `pnpm check` — 29/29 green, 0 lint warnings.
+- `pnpm --filter @phloz/app build` — clean.
+- ci.yml YAML parses cleanly with all 5 jobs registered.
+
+---
+
 ## 2026-04-26 — Playwright smoke tests for the marketing site
 
 ### Added — `apps/web` Playwright scaffold + 11 smoke tests
