@@ -36,6 +36,10 @@ export interface TaskNotificationEmailProps {
   /** Optional context line below the headline (e.g. an approval
    *  comment or a mention excerpt). Skipped when null. */
   contextLine: string | null;
+  /** Deep link to the recipient's notification preferences. Footer
+   *  CTA so the recipient can mute / opt out without rummaging
+   *  through the app. */
+  preferencesUrl: string;
 }
 
 const HEADLINES: Record<TaskNotificationVariant, (p: TaskNotificationEmailProps) => string> = {
@@ -107,8 +111,14 @@ export function TaskNotificationEmail(props: TaskNotificationEmailProps) {
         </Link>
       </Text>
       <Text className="m-0 mt-4 text-xs leading-5 text-neutral-500">
-        Don&apos;t want these? Adjust your preferences at
-        Settings → Notifications inside Phloz.
+        Don&apos;t want these?{' '}
+        <Link
+          href={props.preferencesUrl}
+          className="text-neutral-500 underline"
+        >
+          Manage your notification preferences
+        </Link>{' '}
+        in Phloz.
       </Text>
     </EmailLayout>
   );
@@ -124,6 +134,7 @@ TaskNotificationEmail.PreviewProps = {
   dueLabel: 'Apr 28',
   taskUrl: 'https://app.phloz.com/<workspace>/tasks?task=abc',
   contextLine: null,
+  preferencesUrl: 'https://app.phloz.com/<workspace>/settings#notifications',
 } satisfies TaskNotificationEmailProps;
 
 export default TaskNotificationEmail;

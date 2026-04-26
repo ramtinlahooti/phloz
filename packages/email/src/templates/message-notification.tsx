@@ -25,6 +25,8 @@ export interface MessageNotificationEmailProps {
   bodyPreview: string;
   /** Deep link to the client's inbox in the product app. */
   inboxUrl: string;
+  /** Deep link to the recipient's notification preferences. */
+  preferencesUrl: string;
 }
 
 export function MessageNotificationEmail({
@@ -34,6 +36,7 @@ export function MessageNotificationEmail({
   subject,
   bodyPreview,
   inboxUrl,
+  preferencesUrl,
 }: MessageNotificationEmailProps) {
   const headline = subject
     ? `${clientName} replied: ${subject}`
@@ -76,8 +79,14 @@ export function MessageNotificationEmail({
         </Link>
       </Text>
       <Text className="m-0 mt-4 text-xs leading-5 text-neutral-500">
-        Don&apos;t want these? Adjust your preferences at
-        Settings → Notifications inside Phloz.
+        Don&apos;t want these?{' '}
+        <Link
+          href={preferencesUrl}
+          className="text-neutral-500 underline"
+        >
+          Manage your notification preferences
+        </Link>{' '}
+        in Phloz.
       </Text>
     </EmailLayout>
   );
@@ -91,6 +100,7 @@ MessageNotificationEmail.PreviewProps = {
   bodyPreview:
     'Thanks for sending these over. Quick question on the conversion column — is that the GA4 event count or the imported one?',
   inboxUrl: 'https://app.phloz.com/<workspace>/messages',
+  preferencesUrl: 'https://app.phloz.com/<workspace>/settings#notifications',
 } satisfies MessageNotificationEmailProps;
 
 export default MessageNotificationEmail;

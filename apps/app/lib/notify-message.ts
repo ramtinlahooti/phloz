@@ -126,6 +126,7 @@ export async function fanOutInboundMessageNotification(input: {
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.phloz.com';
   const inboxUrl = `${appUrl}/${input.workspaceId}/clients/${input.clientId}`;
+  const preferencesUrl = `${appUrl}/${input.workspaceId}/settings#notifications`;
   // Shrink the body preview to a sane size for the email card.
   const bodyPreview = input.bodyPreview.slice(0, 240).trim();
 
@@ -166,6 +167,7 @@ export async function fanOutInboundMessageNotification(input: {
         subject: input.subject,
         bodyPreview,
         inboxUrl,
+        preferencesUrl,
       });
       sent += 1;
     } catch (err) {

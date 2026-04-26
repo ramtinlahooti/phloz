@@ -144,7 +144,7 @@ export default async function SettingsPage({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="notifications" className="scroll-mt-6">
         <CardHeader>
           <CardTitle className="text-base">Notifications</CardTitle>
         </CardHeader>

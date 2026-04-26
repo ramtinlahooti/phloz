@@ -1,6 +1,6 @@
 'use client';
 
-import { LogOut, User } from 'lucide-react';
+import { Bell, LogOut, User } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -64,6 +64,15 @@ export function UserMenu({
           >
             <User className="size-4" />
             Profile & settings
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link
+            href={`/${currentWorkspaceId}/settings#notifications`}
+            className="flex items-center gap-2"
+          >
+            <Bell className="size-4" />
+            Notification preferences
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

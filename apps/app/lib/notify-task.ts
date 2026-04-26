@@ -161,6 +161,7 @@ export async function sendTaskNotificationToMember(input: {
   const taskUrl = input.task.clientId
     ? `${appUrl}/${input.workspaceId}/clients/${input.task.clientId}?task=${input.task.id}`
     : `${appUrl}/${input.workspaceId}/tasks?task=${input.task.id}`;
+  const preferencesUrl = `${appUrl}/${input.workspaceId}/settings#notifications`;
 
   const dueLabel = input.task.dueDate
     ? input.task.dueDate.toLocaleDateString(undefined, {
@@ -186,6 +187,7 @@ export async function sendTaskNotificationToMember(input: {
       dueLabel,
       taskUrl,
       contextLine: input.contextLine ?? null,
+      preferencesUrl,
     });
     return { sent: true };
   } catch (err) {
