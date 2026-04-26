@@ -75,6 +75,80 @@ three; call sites are queued in NEXT-STEPS.
 
 ---
 
+## 2026-04-26 — Per-client Access tab + invite-flow pre-assignment
+
+### Added — Per-client Access tab on the client detail page
+
+Owner/admin-only tab on `/[workspace]/clients/[clientId]?tab=access`.
+Lists every workspace member with a per-row toggle for THIS
+client's access. Owner/admin rows are disabled with "Always has
+access" since `phloz_is_assigned_to` returns true for them
+unconditionally. Same workspace-policy banner as the Team-page
+dialog when the workspace is in "Everyone sees everything" mode.
+
+New thin action `setMemberClientAccessPairAction` — single-pair
+upsert / delete (sister of the full-list-replace
+`setMemberClientAccessAction`). Idempotent + ON CONFLICT DO
+NOTHING.
+
+The per-client and per-member views are symmetric: edit from
+either surface, same `workspace_member_client_access` table
+underneath.
+
+### Added — Invite-flow client pre-assignment
+
+Migration #13 (`0013_invitations_pending_client_ids.sql`) adds a
+`uuid[]` column on `invitations`. **Applied to Supabase** in the
+same session.
+
+  - **API route** validates that every pre-selected client belongs
+    to the workspace (400 otherwise), strips the array for admin
+    invites (admins always see everything).
+  - **InviteMemberCard** gains a collapsible "Pre-assign clients"
+    section that appears only for member + viewer roles. Banner
+    appears when the workspace policy is currently "Everyone sees
+    everything" so the inviter knows the assignments will only
+    take effect once the policy is restricted. Selecting Admin
+    clears the picker + closes the panel.
+  - **accept-invite flow** now `.returning({id})` on the
+    membership insert + bulk-inserts the pre-selected access rows
+    with ON CONFLICT DO NOTHING. Silent on clients deleted
+    between invite + accept.
+
+Together: inviting "alex@agency.com" as a Member with two
+pre-selected clients lands Alex with both rows in
+`workspace_member_client_access` the moment they accept — no
+post-acceptance ceremony.
+
+### Files touched
+
+- `packages/db/migrations/0013_invitations_pending_client_ids.sql`
+  (new)
+- `packages/db/src/schema/invitations.ts` (uuid[] column)
+- `apps/app/app/[workspace]/clients/[clientId]/access-panel.tsx`
+  (new)
+- `apps/app/app/[workspace]/clients/[clientId]/page.tsx`
+  (Access tab + projection + workspace policy read)
+- `apps/app/app/[workspace]/team/actions.ts`
+  (`setMemberClientAccessPairAction`)
+- `apps/app/app/[workspace]/team/invite-member-card.tsx`
+  (pre-assignment picker)
+- `apps/app/app/[workspace]/team/page.tsx` (pass clients +
+  policy through)
+- `apps/app/app/accept-invite/page.tsx` (apply pre-assignments
+  on accept)
+- `apps/app/app/api/workspaces/[workspaceId]/invitations/route.ts`
+  (accept + validate pendingClientIds)
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean.
+- `pnpm --filter @phloz/app test:e2e` — 7/7 still green.
+- Migration #13 verified live on Supabase via MCP.
+
+---
+
 ## 2026-04-26 — Per-member client-access UI (Phase 1)
 
 ### Added — Settings → Client access policy toggle

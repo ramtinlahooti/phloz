@@ -1,10 +1,10 @@
-# Next Steps (as of 2026-04-26 v14)
+# Next Steps (as of 2026-04-26 v15)
 
 ## Branch state
 
 `claude/inspiring-wright-2ca122` is the active feature branch and
-sits 47 commits ahead of `main`. Latest HEAD: `9e63a07`
-(per-member client-access UI / Phase 1).
+sits 48 commits ahead of `main`. Latest HEAD: `1dd4f23`
+(per-client Access tab + invite-flow pre-assignment).
 
 **Notifications surface is comprehensive** —
   - Five event types wired end-to-end (task_assignment,
@@ -36,25 +36,21 @@ locally on chromium-headless-shell. CI runs both via a matrixed
 
 ## Top backlog (next session)
 
-1. **Per-client "Access" section on the client detail page.**
-   Mirror image of the Team-page dialog: when an owner/admin
-   opens a client, show which members have access + let them
-   add/remove from the same client surface. Same
-   `setMemberClientAccessAction` action; the symmetric edit
-   point reduces context-switching.
-2. **Invite-flow integration.** Today's `InviteMemberCard`
-   sets a role but doesn't pre-assign clients. Extend the
-   invite dialog so inviting a member or viewer can pre-select
-   clients (filtered by the workspace policy — when "Everyone
-   sees everything", the step is hidden).
+1. **Onboarding integration for client access.** The
+   onboarding-checklist surface should hint at the new policy
+   toggle when an owner has invited a viewer or member but the
+   workspace is still in "Everyone sees everything". Bumps a
+   "Restricted access?" item into the checklist with a link to
+   Settings → Client access. Small.
+2. **Authenticated Playwright tests with auth fixtures.** The
+   per-client Access flow + invite + accept-with-pre-assignments
+   are now non-trivial state machines worth automating. Needs the
+   test-DB + Supabase Auth setup queued in earlier sessions.
 3. **`@displayname` autocomplete in the comment composer.** The
-   mention parser shipped earlier matches against
-   `workspace_members.email` (full address OR local-part). Most
-   users want to type `@Alex Chen` — that needs an autocomplete
-   widget that resolves to a canonical token before it hits the
-   regex. `comments.mentions` is already populated server-side so
-   the rendering layer (highlighting, hover cards) can come
-   along for the ride.
+   mention parser matches against `workspace_members.email` (full
+   address OR local-part). Autocomplete widget that resolves to a
+   canonical token before the regex sees it would let users type
+   `@Alex Chen` naturally.
 2. **Authenticated Playwright tests for `apps/app`.** Need a test
    DB + seeded fixtures + a Playwright auth setup that signs into
    a known test account once and reuses storage state. Approach:
@@ -109,8 +105,9 @@ locally on chromium-headless-shell. CI runs both via a matrixed
 | `0010_workspace_members_digest_hour.sql` | ✅ |
 | `0011_messages_starred.sql` | ✅ |
 | `0012_notification_preferences.sql` | ✅ |
+| `0013_invitations_pending_client_ids.sql` | ✅ |
 
-All 13 Drizzle migrations applied to Supabase.
+All 14 Drizzle migrations applied to Supabase.
 
 ## Env vars to light up dormant features
 
