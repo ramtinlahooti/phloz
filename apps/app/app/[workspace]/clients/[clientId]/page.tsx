@@ -45,6 +45,7 @@ import { assertValidWorkspaceId } from '@/lib/workspace-param';
 import { RunAuditButton } from '../../run-audit-button';
 
 import { ArchiveButton } from './archive-button';
+import { MuteClientButton } from './mute-client-button';
 import { ClientOverviewForm } from './client-overview-form';
 import { LazyMapClient } from './map/lazy-map-client';
 import { ClientNotesEditor } from './notes-editor';
@@ -138,6 +139,7 @@ export default async function ClientDetailPage({
     auditHistoryRows,
     recurringTemplateRows,
     workspaceRow,
+    clientMuteRow,
   ] = await Promise.all([
       db
         .select()
@@ -323,6 +325,31 @@ export default async function ClientDetailPage({
         .where(eq(schema.workspaces.id, workspaceId))
         .limit(1)
         .then((rows) => rows[0]),
+      // Has the calling user muted this client? One row in
+      // notification_subscriptions = muted. Joined against
+      // workspace_members so the lookup is scoped to the caller's
+      // own membership row.
+      db
+        .select({ id: schema.notificationSubscriptions.id })
+        .from(schema.notificationSubscriptions)
+        .innerJoin(
+          schema.workspaceMembers,
+          eq(
+            schema.workspaceMembers.id,
+            schema.notificationSubscriptions.workspaceMemberId,
+          ),
+        )
+        .where(
+          and(
+            eq(schema.workspaceMembers.workspaceId, workspaceId),
+            eq(schema.workspaceMembers.userId, actor.user.id),
+            eq(schema.notificationSubscriptions.entityType, 'client'),
+            eq(schema.notificationSubscriptions.entityId, clientId),
+            eq(schema.notificationSubscriptions.mode, 'mute'),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
     ]);
 
   const workspaceTimezone = workspaceRow?.timezone ?? 'UTC';
@@ -605,6 +632,11 @@ export default async function ClientDetailPage({
             {client.archivedAt && (
               <Badge variant="outline">Archived</Badge>
             )}
+            <MuteClientButton
+              workspaceId={workspaceId}
+              clientId={clientId}
+              initialMuted={clientMuteRow !== null}
+            />
             <ArchiveButton
               workspaceId={workspaceId}
               clientId={clientId}
