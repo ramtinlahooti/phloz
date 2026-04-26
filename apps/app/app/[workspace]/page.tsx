@@ -647,6 +647,10 @@ export default async function WorkspaceOverviewPage({
           previousAt: previousAuditSnapshot?.createdAt ?? null,
         }
       : null;
+  // Most recent persisted snapshot, used to render "Last run X ago"
+  // under the trend line. Disambiguates "from last run" now that
+  // manual Run-now buttons can fire any time.
+  const lastAuditRunAt = recentAuditSummaries[0]?.createdAt ?? null;
 
   // Sparkline series: oldest → newest, critical-count per snapshot.
   // We pull from the same `recentAuditSummaries` (newest-first) and
@@ -1040,6 +1044,7 @@ export default async function WorkspaceOverviewPage({
               workspaceId={workspaceId}
               trend={auditTrend}
               sparkline={auditSparkline}
+              lastRanAt={lastAuditRunAt}
               canRunAudit={isPrivileged}
             />
           )}
@@ -1292,6 +1297,7 @@ function AuditRollupCard({
   workspaceId,
   trend,
   sparkline,
+  lastRanAt,
   canRunAudit,
 }: {
   clients: {
@@ -1314,6 +1320,11 @@ function AuditRollupCard({
    *  weekly snapshots. Renders an inline SVG sparkline when set
    *  + length >= 2. */
   sparkline: Array<{ critical: number; warning: number }> | null;
+  /** Most recent persisted snapshot's createdAt, or null if no
+   *  persisted runs exist yet. Renders as "Last run 4h ago" under
+   *  the trend line so "from last run" has a concrete anchor when
+   *  manual Run-now buttons fire alongside the weekly cron. */
+  lastRanAt: Date | null;
   /** Owner/admin only. Shows a small "Run now" button that fires
    *  the cron event for this workspace. */
   canRunAudit: boolean;
@@ -1347,6 +1358,11 @@ function AuditRollupCard({
         <p className="mt-0.5 text-xs text-muted-foreground">{summary}</p>
         {trendLine && (
           <p className="mt-1 text-[11px] text-muted-foreground">{trendLine}</p>
+        )}
+        {lastRanAt && (
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            Last run {formatRelativeTime(lastRanAt)}
+          </p>
         )}
         {sparkline && sparkline.length >= 2 && (
           <div className="mt-2">
@@ -1587,5 +1603,36 @@ function renderAuditTrend(
     return 'No change from last run';
   }
   return `${segments.join(' · ')} from last run`;
+}
+
+/**
+ * Short relative-time label for the audit "Last run X ago" line.
+ * Bins to minutes / hours / days under a week, then falls through to
+ * an absolute "Apr 19" date for older runs. Server-rendered, so the
+ * granularity rounds toward "scrubbed enough to not be misleading
+ * 30s after the page loads" — minutes is the smallest bin we use.
+ */
+function formatRelativeTime(at: Date, now: Date = new Date()): string {
+  const ms = now.getTime() - at.getTime();
+  if (ms < 0) {
+    // Future timestamps aren't expected, but if a clock skew or a
+    // misbehaving cron writes one, render the absolute date rather
+    // than a confusing "−5m ago".
+    return at.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+    });
+  }
+  const minutes = Math.floor(ms / (1000 * 60));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return at.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
