@@ -1,15 +1,22 @@
-# Next Steps (as of 2026-04-26 v12)
+# Next Steps (as of 2026-04-26 v13)
 
 ## Branch state
 
 `claude/inspiring-wright-2ca122` is the active feature branch and
-sits 42 commits ahead of `main`. Latest HEAD: `cc30ef8` (mention +
-approval + inbound notification paths).
+sits 45 commits ahead of `main`. Latest HEAD: `c2bb045` (@mention
+rendering as styled chips).
 
-**All five notification event types are now wired end-to-end** —
-`task_assignment`, `task_mention`, `inbound_message`,
-`task_approval`, `recurring_task_created`. The Settings →
-Notifications toggles users see actually drive real emails.
+**Notifications surface is comprehensive** —
+  - Five event types wired end-to-end (task_assignment,
+    task_mention, inbound_message, task_approval,
+    recurring_task_created)
+  - Settings → Notifications panel with vacation mode + per-event
+    toggles + per-client mute list
+  - Per-task mute on the dialog header
+  - Per-client mute on the client detail header
+  - User-menu shortcut + email footer "Manage preferences" link
+  - Vacation-mode banner above every workspace page
+  - Mention chips in rendered comments + message bubbles
 
 `pnpm check` 29/29 green, **zero lint warnings**. Both apps build
 clean. **Playwright** — marketing 11/11 + app 7/7, all green

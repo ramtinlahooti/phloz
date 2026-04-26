@@ -75,6 +75,81 @@ three; call sites are queued in NEXT-STEPS.
 
 ---
 
+## 2026-04-26 — Notification discoverability + mention rendering
+
+### Added — Discoverable notification preferences
+
+Three small ergonomics wins so users can find and manage their
+notification settings without hunting:
+
+  - **User-menu shortcut** — top-right dropdown gains a
+    "Notification preferences" item that deep-links to
+    `/[workspace]/settings#notifications`.
+  - **Anchor on the Settings card** — the Notifications card
+    has `id="notifications"` + `scroll-mt-6` so the deep-link
+    actually scrolls the card into view.
+  - **Real "Manage your preferences" link in email footers** —
+    both `TaskNotificationEmail` and `MessageNotificationEmail`
+    accept a `preferencesUrl` prop and render it as a clickable
+    anchor. Sending helpers compute the URL from
+    `NEXT_PUBLIC_APP_URL + workspaceId + path`.
+
+A recipient who gets an unwanted notification can click straight
+from the email to the toggle that controls it.
+
+### Added — Vacation-mode banner
+
+When the calling user has `paused_until > now`, a thin amber
+strip renders at the top of every page in the workspace:
+
+> ⏸ Vacation mode is on until Apr 28. You won't get notification
+> emails until then. **Manage** • **Turn off**
+
+Layout-level so it follows the user across tasks / messages /
+clients without re-mounting. **Manage** deep-links to the full
+preferences panel; **Turn off** clears the pause inline (calls
+`setPausedUntilAction` with `until: null`) with optimistic hide
++ revert on error.
+
+### Added — `<MentionBody />` for @-mention rendering
+
+Splits a comment / message body into plain-text segments + styled
+mention chips. Wired into the task detail dialog's comments list
+and the per-client message thread bubbles. Match rule
+`(?<!\w)@<token>` prevents `support@phloz.com` from mis-matching
+its mid-word `@`. Server-render-friendly (no client state).
+
+The chip is purely visual reinforcement — the mention parser in
+`createCommentAction` is the source of truth for who actually gets
+emailed; an unresolved token still renders as a chip but doesn't
+fire a notification.
+
+### Files touched
+
+- `apps/app/components/user-menu.tsx` (Notification preferences
+  item)
+- `apps/app/components/vacation-banner.tsx` (new)
+- `apps/app/components/mention-body.tsx` (new)
+- `apps/app/app/[workspace]/layout.tsx` (banner integration)
+- `apps/app/app/[workspace]/settings/page.tsx` (anchor id)
+- `apps/app/app/[workspace]/tasks/task-detail-dialog.tsx`
+  (comment rendering)
+- `apps/app/app/[workspace]/messages/message-thread.tsx`
+  (message bubble rendering)
+- `packages/email/src/templates/task-notification.tsx`
+  (preferencesUrl prop)
+- `packages/email/src/templates/message-notification.tsx`
+  (preferencesUrl prop)
+- `apps/app/lib/notify-task.ts` + `apps/app/lib/notify-message.ts`
+  (compute + pass preferencesUrl)
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — clean.
+
+---
+
 ## 2026-04-26 — Mention + approval + inbound notification paths
 
 ### Added — `task_mention` from comment bodies
