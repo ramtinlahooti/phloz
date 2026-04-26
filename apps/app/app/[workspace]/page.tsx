@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+import { requireRole } from '@phloz/auth/roles';
 import { getActiveClientCount, getTier } from '@phloz/billing';
 import type {
   ApprovalState,
@@ -42,6 +43,8 @@ import {
 } from '@phloz/tracking-map';
 
 import { AuditSparkline } from '@/components/audit-sparkline';
+
+import { RunAuditButton } from './run-audit-button';
 import {
   HEALTH_COLORS,
   computeClientHealth,
@@ -123,6 +126,16 @@ export default async function WorkspaceOverviewPage({
     ? sp.activity
     : 'all';
   const activityShow = parseActivityShow(sp.activity_show);
+  // Role gates the "Run audit now" button on the audit rollup card —
+  // owner/admin only because the resulting workspace-summary row
+  // affects the dashboard for everyone.
+  const actor = await requireRole(workspaceId, [
+    'owner',
+    'admin',
+    'member',
+    'viewer',
+  ]);
+  const isPrivileged = actor.role === 'owner' || actor.role === 'admin';
   const db = getDb();
 
   const now = new Date();
@@ -1027,6 +1040,7 @@ export default async function WorkspaceOverviewPage({
               workspaceId={workspaceId}
               trend={auditTrend}
               sparkline={auditSparkline}
+              canRunAudit={isPrivileged}
             />
           )}
           <Card>
@@ -1278,6 +1292,7 @@ function AuditRollupCard({
   workspaceId,
   trend,
   sparkline,
+  canRunAudit,
 }: {
   clients: {
     id: string;
@@ -1299,6 +1314,9 @@ function AuditRollupCard({
    *  weekly snapshots. Renders an inline SVG sparkline when set
    *  + length >= 2. */
   sparkline: Array<{ critical: number; warning: number }> | null;
+  /** Owner/admin only. Shows a small "Run now" button that fires
+   *  the cron event for this workspace. */
+  canRunAudit: boolean;
 }) {
   const summary = [
     totalCritical > 0 &&
@@ -1324,6 +1342,7 @@ function AuditRollupCard({
             />
             Tracking audit
           </span>
+          {canRunAudit && <RunAuditButton workspaceId={workspaceId} />}
         </CardTitle>
         <p className="mt-0.5 text-xs text-muted-foreground">{summary}</p>
         {trendLine && (
