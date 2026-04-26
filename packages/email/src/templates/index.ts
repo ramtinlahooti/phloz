@@ -20,3 +20,7 @@ export {
   type TaskNotificationEmailProps,
   type TaskNotificationVariant,
 } from './task-notification';
+export {
+  MessageNotificationEmail,
+  type MessageNotificationEmailProps,
+} from './message-notification';

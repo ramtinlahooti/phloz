@@ -7,6 +7,7 @@ import { parseResendInbound, verifyResendSignature } from '@phloz/email';
 import { getDb, schema } from '@phloz/db/client';
 
 import { fireTrack, serverTrackContext } from '@/lib/analytics';
+import { fanOutInboundMessageNotification } from '@/lib/notify-message';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -109,6 +110,21 @@ export async function POST(request: Request) {
         serverTrackContext(workspace.ownerUserId, match.workspaceId),
       );
     }
+
+    // Fire-and-forget per-member email fan-out. Owners + admins get
+    // an email each, gated by their personal preferences. Failures
+    // are logged inside the helper; the webhook still returns 200
+    // so Resend doesn't retry the inbound (which would create a
+    // duplicate `messages` row).
+    void fanOutInboundMessageNotification({
+      workspaceId: match.workspaceId,
+      clientId: match.clientId,
+      subject: parsed.subject ?? null,
+      bodyPreview: parsed.text,
+    }).catch((err: unknown) => {
+      // eslint-disable-next-line no-console
+      console.error('[resend.inbound] fan-out failed', err);
+    });
 
     return NextResponse.json({ ok: true, routed: true });
   }

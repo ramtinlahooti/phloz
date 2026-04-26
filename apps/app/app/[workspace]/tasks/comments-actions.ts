@@ -9,6 +9,8 @@ import { requireUser } from '@phloz/auth/session';
 import { COMMENT_PARENT_TYPES, TASK_VISIBILITIES } from '@phloz/config';
 import { getDb, schema } from '@phloz/db/client';
 
+import { sendTaskNotificationToMember } from '@/lib/notify-task';
+
 /**
  * Comments are polymorphic — `parent_type` + `parent_id` points at a
  * task, tracking_node, message, or client. For now only the task
@@ -213,10 +215,178 @@ export async function createCommentAction(
 
   if (!row) return { ok: false, error: 'insert_failed' };
 
+  // Mention fan-out — only meaningful on task comments today
+  // (mentions on tracking_node / message / client comments use the
+  // same parser but don't fire emails until those surfaces grow
+  // their own templates). Best-effort + fire-and-forget.
+  if (parsed.data.parentType === 'task') {
+    void fanOutMentions({
+      workspaceId: parsed.data.workspaceId,
+      taskId: parsed.data.parentId,
+      body: parsed.data.body,
+      actorUserId: user.id,
+      commentId: row.id,
+    }).catch((err: unknown) => {
+      console.error('[comments] mention fan-out failed', err);
+    });
+  }
+
   // Revalidate the most likely surface — the task lives on both the
   // workspace tasks page and the client detail page.
   revalidatePath(`/${parsed.data.workspaceId}/tasks`);
   return { ok: true, id: row.id };
+}
+
+/**
+ * Parse `@<token>` mentions from a comment body and email each
+ * matched workspace member, gated by their notification prefs.
+ *
+ * Match strategy: extract every `@<token>` (alphanumerics + dot
+ * + hyphen) and try to resolve each token to a workspace member
+ * via two paths:
+ *
+ *   1. Email exact match (case-insensitive) — the user typed
+ *      `@alex@agency.com`.
+ *   2. Email local-part match — `@alex` matches `alex@agency.com`
+ *      so people don't have to type the full address.
+ *
+ * Display-name matching is skipped to keep ambiguity manageable;
+ * a future autocomplete in the comment composer will collapse
+ * these heuristics into a single canonical token.
+ *
+ * Mentions are also persisted to `comments.mentions` (array of
+ * user_ids) so future surfaces — a "mentioned me" inbox, audit
+ * trail — can read them without re-parsing the body.
+ */
+async function fanOutMentions(input: {
+  workspaceId: string;
+  taskId: string;
+  body: string;
+  actorUserId: string;
+  commentId: string;
+}): Promise<void> {
+  const tokens = extractMentionTokens(input.body);
+  if (tokens.length === 0) return;
+
+  const db = getDb();
+
+  // Single fetch of every workspace member; the per-workspace
+  // headcount is small enough that filtering in JS is cheaper
+  // than building a SQL OR.
+  const members = await db
+    .select({
+      id: schema.workspaceMembers.id,
+      userId: schema.workspaceMembers.userId,
+      email: schema.workspaceMembers.email,
+    })
+    .from(schema.workspaceMembers)
+    .where(eq(schema.workspaceMembers.workspaceId, input.workspaceId));
+
+  const lowered = new Set(tokens.map((t) => t.toLowerCase()));
+  const matched = members.filter((m) => {
+    if (!m.email) return false;
+    const lc = m.email.toLowerCase();
+    if (lowered.has(lc)) return true;
+    const local = lc.split('@')[0];
+    if (local && lowered.has(local)) return true;
+    return false;
+  });
+  if (matched.length === 0) return;
+
+  // Persist resolved user_ids on the comment row for future
+  // surfaces. Filter out null user_ids (members invited but not
+  // yet accepted).
+  const userIds = matched
+    .map((m) => m.userId)
+    .filter((id): id is string => id !== null);
+  if (userIds.length > 0) {
+    await db
+      .update(schema.comments)
+      .set({ mentions: userIds })
+      .where(eq(schema.comments.id, input.commentId));
+  }
+
+  // Resolve the task + workspace + actor for the email payload.
+  const [task, workspace, actor] = await Promise.all([
+    db
+      .select({
+        id: schema.tasks.id,
+        title: schema.tasks.title,
+        clientId: schema.tasks.clientId,
+        dueDate: schema.tasks.dueDate,
+      })
+      .from(schema.tasks)
+      .where(eq(schema.tasks.id, input.taskId))
+      .limit(1)
+      .then((r) => r[0]),
+    db
+      .select({ name: schema.workspaces.name })
+      .from(schema.workspaces)
+      .where(eq(schema.workspaces.id, input.workspaceId))
+      .limit(1)
+      .then((r) => r[0]),
+    db
+      .select({
+        displayName: schema.workspaceMembers.displayName,
+        email: schema.workspaceMembers.email,
+      })
+      .from(schema.workspaceMembers)
+      .where(
+        and(
+          eq(schema.workspaceMembers.workspaceId, input.workspaceId),
+          eq(schema.workspaceMembers.userId, input.actorUserId),
+        ),
+      )
+      .limit(1)
+      .then((r) => r[0]),
+  ]);
+
+  if (!task || !workspace) return;
+
+  const actorName =
+    actor?.displayName?.trim() || actor?.email || null;
+  const contextLine = input.body.slice(0, 200).trim();
+
+  // Fan out — skip self-mentions (a user mentioning themselves
+  // shouldn't email themselves).
+  for (const m of matched) {
+    if (m.userId === input.actorUserId) continue;
+    void sendTaskNotificationToMember({
+      workspaceId: input.workspaceId,
+      workspaceName: workspace.name,
+      recipientMemberId: m.id,
+      eventType: 'task_mention',
+      task: {
+        id: task.id,
+        title: task.title,
+        clientId: task.clientId,
+        dueDate: task.dueDate,
+      },
+      actorName,
+      contextLine,
+    });
+  }
+}
+
+/**
+ * Extract `@<token>` mentions from a comment body. Tokens are
+ * alphanumeric + dot + hyphen (covers email local-parts, full
+ * addresses, and dotted display-names). De-duplicates +
+ * lower-cases. Maximum 50 tokens to stop a runaway paste.
+ */
+function extractMentionTokens(body: string): string[] {
+  const re = /@([\w.\-+@]+)/g;
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of body.matchAll(re)) {
+    const token = m[1]?.toLowerCase();
+    if (!token) continue;
+    if (seen.has(token)) continue;
+    seen.add(token);
+    out.push(token);
+    if (out.length >= 50) break;
+  }
+  return out;
 }
 
 // --- delete ------------------------------------------------------------

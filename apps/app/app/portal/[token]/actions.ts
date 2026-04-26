@@ -14,6 +14,8 @@ import { sendPlainEmail } from '@phloz/email';
 
 import { fireTrack, serverTrackContext } from '@/lib/analytics';
 import { getAppUrl } from '@/lib/app-url';
+import { fanOutInboundMessageNotification } from '@/lib/notify-message';
+import { sendTaskNotificationToMember } from '@/lib/notify-task';
 
 /**
  * Portal-session-aware approval action. Unlike agency actions which
@@ -90,6 +92,21 @@ export async function setClientApprovalAction(
     comment: parsed.data.comment ?? null,
   }).catch((err: unknown) => {
     console.error('[portal.approval] notify failed', err);
+  });
+
+  // Preference-aware notification to the task's assignee — they're
+  // the person doing the work and most likely to care about the
+  // client's response. Owner gets the existing plain-text broadcast
+  // above; this hits the assignee with the structured
+  // `task_approval` template, gated by their per-event prefs +
+  // mutes + vacation mode.
+  void notifyAssigneeOfApproval({
+    workspaceId: link.workspaceId,
+    taskId: parsed.data.taskId,
+    state: parsed.data.state,
+    comment: parsed.data.comment ?? null,
+  }).catch((err: unknown) => {
+    console.error('[portal.approval] assignee notify failed', err);
   });
 
   revalidatePath(`/portal/${parsed.data.token}`);
@@ -179,6 +196,70 @@ async function notifyAgencyOfApproval(input: {
   });
 }
 
+/**
+ * Preference-aware notification to the task's assignee. Looks up
+ * the task + its workspace, then defers to
+ * `sendTaskNotificationToMember` which honors paused_until +
+ * per-event opt-out + per-client + per-task mute. Best-effort —
+ * the calling action's success doesn't depend on this.
+ */
+async function notifyAssigneeOfApproval(input: {
+  workspaceId: string;
+  taskId: string;
+  state: 'approved' | 'rejected' | 'needs_changes';
+  comment: string | null;
+}): Promise<void> {
+  const db = getDb();
+
+  const [task, workspace] = await Promise.all([
+    db
+      .select({
+        id: schema.tasks.id,
+        title: schema.tasks.title,
+        clientId: schema.tasks.clientId,
+        dueDate: schema.tasks.dueDate,
+        assigneeId: schema.tasks.assigneeId,
+      })
+      .from(schema.tasks)
+      .where(eq(schema.tasks.id, input.taskId))
+      .limit(1)
+      .then((r) => r[0]),
+    db
+      .select({ name: schema.workspaces.name })
+      .from(schema.workspaces)
+      .where(eq(schema.workspaces.id, input.workspaceId))
+      .limit(1)
+      .then((r) => r[0]),
+  ]);
+
+  if (!task || !task.assigneeId || !workspace) return;
+
+  const stateLabel =
+    input.state === 'approved'
+      ? 'approved this task'
+      : input.state === 'rejected'
+        ? 'rejected this task'
+        : 'asked for changes';
+  const contextLine = input.comment
+    ? `Client ${stateLabel}: ${input.comment.slice(0, 200)}`
+    : `Client ${stateLabel}.`;
+
+  await sendTaskNotificationToMember({
+    workspaceId: input.workspaceId,
+    workspaceName: workspace.name,
+    recipientMemberId: task.assigneeId,
+    eventType: 'task_approval',
+    task: {
+      id: task.id,
+      title: task.title,
+      clientId: task.clientId,
+      dueDate: task.dueDate,
+    },
+    actorName: null, // portal user — no agency-side actor
+    contextLine,
+  });
+}
+
 // --- portal reply (client → agency) -----------------------------------
 const replySchema = z.object({
   token: z.string().min(10).max(80),
@@ -231,6 +312,20 @@ export async function sendPortalReplyAction(
     { channel: 'portal' },
     serverTrackContext(link.clientContactId, link.workspaceId),
   );
+
+  // Same per-owner/admin fan-out the Resend inbound webhook does —
+  // a portal reply is functionally equivalent to an inbound email
+  // and the agency wants the same heads-up. Fire-and-forget; the
+  // helper logs internally on failure.
+  void fanOutInboundMessageNotification({
+    workspaceId: link.workspaceId,
+    clientId: link.clientId,
+    subject: null, // portal replies don't carry a subject
+    bodyPreview: parsed.data.body,
+  }).catch((err: unknown) => {
+    // eslint-disable-next-line no-console
+    console.error('[portal.reply] notify fan-out failed', err);
+  });
 
   revalidatePath(`/portal/${parsed.data.token}`);
   // Agency-side surfaces need re-rendering too.

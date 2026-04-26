@@ -6,6 +6,8 @@ import {
   type DailyDigestEmailProps,
   InvitationEmail,
   type InvitationEmailProps,
+  MessageNotificationEmail,
+  type MessageNotificationEmailProps,
   PasswordResetEmail,
   type PasswordResetEmailProps,
   PortalMagicLinkEmail,
@@ -145,6 +147,33 @@ export async function sendTaskNotification(
     tags: [
       { name: 'category', value: 'task_notification' },
       { name: 'event_type', value: templateProps.variant },
+    ],
+  });
+}
+
+/**
+ * Send an inbound-message notification email. Caller (the Resend
+ * webhook + per-member preference helper) is responsible for
+ * deciding the recipient + checking their gates BEFORE calling
+ * this. Tagged `category: message_notification` for Resend
+ * analytics.
+ */
+export async function sendMessageNotification(
+  input: BaseSendInput & MessageNotificationEmailProps,
+): Promise<SendResult> {
+  const { to, from, replyTo, ...templateProps } = input;
+  const subject = templateProps.subject
+    ? `[${templateProps.clientName}] ${templateProps.subject}`
+    : `[${templateProps.clientName}] new message`;
+  return sendReactEmail({
+    to,
+    from: from ?? defaultFromAddress(),
+    replyTo,
+    subject,
+    react: React.createElement(MessageNotificationEmail, templateProps),
+    tags: [
+      { name: 'category', value: 'message_notification' },
+      { name: 'event_type', value: 'inbound_message' },
     ],
   });
 }
