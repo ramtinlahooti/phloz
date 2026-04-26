@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 
 import { getDb, schema } from '@phloz/db/client';
 
+import { sendTaskNotificationToMember } from '../../lib/notify-task';
 import {
   RECURRING_LOCAL_HOUR,
   cadenceMatches,
@@ -108,24 +109,54 @@ export const processRecurringTasksFunction = inngest.createFunction(
               ? new Date(now.getTime() + t.dueOffsetDays * 24 * 60 * 60 * 1000)
               : null;
 
-          await db.insert(schema.tasks).values({
-            workspaceId: t.workspaceId,
-            clientId: t.clientId,
-            title: t.title,
-            description: t.description,
-            status: 'todo',
-            priority: t.priority,
-            department: t.department,
-            visibility: t.visibility,
-            assigneeId: t.assigneeId,
-            dueDate,
-            createdBy: t.createdBy,
-          });
+          const [insertedTask] = await db
+            .insert(schema.tasks)
+            .values({
+              workspaceId: t.workspaceId,
+              clientId: t.clientId,
+              title: t.title,
+              description: t.description,
+              status: 'todo',
+              priority: t.priority,
+              department: t.department,
+              visibility: t.visibility,
+              assigneeId: t.assigneeId,
+              dueDate,
+              createdBy: t.createdBy,
+            })
+            .returning({ id: schema.tasks.id });
 
           await db
             .update(schema.recurringTaskTemplates)
             .set({ lastRunAt: now, updatedAt: now })
             .where(eq(schema.recurringTaskTemplates.id, t.id));
+
+          // Notify the assignee (if any). preference-aware helper
+          // honors paused_until + per-event opt-out + per-client +
+          // per-task mute. Fire-and-forget — a Resend hiccup must
+          // not block the rest of this workspace's templates.
+          if (insertedTask && t.assigneeId) {
+            const [workspaceRow] = await db
+              .select({ name: schema.workspaces.name })
+              .from(schema.workspaces)
+              .where(eq(schema.workspaces.id, t.workspaceId))
+              .limit(1);
+            if (workspaceRow) {
+              void sendTaskNotificationToMember({
+                workspaceId: t.workspaceId,
+                workspaceName: workspaceRow.name,
+                recipientMemberId: t.assigneeId,
+                eventType: 'recurring_task_created',
+                task: {
+                  id: insertedTask.id,
+                  title: t.title,
+                  clientId: t.clientId,
+                  dueDate,
+                },
+                actorName: null, // system-spawned — no human actor
+              });
+            }
+          }
 
           firedHere += 1;
         }

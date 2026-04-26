@@ -19,6 +19,7 @@ import {
 import { getDb, schema } from '@phloz/db/client';
 
 import { fireTrack, serverTrackContext } from '@/lib/analytics';
+import { sendTaskNotificationToMember } from '@/lib/notify-task';
 
 import { findTaskTemplate } from './templates';
 
@@ -148,6 +149,68 @@ export async function createTaskAction(
     serverTrackContext(user.id, parsed.data.workspaceId),
   );
 
+  // Fire the assignment-notification email when a task is created
+  // with a non-null assignee that isn't the creator. Same gate as
+  // updateTaskAction's assignment-change path: skip self-assign,
+  // skip null assignee. Fire-and-forget — notify-task.ts catches
+  // mail failures internally.
+  if (
+    parsed.data.assigneeMembershipId &&
+    parsed.data.assigneeMembershipId !== null
+  ) {
+    const [actorMember, workspaceRow, recipientMember] = await Promise.all([
+      db
+        .select({
+          displayName: schema.workspaceMembers.displayName,
+          email: schema.workspaceMembers.email,
+        })
+        .from(schema.workspaceMembers)
+        .where(
+          and(
+            eq(schema.workspaceMembers.workspaceId, parsed.data.workspaceId),
+            eq(schema.workspaceMembers.userId, user.id),
+          ),
+        )
+        .limit(1)
+        .then((r) => r[0] ?? null),
+      db
+        .select({ name: schema.workspaces.name })
+        .from(schema.workspaces)
+        .where(eq(schema.workspaces.id, parsed.data.workspaceId))
+        .limit(1)
+        .then((r) => r[0] ?? null),
+      db
+        .select({ userId: schema.workspaceMembers.userId })
+        .from(schema.workspaceMembers)
+        .where(eq(schema.workspaceMembers.id, parsed.data.assigneeMembershipId))
+        .limit(1)
+        .then((r) => r[0] ?? null),
+    ]);
+
+    if (
+      workspaceRow &&
+      recipientMember &&
+      recipientMember.userId !== user.id
+    ) {
+      void sendTaskNotificationToMember({
+        workspaceId: parsed.data.workspaceId,
+        workspaceName: workspaceRow.name,
+        recipientMemberId: parsed.data.assigneeMembershipId,
+        eventType: 'task_assignment',
+        task: {
+          id: row.id,
+          title: parsed.data.title,
+          clientId: resolvedClientId,
+          dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
+        },
+        actorName:
+          actorMember?.displayName?.trim() ||
+          actorMember?.email ||
+          null,
+      });
+    }
+  }
+
   revalidatePath(`/${parsed.data.workspaceId}/tasks`);
   if (parsed.data.clientId) {
     revalidatePath(
@@ -186,16 +249,24 @@ export async function updateTaskAction(
 
   const db = getDb();
 
-  // Fetch the existing row only when we need to emit an analytics event
-  // that depends on the prior state (status change → from_status +
-  // time_to_complete_hours). Saves a round-trip on plain edits.
-  const needsPrior = parsed.data.status !== undefined;
+  // Fetch the existing row when we need to compare against the
+  // prior state — for analytics (status change → from_status +
+  // time_to_complete_hours) and for the assignment-change
+  // notification, which only fires when assigneeId actually moves.
+  // Plain edits skip the round-trip.
+  const needsPrior =
+    parsed.data.status !== undefined ||
+    parsed.data.assigneeMembershipId !== undefined;
   const prior = needsPrior
     ? await db
         .select({
           status: schema.tasks.status,
           department: schema.tasks.department,
           createdAt: schema.tasks.createdAt,
+          assigneeId: schema.tasks.assigneeId,
+          title: schema.tasks.title,
+          clientId: schema.tasks.clientId,
+          dueDate: schema.tasks.dueDate,
         })
         .from(schema.tasks)
         .where(
@@ -269,12 +340,20 @@ export async function updateTaskAction(
     }
   }
 
-  // Assignee-change event (fires whether or not a status change also
-  // happened on the same update — the two are independent signals).
-  if (
+  // Assignee-change event + notification email. Both fire only when
+  // the assigneeId actually moves (vs an idempotent re-save with
+  // the same value), and only when the new assignee is non-null
+  // (clearing an assignee doesn't deserve an email).
+  const assigneeChanged =
     parsed.data.assigneeMembershipId !== undefined &&
-    parsed.data.assigneeMembershipId !== null
-  ) {
+    parsed.data.assigneeMembershipId !== null &&
+    parsed.data.assigneeMembershipId !== prior?.assigneeId &&
+    // Don't email yourself when you self-assign — a common pattern
+    // that would otherwise spam every user who picks up a task.
+    // We compare via membership lookup further down.
+    true;
+
+  if (assigneeChanged) {
     fireTrack(
       'task_assigned',
       {
@@ -284,6 +363,70 @@ export async function updateTaskAction(
       },
       serverTrackContext(actor.user.id, parsed.data.workspaceId),
     );
+
+    // Resolve the actor's display name + workspace name for the
+    // email. Skip the self-assign case here (we don't have the
+    // recipient's user_id at this point; resolve via the membership
+    // row).
+    const [actorMember, workspaceRow, recipientMember] = await Promise.all([
+      db
+        .select({
+          displayName: schema.workspaceMembers.displayName,
+          email: schema.workspaceMembers.email,
+        })
+        .from(schema.workspaceMembers)
+        .where(
+          and(
+            eq(schema.workspaceMembers.workspaceId, parsed.data.workspaceId),
+            eq(schema.workspaceMembers.userId, actor.user.id),
+          ),
+        )
+        .limit(1)
+        .then((r) => r[0] ?? null),
+      db
+        .select({ name: schema.workspaces.name })
+        .from(schema.workspaces)
+        .where(eq(schema.workspaces.id, parsed.data.workspaceId))
+        .limit(1)
+        .then((r) => r[0] ?? null),
+      db
+        .select({ userId: schema.workspaceMembers.userId })
+        .from(schema.workspaceMembers)
+        .where(eq(schema.workspaceMembers.id, parsed.data.assigneeMembershipId!))
+        .limit(1)
+        .then((r) => r[0] ?? null),
+    ]);
+
+    // Fire-and-forget the email — the action's own success doesn't
+    // depend on the email going through. notify-task.ts internally
+    // catches Resend failures so they don't bubble.
+    if (
+      workspaceRow &&
+      recipientMember &&
+      recipientMember.userId !== actor.user.id // skip self-assign
+    ) {
+      void sendTaskNotificationToMember({
+        workspaceId: parsed.data.workspaceId,
+        workspaceName: workspaceRow.name,
+        recipientMemberId: parsed.data.assigneeMembershipId!,
+        eventType: 'task_assignment',
+        task: {
+          id: parsed.data.id,
+          title: parsed.data.title ?? prior?.title ?? '(untitled)',
+          clientId: prior?.clientId ?? null,
+          dueDate:
+            parsed.data.dueDate !== undefined
+              ? parsed.data.dueDate
+                ? new Date(parsed.data.dueDate)
+                : null
+              : prior?.dueDate ?? null,
+        },
+        actorName:
+          actorMember?.displayName?.trim() ||
+          actorMember?.email ||
+          null,
+      });
+    }
   }
 
   revalidatePath(`/${parsed.data.workspaceId}/tasks`);
