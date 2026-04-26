@@ -14,6 +14,8 @@ import {
   toast,
 } from '@phloz/ui';
 
+import { MentionBody } from '@/components/mention-body';
+
 import {
   postInternalNoteAction,
   sendEmailReplyAction,
@@ -157,8 +159,8 @@ function MessageBubble({
       {message.subject && message.channel === 'email' && (
         <div className="mb-1 font-medium">{message.subject}</div>
       )}
-      <div className="whitespace-pre-wrap text-foreground/90">
-        {message.body}
+      <div className="text-foreground/90">
+        <MentionBody text={message.body} />
       </div>
     </li>
   );

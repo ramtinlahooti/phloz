@@ -1,6 +1,8 @@
 'use client';
 
 import { Bell, BellOff, MessageSquare, Pencil, Send, Trash2 } from 'lucide-react';
+
+import { MentionBody } from '@/components/mention-body';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 
@@ -534,8 +536,8 @@ export function TaskDetailDialog({
                       </button>
                     )}
                   </div>
-                  <p className="whitespace-pre-wrap text-foreground/90">
-                    {c.body}
+                  <p className="text-foreground/90">
+                    <MentionBody text={c.body} />
                   </p>
                 </li>
               ))}
