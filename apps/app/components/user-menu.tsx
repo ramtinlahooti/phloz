@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, LogOut, User } from 'lucide-react';
+import { AtSign, Bell, LogOut, User } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -64,6 +64,15 @@ export function UserMenu({
           >
             <User className="size-4" />
             Profile & settings
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link
+            href={`/${currentWorkspaceId}/mentions`}
+            className="flex items-center gap-2"
+          >
+            <AtSign className="size-4" />
+            My mentions
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>

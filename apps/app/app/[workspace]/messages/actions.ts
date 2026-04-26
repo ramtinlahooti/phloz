@@ -171,6 +171,21 @@ export async function postInternalNoteAction(
     .limit(1)
     .then((r) => r[0]);
 
+  // Resolve @-mentions BEFORE the insert so we can persist the
+  // matched user_ids on the row. The fan-out path below re-uses the
+  // same parser to send emails; one parse pass per call.
+  const mentionTokens = extractMentionTokens(parsed.data.body);
+  const matchedMentions =
+    mentionTokens.length > 0
+      ? await resolveMentionTokens({
+          workspaceId: parsed.data.workspaceId,
+          tokens: mentionTokens,
+        })
+      : [];
+  const mentionUserIds = matchedMentions
+    .map((m) => m.userId)
+    .filter((id): id is string => id !== null);
+
   const [row] = await db
     .insert(schema.messages)
     .values({
@@ -183,6 +198,7 @@ export async function postInternalNoteAction(
       fromId: membership?.id ?? null,
       subject: null,
       body: parsed.data.body,
+      mentions: mentionUserIds,
     })
     .returning({ id: schema.messages.id });
 
@@ -200,16 +216,20 @@ export async function postInternalNoteAction(
   // event-pref the comments path uses (one toggle controls all
   // mention emails per the user's mental model). Best-effort —
   // log + swallow errors so a Resend hiccup doesn't fail the
-  // note write.
-  void fanOutNoteMentions({
-    workspaceId: parsed.data.workspaceId,
-    clientId: parsed.data.clientId,
-    actorUserId: user.id,
-    body: parsed.data.body,
-  }).catch((err: unknown) => {
-    // eslint-disable-next-line no-console
-    console.error('[internal-note] mention fan-out failed', err);
-  });
+  // note write. Reuses the matchedMentions we already resolved
+  // above for the persistence path.
+  if (matchedMentions.length > 0) {
+    void fanOutNoteMentions({
+      workspaceId: parsed.data.workspaceId,
+      clientId: parsed.data.clientId,
+      actorUserId: user.id,
+      body: parsed.data.body,
+      matched: matchedMentions,
+    }).catch((err: unknown) => {
+      // eslint-disable-next-line no-console
+      console.error('[internal-note] mention fan-out failed', err);
+    });
+  }
 
   revalidatePath(`/${parsed.data.workspaceId}/clients/${parsed.data.clientId}`);
   revalidatePath(`/${parsed.data.workspaceId}/messages`);
@@ -240,13 +260,11 @@ async function fanOutNoteMentions(input: {
   clientId: string;
   actorUserId: string;
   body: string;
+  /** Pre-resolved mentions from the parent action — passing them
+   *  in avoids a duplicate parse + workspace-member fetch. */
+  matched: Awaited<ReturnType<typeof resolveMentionTokens>>;
 }): Promise<void> {
-  const tokens = extractMentionTokens(input.body);
-  if (tokens.length === 0) return;
-  const matched = await resolveMentionTokens({
-    workspaceId: input.workspaceId,
-    tokens,
-  });
+  const matched = input.matched;
   if (matched.length === 0) return;
 
   const db = getDb();

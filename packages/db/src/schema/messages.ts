@@ -38,6 +38,15 @@ export const messages = pgTable(
      * matches the UI without a thread-aggregation step.
      */
     starred: boolean('starred').notNull().default(false),
+    /**
+     * Resolved `@<token>` mentions, populated by the internal-note
+     * fan-out path (`postInternalNoteAction`). Mirrors
+     * `comments.mentions`. GIN-indexed for `mentions @> ARRAY[uid]`
+     * lookups on the "Mentioned me" inbox. Empty array on
+     * email/portal channel messages — the parser only runs on
+     * internal notes.
+     */
+    mentions: uuid('mentions').array().notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
   },
   (table) => ({
@@ -50,6 +59,10 @@ export const messages = pgTable(
       table.starred,
       table.createdAt,
     ),
+    // GIN index on `mentions` so `arrayContains` queries are fast.
+    // Drizzle exposes the index name only; the `using GIN` clause is
+    // applied via raw SQL in migration #14.
+    mentionsGinIdx: index('messages_mentions_gin_idx').on(table.mentions),
   }),
 );
 
