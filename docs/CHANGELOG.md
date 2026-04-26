@@ -4,6 +4,71 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-25 — Audit trend + message drafts + tasks calendar view
+
+### Added — Audit "trend vs last run" line on the dashboard rollup
+
+The new weekly Inngest audit cron writes one
+`audit_run.workspace_summary` row to `audit_log` per workspace per
+pass. The dashboard's audit rollup card now reads the two most
+recent rows and renders a short delta:
+
+- "↓ N critical from last run" / "↑ N warning from last run" when
+  either dimension moved
+- "No change from last run" when both are zero
+- nothing when there's no prior summary AND no current findings
+
+Backwards-compatible: when the table has no `audit_run.*` rows yet
+(e.g. before Inngest is wired in production), the card renders as
+before with no trend line.
+
+### Added — Reply-draft auto-save (localStorage)
+
+A long reply that vanishes to a tab close was the messages tab's
+worst paper cut. The compose form now debounce-saves the body to
+localStorage on every keystroke (500ms) and restores on mount.
+
+Per-(workspace, client, mode) draft keys
+(`phloz.draft.<ws>.<client>.<email|note>`) so toggling between
+email and internal note doesn't clobber either tab's in-progress
+text. Successful send + explicit "Clear" both remove the key.
+Quota / private-mode failures fall through silently. Status
+sub-line shows "Draft restored" with a Clear button after a
+restore, then "Draft saved locally" once typing begins.
+
+### Added — Month-grid calendar view for tasks
+
+New `/[workspace]/tasks/calendar` route renders tasks-with-due-
+dates on a 6×7 month grid. Header gets Prev / Today / Next nav
+backed by `?month=YYYY-MM`, and every cell shows up to 3 priority-
+coloured task pills with a "+N more" overflow line. Today's cell
+gets a primary-tinted day-number dot. Out-of-month days dim to 40%
+opacity so the visual rhythm is consistent across short/long
+months.
+
+Pills link to `/[workspace]/tasks?task=<id>` so the existing task-
+detail dialog opens on the list view — keeps the dialog mounted
+in one place. Subtasks excluded (they live in their parent's
+dialog).
+
+`/tasks` header gets a new "Calendar" pill next to Recurring +
+saved views.
+
+### Files touched
+
+- `apps/app/app/[workspace]/page.tsx` (audit trend query + render)
+- `apps/app/app/[workspace]/messages/message-thread.tsx`
+- `apps/app/app/[workspace]/tasks/calendar/page.tsx` (new)
+- `apps/app/app/[workspace]/tasks/page.tsx` (Calendar pill)
+
+### Verified
+
+- `pnpm check` — 29/29 green.
+- `pnpm --filter @phloz/app build` — `/[workspace]/tasks/calendar`
+  surfaces in the build manifest.
+
+---
+
 ## 2026-04-25 — Keyboard shortcuts dialog + activity filter + audit cron
 
 ### Added — Keyboard shortcuts cheat sheet (press `?`)
