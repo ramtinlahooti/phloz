@@ -387,6 +387,25 @@ export default async function WorkspaceOverviewPage({
 
   if (!workspace) return null;
 
+  // Two most recent workspace-summary audit_log rows (newest first).
+  // Used by the audit rollup card to render "↓ 3 critical from last
+  // run" — the new weekly cron writes one of these per workspace per
+  // pass. Cheap separate query; keeps the big Promise.all readable.
+  const recentAuditSummaries = await db
+    .select({
+      metadata: schema.auditLog.metadata,
+      createdAt: schema.auditLog.createdAt,
+    })
+    .from(schema.auditLog)
+    .where(
+      and(
+        eq(schema.auditLog.workspaceId, workspaceId),
+        eq(schema.auditLog.action, 'audit_run.workspace_summary'),
+      ),
+    )
+    .orderBy(desc(schema.auditLog.createdAt))
+    .limit(2);
+
   const tier = getTier(workspace.tier);
   const clientName = new Map(clientRows.map((c) => [c.id, c.name]));
   const nameFor = (id: string | null) =>
@@ -580,6 +599,26 @@ export default async function WorkspaceOverviewPage({
     return b.warningCount - a.warningCount;
   });
   const topAuditEntries = auditRollup.slice(0, 4);
+
+  // Compute the audit trend vs last week's cron run. The newest row
+  // is the latest persisted snapshot — ideally last week's cron, but
+  // any prior pass works; we treat the second row as "previous" and
+  // show the delta. Skip the trend display if there's no prior row.
+  const previousAuditSnapshot = recentAuditSummaries[1] ?? null;
+  const previousAuditMeta =
+    (previousAuditSnapshot?.metadata as
+      | { critical?: number; warning?: number }
+      | undefined) ?? null;
+  const auditTrend =
+    previousAuditMeta &&
+    typeof previousAuditMeta.critical === 'number' &&
+    typeof previousAuditMeta.warning === 'number'
+      ? {
+          previousCritical: previousAuditMeta.critical,
+          previousWarning: previousAuditMeta.warning,
+          previousAt: previousAuditSnapshot?.createdAt ?? null,
+        }
+      : null;
 
   const feed: FeedItem[] = [];
 
@@ -911,6 +950,7 @@ export default async function WorkspaceOverviewPage({
               totalCritical={totalCritical}
               totalWarning={totalWarning}
               workspaceId={workspaceId}
+              trend={auditTrend}
             />
           )}
           <Card>
@@ -1160,6 +1200,7 @@ function AuditRollupCard({
   totalCritical,
   totalWarning,
   workspaceId,
+  trend,
 }: {
   clients: {
     id: string;
@@ -1170,6 +1211,13 @@ function AuditRollupCard({
   totalCritical: number;
   totalWarning: number;
   workspaceId: string;
+  /** Most recent persisted audit snapshot (from the weekly Inngest
+   *  cron). When set, the card renders a delta vs that snapshot. */
+  trend: {
+    previousCritical: number;
+    previousWarning: number;
+    previousAt: Date | null;
+  } | null;
 }) {
   const summary = [
     totalCritical > 0 &&
@@ -1179,6 +1227,8 @@ function AuditRollupCard({
   ]
     .filter(Boolean)
     .join(' · ');
+
+  const trendLine = trend ? renderAuditTrend(trend, totalCritical, totalWarning) : null;
 
   return (
     <Card>
@@ -1195,6 +1245,9 @@ function AuditRollupCard({
           </span>
         </CardTitle>
         <p className="mt-0.5 text-xs text-muted-foreground">{summary}</p>
+        {trendLine && (
+          <p className="mt-1 text-[11px] text-muted-foreground">{trendLine}</p>
+        )}
       </CardHeader>
       <CardContent className="space-y-2 pt-0">
         <ul className="space-y-1.5">
@@ -1391,6 +1444,44 @@ function OnboardingCard({
       </CardContent>
     </Card>
   );
+}
+
+/**
+ * Build the "trend vs last week" sub-line for the audit rollup.
+ * Returns null when nothing has changed AND the previous run had
+ * no findings either — there's nothing useful to say.
+ *
+ * Wording rules:
+ *   - Negative delta (fewer findings) → "↓ N critical from last run"
+ *   - Positive delta → "↑ N critical from last run"
+ *   - Same → "no change from last run"
+ */
+function renderAuditTrend(
+  trend: {
+    previousCritical: number;
+    previousWarning: number;
+    previousAt: Date | null;
+  },
+  currentCritical: number,
+  currentWarning: number,
+): string | null {
+  const dCritical = currentCritical - trend.previousCritical;
+  const dWarning = currentWarning - trend.previousWarning;
+  if (dCritical === 0 && dWarning === 0 && currentCritical === 0 && currentWarning === 0) {
+    return null;
+  }
+  const arrow = (delta: number) => (delta < 0 ? '↓' : delta > 0 ? '↑' : '·');
+  const segments: string[] = [];
+  if (dCritical !== 0) {
+    segments.push(`${arrow(dCritical)} ${Math.abs(dCritical)} critical`);
+  }
+  if (dWarning !== 0) {
+    segments.push(`${arrow(dWarning)} ${Math.abs(dWarning)} warning`);
+  }
+  if (segments.length === 0) {
+    return 'No change from last run';
+  }
+  return `${segments.join(' · ')} from last run`;
 }
 
 
