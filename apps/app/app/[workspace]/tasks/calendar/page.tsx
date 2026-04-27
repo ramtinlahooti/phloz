@@ -60,11 +60,6 @@ export default async function TasksCalendarPage({
   assertValidWorkspaceId(workspaceId);
   const sp = await searchParams;
   const monthStart = parseMonth(sp.month);
-  const monthEnd = new Date(
-    monthStart.getFullYear(),
-    monthStart.getMonth() + 1,
-    1,
-  );
 
   // Grid range: from the Sunday-on-or-before monthStart to the
   // Saturday-on-or-after the last day of the month. Always 6 rows
