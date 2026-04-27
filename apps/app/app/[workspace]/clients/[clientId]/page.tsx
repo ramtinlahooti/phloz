@@ -130,6 +130,7 @@ export default async function ClientDetailPage({
     trackingNodeRows,
     trackingEdgeRows,
     auditSuppressionRows,
+    auditHistoryRows,
     recurringTemplateRows,
     workspaceRow,
   ] = await Promise.all([
@@ -270,6 +271,28 @@ export default async function ClientDetailPage({
             eq(schema.auditSuppressions.clientId, clientId),
           ),
         ),
+      // Last 8 per-client audit snapshots written by the
+      // `audit-weekly` Inngest cron. Rendered as a compact
+      // history timeline + sparkline below the live findings so
+      // users can see when each finding first appeared. Empty
+      // until the cron has fired at least once for this client
+      // (so dormant in dev / before Inngest signing key is wired).
+      db
+        .select({
+          metadata: schema.auditLog.metadata,
+          createdAt: schema.auditLog.createdAt,
+        })
+        .from(schema.auditLog)
+        .where(
+          and(
+            eq(schema.auditLog.workspaceId, workspaceId),
+            eq(schema.auditLog.entityType, 'client'),
+            eq(schema.auditLog.entityId, clientId),
+            eq(schema.auditLog.action, 'audit_run.client_summary'),
+          ),
+        )
+        .orderBy(desc(schema.auditLog.createdAt))
+        .limit(8),
       // Recurring task templates scoped to this client — surfaced in
       // a section above the regular tasks list so agency owners
       // discover them without leaving the client view.
@@ -894,6 +917,9 @@ export default async function ClientDetailPage({
                   reason: s.reason,
                   createdAt: s.createdAt,
                 }))}
+                history={auditHistoryRows.map((row) =>
+                  parseAuditHistoryRow(row.metadata, row.createdAt),
+                )}
                 workspaceId={workspaceId}
                 clientId={clientId}
               />
@@ -964,18 +990,55 @@ type SuppressionView = {
   createdAt: Date;
 };
 
+type AuditHistoryEntry = {
+  ranAt: Date;
+  critical: number;
+  warning: number;
+  info: number;
+  suppressed: number;
+  totalNodes: number;
+  totalEdges: number;
+};
+
+/** Coerces a raw `audit_log.metadata` JSONB blob to the typed shape
+ *  the cron writes. Defensive: any unexpected/missing field reads as
+ *  zero so a corrupt row can't crash the page. */
+function parseAuditHistoryRow(
+  metadata: Record<string, unknown>,
+  createdAt: Date,
+): AuditHistoryEntry {
+  const num = (key: string): number => {
+    const v = metadata[key];
+    return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+  };
+  return {
+    ranAt: createdAt,
+    critical: num('critical'),
+    warning: num('warning'),
+    info: num('info'),
+    suppressed: num('suppressed'),
+    totalNodes: num('total_nodes'),
+    totalEdges: num('total_edges'),
+  };
+}
+
 /** Renders the audit-engine findings as a triaged list. Critical
  *  first, then warning, then info. Empty state congratulates the
  *  user rather than showing a blank card. Suppressed rules appear
- *  in a separate footer section so users can un-snooze. */
+ *  in a separate footer section so users can un-snooze. History
+ *  (last 8 weekly snapshots from the audit cron) renders below the
+ *  findings as a compact sparkline + timestamped list, so users
+ *  can see when each finding first appeared. */
 function AuditPanel({
   findings,
   suppressions,
+  history,
   workspaceId,
   clientId,
 }: {
   findings: Finding[];
   suppressions: SuppressionView[];
+  history: AuditHistoryEntry[];
   workspaceId: string;
   clientId: string;
 }) {
@@ -983,7 +1046,11 @@ function AuditPanel({
   const warnings = findings.filter((f) => f.severity === 'warning');
   const infos = findings.filter((f) => f.severity === 'info');
 
-  if (findings.length === 0 && suppressions.length === 0) {
+  if (
+    findings.length === 0 &&
+    suppressions.length === 0 &&
+    history.length === 0
+  ) {
     return (
       <Card>
         <CardContent className="space-y-2 p-8 text-center">
@@ -1024,11 +1091,13 @@ function AuditPanel({
             <p className="text-sm font-medium text-[var(--color-health-working)]">
               All clear.
             </p>
-            <p className="text-xs text-muted-foreground">
-              {suppressions.length} suppressed rule
-              {suppressions.length === 1 ? '' : 's'} below — un-snooze any
-              to bring it back.
-            </p>
+            {suppressions.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {suppressions.length} suppressed rule
+                {suppressions.length === 1 ? '' : 's'} below — un-snooze any
+                to bring it back.
+              </p>
+            )}
           </CardContent>
         </Card>
       )}
@@ -1056,6 +1125,7 @@ function AuditPanel({
           clientId={clientId}
         />
       )}
+      {history.length > 0 && <AuditHistorySection history={history} />}
       {suppressions.length > 0 && (
         <SuppressedRulesSection
           suppressions={suppressions}
@@ -1063,6 +1133,158 @@ function AuditPanel({
         />
       )}
     </div>
+  );
+}
+
+/** Per-client audit history. Compact sparkline (oldest → newest)
+ *  on top, then a timestamped list with finding-count breakdown +
+ *  delta vs the prior snapshot. Mirrors the dashboard sparkline's
+ *  visual language so the per-client view feels native — same
+ *  red/amber colour pairing, same y-axis normalisation.
+ *
+ *  Rows are passed in newest-first (matches the DB ordering); we
+ *  reverse only for the sparkline so it reads left-to-right
+ *  oldest → newest. The list keeps newest-first because that's
+ *  what users scanning recent activity expect. */
+function AuditHistorySection({ history }: { history: AuditHistoryEntry[] }) {
+  // Newest first for the list; oldest first for the sparkline.
+  const sparkSeries = [...history]
+    .reverse()
+    .map((h) => ({ critical: h.critical, warning: h.warning }));
+
+  return (
+    <section>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        History
+      </h3>
+      {sparkSeries.length >= 2 && <AuditClientSparkline series={sparkSeries} />}
+      <ol className="mt-3 space-y-1.5">
+        {history.map((entry, idx) => {
+          // The "next" entry in `history` (newest-first ordering) is
+          // the snapshot from one week earlier — the diff baseline
+          // for the row above it.
+          const prior = history[idx + 1] ?? null;
+          const dCritical = prior ? entry.critical - prior.critical : null;
+          const dWarning = prior ? entry.warning - prior.warning : null;
+          const segments: string[] = [];
+          if (entry.critical > 0) {
+            segments.push(`${entry.critical} critical`);
+          }
+          if (entry.warning > 0) {
+            segments.push(
+              `${entry.warning} warning${entry.warning === 1 ? '' : 's'}`,
+            );
+          }
+          if (entry.info > 0) {
+            segments.push(`${entry.info} info`);
+          }
+          if (segments.length === 0) {
+            segments.push('All clear');
+          }
+
+          return (
+            <li
+              key={entry.ranAt.toISOString()}
+              className="flex items-baseline justify-between gap-3 rounded-md border border-border/60 bg-card/30 px-3 py-2 text-xs"
+            >
+              <span className="min-w-0">
+                <span className="text-muted-foreground">
+                  {entry.ranAt.toLocaleDateString(undefined, {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </span>
+                <span className="ml-2 font-medium text-foreground">
+                  {segments.join(' · ')}
+                </span>
+              </span>
+              {prior && (dCritical !== 0 || dWarning !== 0) && (
+                <span className="shrink-0 text-[10px] text-muted-foreground">
+                  {dCritical !== 0 && dCritical !== null && (
+                    <span
+                      className={
+                        dCritical < 0 ? 'text-emerald-400' : 'text-red-400'
+                      }
+                    >
+                      {dCritical < 0 ? '↓' : '↑'} {Math.abs(dCritical)}c
+                    </span>
+                  )}
+                  {dCritical !== 0 && dWarning !== 0 && (
+                    <span className="mx-1 text-muted-foreground/60">·</span>
+                  )}
+                  {dWarning !== 0 && dWarning !== null && (
+                    <span
+                      className={
+                        dWarning < 0 ? 'text-emerald-400' : 'text-amber-400'
+                      }
+                    >
+                      {dWarning < 0 ? '↓' : '↑'} {Math.abs(dWarning)}w
+                    </span>
+                  )}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
+/** Per-client variant of the dashboard's audit sparkline — same
+ *  visual language (red on top, amber below, last-point dot) but
+ *  scaled to fit inside the audit tab. Skipped by the parent when
+ *  fewer than two snapshots exist. */
+function AuditClientSparkline({
+  series,
+}: {
+  series: Array<{ critical: number; warning: number }>;
+}) {
+  const w = 200;
+  const h = 32;
+  const padX = 2;
+  const padY = 3;
+  const max = Math.max(
+    1,
+    ...series.flatMap((p) => [p.critical, p.warning]),
+  );
+  const stepX =
+    series.length > 1 ? (w - padX * 2) / (series.length - 1) : 0;
+  const yFor = (v: number) =>
+    h - padY - ((h - padY * 2) * v) / max;
+  const pathFor = (key: 'critical' | 'warning') =>
+    series
+      .map((p, i) => `${i === 0 ? 'M' : 'L'}${padX + i * stepX} ${yFor(p[key])}`)
+      .join(' ');
+  return (
+    <svg
+      viewBox={`0 0 ${w} ${h}`}
+      className="h-8 w-full max-w-[14rem]"
+      preserveAspectRatio="none"
+      aria-hidden
+    >
+      <path
+        d={pathFor('warning')}
+        fill="none"
+        stroke="rgb(251 191 36 / 0.6)"
+        strokeWidth={1.25}
+      />
+      <path
+        d={pathFor('critical')}
+        fill="none"
+        stroke="rgb(248 113 113 / 0.9)"
+        strokeWidth={1.5}
+      />
+      {series.length > 0 && (
+        <circle
+          cx={padX + (series.length - 1) * stepX}
+          cy={yFor(series[series.length - 1]!.critical)}
+          r={1.75}
+          fill="rgb(248 113 113)"
+        />
+      )}
+    </svg>
   );
 }
 
