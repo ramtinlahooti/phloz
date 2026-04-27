@@ -5,6 +5,108 @@ for the template.
 
 ---
 
+## 2026-04-26: Client groups + departments + flexible access grants
+
+**Status:** Accepted (Session 1 — schema only; not yet applied to Supabase)
+
+**Context:** A 50-client agency has no way to organise clients
+(every client lives in one flat list). A 25-person agency has
+no way to express "the SEO team" or "the PPC team" — every
+member is assigned individually if at all. Users explicitly
+asked for both: collections of clients, collections of members,
+and the ability to assign either side to either side
+(client | client-group ↔ member | department).
+
+**Decision:** Five new tables + a behaviour change to
+`phloz_is_assigned_to`. Naming: **client groups** (1:N — each
+client lives in exactly one group, may be null), **departments**
+(M:N — a member can sit in several departments, e.g. PPC + SEO
+for a generalist or a supervisor). The old
+`workspace_member_client_access` table is dropped; the new
+`access_grants` table is the single source of truth for every
+assignment kind.
+
+```
+client_groups            (id, workspace_id, name, color, ...)
+clients.client_group_id  (uuid nullable FK → client_groups, ON DELETE SET NULL)
+
+departments              (id, workspace_id, name, color, ...)
+department_memberships   (department_id, workspace_member_id)        — M:N
+
+access_grants            (id, workspace_id,
+                          granted_to_member_id  | granted_to_department_id,
+                          client_id             | client_group_id)
+                          — CHECK exactly one of each pair
+```
+
+`phloz_is_assigned_to(client_id)` now walks the union of four
+paths in addition to the two existing escape hatches
+(owner/admin role + `all_members_see_all_clients` setting):
+
+1. Direct member → client grant
+2. Direct member → client-group grant (matches client's group)
+3. Department → client grant (member sits in that department)
+4. Department → client-group grant (member sits in that
+   department AND client is in that group)
+
+Only owner/admin can mutate any of the new tables (RLS).
+Members/viewers see groups, departments, memberships, and
+grants but cannot change them — same posture as the existing
+"who can edit billing" rule.
+
+**Rationale:** Considered three alternatives:
+
+1. **Polymorphic single assignments table with type column.**
+   Rejected: harder to read, harder to index, CHECK constraints
+   become awkward when more subject/object types appear later.
+2. **Four explicit assignment tables (member↔client,
+   member↔group, dept↔client, dept↔group).** Rejected: 4 tables
+   for what is conceptually one edge type. Each would need
+   identical RLS, identical mutation patterns, identical UI
+   handling. The two-pair-of-FK design captures the same
+   flexibility with one table.
+3. **Materialise group assignments into per-member rows on
+   write.** Rejected: an agency with 100 clients × 25 members =
+   2,500 access rows from one "assign SEO dept to Acquisition
+   portfolio" click, and any later membership change has to
+   recompute the cross product. Storing the relationship as
+   given and computing membership at query time is cheaper and
+   more auditable.
+
+Client groups stay 1:N (one group per client) by deliberate
+choice — the user wanted a simple, unambiguous mental model
+("where does this client live? answer is one place"). If
+multi-axis grouping is ever needed (lifecycle × segment),
+that's a tags feature, not a groups feature.
+
+Departments are M:N because supervisors/VPs naturally span
+multiple disciplines, and that's a real agency pattern. The UI
+will surface a small badge on members in 2+ departments to
+make that explicit.
+
+**Consequences:**
+
+- Five new tables + one new column + one extended SECURITY
+  DEFINER function. Existing test data is dropped; no
+  preservation needed (user confirmed).
+- Removes the legacy `workspace_member_client_access` table —
+  no app code references it (only schema files and the pgTAP
+  test), so this is a clean delete.
+- `tasks.department` enum (PPC / SEO / etc.) is unchanged for
+  now — it's loose tagging. A future decision may unify it with
+  the new `departments` table; deferred until UI shapes the
+  actual ergonomics.
+- Three-session feature: (1) schema + RLS + migration committed
+  but unapplied, (2) apply migration + server actions, (3) UI
+  surfaces (client groups page, departments page, extended
+  Access dialog, multi-department badge).
+- `supabase-types.ts` is auto-generated against the live DB; it
+  will be regenerated in Session 2 after migration is applied.
+  pgTAP isolation test gets rewritten in Session 2 to test the
+  new graph (currently can't run anyway — needs live Postgres).
+
+---
+
 ## 2026-04-25: Recurring template tier limits — escalating, not flat
 
 **Status:** Accepted

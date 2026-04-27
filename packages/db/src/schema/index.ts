@@ -5,10 +5,13 @@
 // --- V1 tables ---
 export * from './workspaces';
 export * from './workspace-members';
-export * from './workspace-member-client-access';
 export * from './clients';
+export * from './client-groups';
 export * from './client-contacts';
 export * from './client-assets';
+export * from './departments';
+export * from './department-memberships';
+export * from './access-grants';
 export * from './tracking-nodes';
 export * from './tracking-edges';
 export * from './tasks';

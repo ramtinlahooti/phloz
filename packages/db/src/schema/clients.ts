@@ -1,6 +1,7 @@
 import { index, jsonb, numeric, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 import { pkUuid, timestamps, userIdRef } from './_helpers';
+import { clientGroups } from './client-groups';
 import { workspaces } from './workspaces';
 
 export type BusinessAddress = {
@@ -51,6 +52,15 @@ export const clients = pgTable(
       mode: 'date',
     }),
     customFields: jsonb('custom_fields').$type<Record<string, unknown>>().notNull().default({}),
+    /**
+     * Optional client group. 1:N — each client lives in at most one
+     * group; ungrouped clients have NULL. ON DELETE SET NULL means
+     * deleting a group leaves its clients ungrouped (no cascade
+     * deletion of business data).
+     */
+    clientGroupId: uuid('client_group_id').references(() => clientGroups.id, {
+      onDelete: 'set null',
+    }),
     createdBy: userIdRef('created_by', { nullable: true }),
     ...timestamps,
   },
@@ -59,6 +69,9 @@ export const clients = pgTable(
     archivedIdx: index('clients_archived_at_idx').on(table.archivedAt),
     lastActivityIdx: index('clients_last_activity_at_idx').on(
       table.lastActivityAt,
+    ),
+    clientGroupIdx: index('clients_client_group_id_idx').on(
+      table.clientGroupId,
     ),
   }),
 );

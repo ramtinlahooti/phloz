@@ -42,9 +42,14 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- phloz_is_assigned_to(client_id)
--- True when the current auth.uid() has explicit assignment to the client, OR
--- is owner/admin of the workspace, OR the workspace has opted into the
--- "all members see all clients" setting.
+-- True when the current auth.uid() can see the given client, via any of:
+--   1. Owner or admin role in the client's workspace
+--   2. Workspace setting `all_members_see_all_clients` is true
+--   3. A direct grant in `access_grants`:
+--        - granted_to_member_id = me AND client_id = c_id
+--        - granted_to_member_id = me AND client_group_id = client.client_group_id
+--        - granted_to_department_id = D AND client_id = c_id (where I'm in D)
+--        - granted_to_department_id = D AND client_group_id = client.client_group_id (where I'm in D)
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.phloz_is_assigned_to(c_id uuid)
 RETURNS boolean
@@ -68,11 +73,27 @@ AS $$
         -- workspace opts all members in
         (w.settings ->> 'all_members_see_all_clients')::boolean IS NOT DISTINCT FROM true
         OR
-        -- member/viewer with explicit assignment
+        -- member/viewer with any matching access grant
         EXISTS (
-          SELECT 1 FROM public.workspace_member_client_access wmca
-          WHERE wmca.workspace_member_id = wm.id
-            AND wmca.client_id = c.id
+          SELECT 1 FROM public.access_grants ag
+          WHERE ag.workspace_id = c.workspace_id
+            AND (
+              -- subject side: direct member grant OR via department membership
+              ag.granted_to_member_id = wm.id
+              OR EXISTS (
+                SELECT 1 FROM public.department_memberships dm
+                WHERE dm.department_id = ag.granted_to_department_id
+                  AND dm.workspace_member_id = wm.id
+              )
+            )
+            AND (
+              -- object side: direct client grant OR via client's group
+              ag.client_id = c.id
+              OR (
+                ag.client_group_id IS NOT NULL
+                AND ag.client_group_id = c.client_group_id
+              )
+            )
         )
       )
   );
