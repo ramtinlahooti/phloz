@@ -56,6 +56,7 @@ Full React Flow canvas with typed node library, drawer forms, keyboard shortcuts
 - [x] Inbox keyboard nav (`j`/`k`/`Enter`)
 - [x] Reply-draft auto-save (localStorage)
 - [x] Weekly tracking-map audit cron + dashboard trend + sparkline
+- [x] Per-client audit history timeline + sparkline (Audit tab)
 - [x] Bulk-archive dormant clients
 - [x] Activity feed type filter on the dashboard
 - [x] Keyboard shortcuts cheat sheet (`?`)

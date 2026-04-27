@@ -4,6 +4,75 @@ Append dated entries at the top. Style: what changed + where + why.
 
 ---
 
+## 2026-04-26 — Per-client audit history timeline + lint cleanup
+
+### Added — Per-client audit history (timeline + sparkline)
+
+The weekly `audit-weekly` Inngest cron has been writing one
+`audit_log` row per client per pass since the last session
+(`action = 'audit_run.client_summary'`, with `{ critical, warning,
+info, suppressed, total_nodes, total_edges }`). The dashboard
+sparkline already reads the workspace-level summary, but nothing
+rendered the per-client snapshots — so the weekly trend was
+invisible from inside a single client's Audit tab.
+
+New `History` section sits below the live findings (and above
+suppressions) on the per-client Audit tab. Two pieces:
+
+- **200×32 inline SVG sparkline** mirroring the dashboard's
+  visual language — red critical line on top, amber warning
+  below, both normalised against the same y-domain, last-point
+  dot on critical. Skipped when fewer than two snapshots exist.
+- **Timestamped list (newest first)** showing each snapshot's
+  finding-count breakdown plus a delta vs the prior week. Deltas
+  use ↓/↑ glyphs in emerald / red / amber tints so an improving
+  week reads visually distinct from a regressing one. `Nc` /
+  `Nw` shorthand keeps the trailing column tight.
+
+Eight rows ≈ two months of weekly history — same horizon as the
+dashboard sparkline, enough to see a trend without making the
+section noisy.
+
+### Changed — `AuditPanel` empty-state guard loosened
+
+The "no findings, no suppressions" early-return now also requires
+zero history rows; otherwise the snapshot timeline would never
+appear after the agency cleaned up. Trimmed the secondary
+"X suppressed below" copy on the in-body "All clear" card when
+suppressions is zero, since that line was meaningless in the
+suppressions=0 case the new branch surfaces.
+
+### Fixed — Two stale unused-symbol lint warnings
+
+- `asc` was imported in the workspace clients-list page but
+  nothing in the file calls it (refactor leftover from when the
+  list had server-side ordering).
+- `monthEnd` in the tasks calendar page was computed but never
+  read; the grid range derives straight from `monthStart` and a
+  6-row cap.
+
+Both warnings were on `main` since the calendar view shipped.
+Removing them restores the "0 lint warnings" state from the
+prior session.
+
+### Files touched
+
+- `apps/app/app/[workspace]/clients/[clientId]/page.tsx`
+  (audit history query + `AuditHistorySection` +
+  `AuditClientSparkline` + `parseAuditHistoryRow`)
+- `apps/app/app/[workspace]/clients/page.tsx` (drop `asc` import)
+- `apps/app/app/[workspace]/tasks/calendar/page.tsx` (drop
+  unused `monthEnd`)
+- `.claude/settings.local.json` (auto-saved permission)
+
+### Verified
+
+- `pnpm check` — 29/29 green, 0 lint warnings.
+- `pnpm --filter @phloz/app build` — clean,
+  `/[workspace]/clients/[clientId]` route compiles.
+
+---
+
 ## 2026-04-25 — Audit sparkline + per-client tier-gate + inbox shortcuts
 
 ### Added — Audit rollup sparkline
